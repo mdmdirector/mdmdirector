@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# SerialNumbers []string `json:"serial_numbers,omitempty"`
+# 	DeviceUUIDs   []string `json:"udid,omitempty"`
+# 	Mobileconfigs []string `json:"profiles"`
+
+endpoint="http://localhost:8000/profile/push"
+jq -n \
+  --arg request_type "InstallProfile" \
+  --arg udid "$1" \
+  --arg payload "$(cat "$2"|openssl base64 -A)" \
+  '.udids = [$udid]
+  |.profiles = [$payload]
+  '|\
+  curl -X POST "$endpoint" -d@-
