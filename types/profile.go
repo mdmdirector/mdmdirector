@@ -44,3 +44,13 @@ type ProfileList struct {
 	PayloadVersion           int           `plist:"PayloadVersion"`
 	FullPayload              bool          `plist:"FullPayload"`
 }
+
+func (profile *DeviceProfile) AfterCreate() (err error) {
+	BumpDeviceLastUpdated(profile.DeviceUDID)
+	return
+}
+
+func (profile *DeviceProfile) AfterUpdate() (err error) {
+	BumpDeviceLastUpdated(profile.DeviceUDID)
+	return
+}

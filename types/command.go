@@ -1,12 +1,25 @@
 package types
 
-import "github.com/jinzhu/gorm"
+import (
+	"time"
+)
 
 type Command struct {
-	Model       gorm.Model
+	UpdatedAt   time.Time
 	CommandUUID string `gorm:"primary_key"`
 	Status      string
 	DeviceUDID  string
+	RequestType string
+}
+
+func (command *Command) AfterCreate() (err error) {
+	BumpDeviceLastUpdated(command.DeviceUDID)
+	return
+}
+
+func (command *Command) AfterUpdate() (err error) {
+	BumpDeviceLastUpdated(command.DeviceUDID)
+	return
 }
 
 type CommandPayload struct {

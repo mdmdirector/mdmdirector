@@ -56,6 +56,7 @@ func main() {
 	fmt.Println("mdmdirector is running, hold onto your butts...")
 
 	go director.RetryCommands()
+	go director.ScheduledCheckin()
 
 	log.Print(http.ListenAndServe(":"+port, nil))
 }

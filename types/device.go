@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 type Device struct {
 	DeviceName   string
 	BuildVersion string
@@ -12,4 +14,5 @@ type Device struct {
 	Active       bool
 	Profiles     []DeviceProfile `gorm:"ForeignKey:DeviceUDID"`
 	Commands     []Command       `gorm:"ForeignKey:DeviceUDID"`
+	UpdatedAt time.Time
 }

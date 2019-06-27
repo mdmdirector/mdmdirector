@@ -2,7 +2,6 @@ package director
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -49,15 +48,17 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 		}
 
-		_, ok := payloadDict["china"]
+		// Is this a ProfileList response?
+		_, ok := payloadDict["ProfileList"]
 		if ok {
-			fmt.Println("Key found value is: ", value)
-		} else {
-			fmt.Println("Key not found")
+			var profileListData types.ProfileListData
+			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
+			if err != nil {
+				log.Print(err)
+			}
+			VerifyMDMProfiles(profileListData, device)
 		}
 
-		// fmt.Print(temp)
-		fmt.Print(string(out.AcknowledgeEvent.RawPayload))
 	}
 
 }

@@ -43,6 +43,7 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 
 	command.DeviceUDID = CommandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
+	command.RequestType = CommandPayload.RequestType
 
 	db.DB.Create(&command)
 	return &command, nil

@@ -15,7 +15,7 @@ import (
 func RetryCommands() {
 	var delay time.Duration
 	if utils.DebugMode() {
-		delay = 10
+		delay = 20
 	} else {
 		delay = 120
 	}
@@ -58,5 +58,47 @@ func sendPush() {
 		}
 
 		resp.Body.Close()
+	}
+}
+
+func ScheduledCheckin() {
+	var delay time.Duration
+	if utils.DebugMode() {
+		delay = 60
+	} else {
+		delay = 7200
+	}
+	ticker := time.NewTicker(delay * time.Second)
+	defer ticker.Stop()
+	fn := func() {
+		processCheckin()
+	}
+
+	fn()
+
+	for {
+		select {
+		case <-ticker.C:
+			fn()
+		}
+	}
+}
+
+func processCheckin() {
+	var devices []types.Device
+	var device types.Device
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	err := db.DB.Model(&device).Where("updated_at < ? AND active = ?", twoHoursAgo, true).Scan(&devices).Error
+	if err != nil {
+		log.Print(err)
+	}
+
+	for _, staleDevice := range devices {
+		var commandPayload types.CommandPayload
+		commandPayload.UDID = staleDevice.UDID
+		commandPayload.RequestType = "ProfileList"
+
+		SendCommand(commandPayload)
+
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 func UpdateDevice(newDevice types.Device) *types.Device {
 	var device types.Device
+	// t := time.Now()
 	if newDevice.UDID == "" {
 		return &device
 	}
@@ -21,6 +22,7 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 	if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			fmt.Println("Device doesn't exist, creating")
+			// newDevice.LastCheckin = t
 			db.DB.Create(&newDevice)
 		}
 	} else {
@@ -34,6 +36,7 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 			ProductName:  newDevice.ProductName,
 			SerialNumber: newDevice.SerialNumber,
 			Active:       newDevice.Active,
+			// LastCheckin:  t,
 		}).Error
 		if err != nil {
 			log.Print(err)
@@ -68,4 +71,16 @@ func GetDeviceSerial(serial string) types.Device {
 		log.Print("Couldn't scan to Device model")
 	}
 	return device
+}
+
+func GetAllDevices() []types.Device {
+	var device types.Device
+	var devices []types.Device
+
+	err := db.DB.Model(device).Find(&devices).Scan(&devices).Error
+	if err != nil {
+		fmt.Println(err)
+		log.Print("Couldn't scan to Device model")
+	}
+	return devices
 }
