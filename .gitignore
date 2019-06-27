@@ -1,3 +1,4 @@
 settings.json
 build/*
 *.db
+postgres/*
