@@ -38,7 +38,7 @@ func RetryCommands() {
 func sendPush() {
 	var command types.Command
 	var commands []types.Command
-	err := db.DB.Model(&command).Not("status = ?", "Acknowledged").Scan(&commands).Error
+	err := db.DB.Model(&command).Where("status = ?", "NotNow").Scan(&commands).Error
 	if err != nil {
 		log.Print(err)
 	}

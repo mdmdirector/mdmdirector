@@ -14,19 +14,16 @@ import (
 
 func UpdateDevice(newDevice types.Device) *types.Device {
 	var device types.Device
-	// t := time.Now()
+
 	if newDevice.UDID == "" {
 		return &device
 	}
 
 	if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			fmt.Println("Device doesn't exist, creating")
-			// newDevice.LastCheckin = t
 			db.DB.Create(&newDevice)
 		}
 	} else {
-		fmt.Println("Device exists, updating")
 		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&device).Updates(types.Device{
 			DeviceName:   newDevice.DeviceName,
 			BuildVersion: newDevice.BuildVersion,
@@ -41,13 +38,7 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 		if err != nil {
 			log.Print(err)
 		}
-
-		// fmt.Println("Updating", device.UDID)
-		// fmt.Println(device)
-
 	}
-	// fmt.Println(device)
-	// GetDevice(device.UDID)
 	return &device
 }
 
@@ -74,10 +65,10 @@ func GetDeviceSerial(serial string) types.Device {
 }
 
 func GetAllDevices() []types.Device {
-	var device types.Device
+	// var device types.Device
 	var devices []types.Device
 
-	err := db.DB.Model(device).Find(&devices).Scan(&devices).Error
+	err := db.DB.Find(&devices).Scan(&devices).Error
 	if err != nil {
 		fmt.Println(err)
 		log.Print("Couldn't scan to Device model")

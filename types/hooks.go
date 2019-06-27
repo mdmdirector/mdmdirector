@@ -1,7 +1,6 @@
 package types
 
 import (
-	"fmt"
 	"log"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 func BumpDeviceLastUpdated(udid string) {
 	t := time.Now()
-	fmt.Println("Setting device lastupdated to", t)
 	var device Device
 	err := db.DB.Model(&device).Where("ud_id = ?", udid).Updates(Device{
 		UpdatedAt: t,

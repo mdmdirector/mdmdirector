@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -48,7 +49,7 @@ func ProfileHandler(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 		}
 
-		profile.MobileconfigData = mobileconfig
+		sharedProfile.MobileconfigData = mobileconfig
 		sharedProfile.MobileconfigHash = hash[:]
 		sharedProfiles = append(sharedProfiles, sharedProfile)
 	}
@@ -59,6 +60,7 @@ func ProfileHandler(w http.ResponseWriter, r *http.Request) {
 			// Targeting all devices
 			if out.DeviceUUIDs[0] == "*" {
 				devices = GetAllDevices()
+				SaveSharedProfiles(sharedProfiles)
 				ProcessSharedProfiles(devices, sharedProfiles)
 			} else {
 				for _, item := range out.DeviceUUIDs {
@@ -74,6 +76,7 @@ func ProfileHandler(w http.ResponseWriter, r *http.Request) {
 			// Targeting all devices
 			if out.SerialNumbers[0] == "*" {
 				devices = GetAllDevices()
+				SaveSharedProfiles(sharedProfiles)
 				ProcessSharedProfiles(devices, sharedProfiles)
 			} else {
 				for _, item := range out.SerialNumbers {
@@ -115,19 +118,35 @@ func ProcessProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	}
 }
 
-func ProcessSharedProfiles(devices []types.Device, profiles []types.SharedProfile) {
+func SaveSharedProfiles(profiles []types.SharedProfile) {
 	var profile types.SharedProfile
-	for _, device := range devices {
-
-		tx := db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID)
-
-		for _, profileData := range profiles {
-			if profileData.PayloadIdentifier != "" {
-				tx = tx.Where("payload_identifier = ?", profileData.PayloadIdentifier)
-			}
+	if len(profiles) == 0 {
+		return
+	}
+	tx := db.DB.Model(&profile)
+	for _, profileData := range profiles {
+		if profileData.PayloadIdentifier != "" {
+			tx = tx.Where("payload_identifier = ?", profileData.PayloadIdentifier)
 		}
-		tx.Delete(&profile)
-		db.DB.Model(&device).Association("Profiles").Append(profiles)
+	}
+	err := tx.Delete(&profile).Error
+	if err != nil {
+		fmt.Print(err)
+	}
+	tx2 := db.DB.Model(&profile)
+	for _, profileData := range profiles {
+		tx2 = tx2.Create(&profileData)
+	}
+
+	err = tx2.Error
+	if err != nil {
+		fmt.Print(err)
+	}
+	// db.DB.Create(&profiles)
+}
+
+func ProcessSharedProfiles(devices []types.Device, profiles []types.SharedProfile) {
+	for _, device := range devices {
 
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
@@ -172,7 +191,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	devices = append(devices, device)
 	ProcessProfiles(devices, profilesToInstall)
 
-	err = db.DB.Model(&sharedProfile).Where("device_ud_id = ?", device.UDID).Scan(&sharedProfiles).Error
+	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Scan(&sharedProfiles).Error
 	if err != nil {
 		log.Print(err)
 	}
