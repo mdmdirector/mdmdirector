@@ -57,6 +57,7 @@ func main() {
 
 	go director.RetryCommands()
 	go director.ScheduledCheckin()
+	go director.FetchDevicesFromMDM()
 
 	log.Print(http.ListenAndServe(":"+port, nil))
 }

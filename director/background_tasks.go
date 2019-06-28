@@ -1,6 +1,9 @@
 package director
 
 import (
+	"bytes"
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -38,7 +41,8 @@ func RetryCommands() {
 func sendPush() {
 	var command types.Command
 	var commands []types.Command
-	err := db.DB.Model(&command).Where("status = ?", "NotNow").Scan(&commands).Error
+	// err := db.DB.Model(&command).Where("status = ?", "NotNow").Scan(&commands).Error
+	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
 	if err != nil {
 		log.Print(err)
 	}
@@ -46,6 +50,7 @@ func sendPush() {
 	client := &http.Client{}
 
 	for _, queuedCommand := range commands {
+		log.Print("Sending push to ", queuedCommand.DeviceUDID)
 		endpoint, err := url.Parse(utils.ServerURL())
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
@@ -101,4 +106,48 @@ func processCheckin() {
 		SendCommand(commandPayload)
 
 	}
+}
+
+func FetchDevicesFromMDM() {
+
+	var deviceModel types.Device
+	// var deviceFromMDM types.DeviceFromMDM
+	var devices types.DevicesFromMDM
+
+	client := &http.Client{}
+	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint.Path = path.Join(endpoint.Path, "v1", "devices")
+
+	req, err := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
+	req.SetBasicAuth("micromdm", utils.ApiKey())
+	log.Print(endpoint.String())
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Print(err)
+	}
+
+	defer resp.Body.Close()
+
+	responseData, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Print(err)
+	}
+
+	err = json.Unmarshal(responseData, &devices)
+	if err != nil {
+		log.Print(err)
+	}
+
+	for _, newDevice := range devices.Devices {
+		var device types.Device
+		device.UDID = newDevice.UDID
+		device.SerialNumber = newDevice.SerialNumber
+		device.Active = newDevice.EnrollmentStatus
+		err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).FirstOrCreate(&device).Error
+		if err != nil {
+			log.Print(err)
+		}
+
+	}
+
 }
