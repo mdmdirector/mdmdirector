@@ -1,0 +1,12 @@
+#!/bin/bash
+
+endpoint="http://localhost:8000/profile"
+jq -n \
+  --arg udid "$1" \
+  --arg payload_identifier "$2" \
+  --arg identifier "$3" \
+  '.udids = [$udid]
+  |.profiles[0].uuid = $identifier
+  |.profiles[0].payload_identifier = $payload_identifier
+  '|\
+  curl -X DELETE "$endpoint" -d@-

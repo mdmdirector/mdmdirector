@@ -8,6 +8,7 @@ type DeviceProfile struct {
 	MobileconfigData  []byte
 	MobileconfigHash  []byte
 	DeviceUDID        string
+	Installed         bool `gorm:"default:true"`
 }
 
 // SharedProfile (s) are profiles that go on every device.
@@ -17,13 +18,25 @@ type SharedProfile struct {
 	PayloadIdentifier string
 	MobileconfigData  []byte
 	MobileconfigHash  []byte
+	Installed         bool `gorm:"default:true"`
 }
 
 // ProfilePayload - struct to unpack the payload sent to mdmdirector
 type ProfilePayload struct {
 	SerialNumbers []string `json:"serial_numbers,omitempty"`
-	DeviceUUIDs   []string `json:"udids,omitempty"`
+	DeviceUDIDs   []string `json:"udids,omitempty"`
 	Mobileconfigs []string `json:"profiles"`
+}
+
+type DeleteProfilePayload struct {
+	SerialNumbers []string                     `json:"serial_numbers,omitempty"`
+	DeviceUDIDs   []string                     `json:"udids,omitempty"`
+	Mobileconfigs []DeletedMobileconfigPayload `json:"profiles"`
+}
+
+type DeletedMobileconfigPayload struct {
+	UUID              string `json:"uuid"`
+	PayloadIdentifier string `json:"payload_identifier"`
 }
 
 // ProfileList - returned data from the ProfileList MDM command

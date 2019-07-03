@@ -59,9 +59,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
 	} else {
 
 		err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
-			// CommandUUID: ackEvent.CommandUUID,
 			Status: ackEvent.Status,
-			// DeviceUDID:  device.UDID,
 		}).Error
 		if err != nil {
 			log.Print(err)

@@ -9,6 +9,9 @@ import (
 
 func BumpDeviceLastUpdated(udid string) {
 	t := time.Now()
+	if udid == "" {
+		return
+	}
 	var device Device
 	err := db.DB.Model(&device).Where("ud_id = ?", udid).Updates(Device{
 		UpdatedAt: t,

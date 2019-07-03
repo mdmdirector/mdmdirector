@@ -41,7 +41,10 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/webhook", director.WebhookHandler).Methods("POST")
-	r.HandleFunc("/profile/push", director.ProfileHandler).Methods("POST")
+	r.HandleFunc("/profile", director.PostProfileHandler).Methods("POST")
+	r.HandleFunc("/profile", director.DeleteProfileHandler).Methods("DELETE")
+	r.HandleFunc("/profile/{udid}", director.GetDeviceProfiles).Methods("GET")
+	r.HandleFunc("/device", director.DeviceHandler).Methods("GET")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
@@ -51,7 +54,16 @@ func main() {
 
 	db.DB.LogMode(debugMode)
 
-	db.DB.AutoMigrate(&types.Device{}, &types.DeviceProfile{}, &types.Command{}, &types.SharedProfile{})
+	db.DB.AutoMigrate(
+		&types.Device{},
+		&types.DeviceProfile{},
+		&types.Command{},
+		&types.SharedProfile{},
+		&types.SecurityInfo{},
+		&types.FirmwarePasswordStatus{},
+		&types.ManagementStatus{},
+		&types.OSUpdateSettings{},
+	)
 
 	fmt.Println("mdmdirector is running, hold onto your butts...")
 

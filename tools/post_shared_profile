@@ -1,6 +1,6 @@
 #!/bin/bash
 
-endpoint="http://localhost:8000/profile/push"
+endpoint="http://localhost:8000/profile"
 jq -n \
   --arg payload "$(cat "$1"|openssl base64 -A)" \
   '.udids = ["*"]

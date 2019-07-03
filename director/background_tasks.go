@@ -41,7 +41,6 @@ func RetryCommands() {
 func sendPush() {
 	var command types.Command
 	var commands []types.Command
-	// err := db.DB.Model(&command).Where("status = ?", "NotNow").Scan(&commands).Error
 	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
 	if err != nil {
 		log.Print(err)
@@ -50,7 +49,7 @@ func sendPush() {
 	client := &http.Client{}
 
 	for _, queuedCommand := range commands {
-		log.Print("Sending push to ", queuedCommand.DeviceUDID)
+
 		endpoint, err := url.Parse(utils.ServerURL())
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
@@ -104,7 +103,8 @@ func processCheckin() {
 		commandPayload.RequestType = "ProfileList"
 
 		SendCommand(commandPayload)
-
+		RequestSecurityInfo(staleDevice)
+		RequestDeviceInformation(staleDevice)
 	}
 }
 
