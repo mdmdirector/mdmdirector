@@ -21,6 +21,18 @@ var MicroMDMAPIKey string
 //MicroMDMUsername is the username for your MicroMDM server
 var MicroMDMUsername = "micromdm"
 
+// Sign is whether profiles should be signed (they really should)
+var Sign bool
+
+// KeyPassword is the password for the private key
+var KeyPassword string
+
+// KeyPath is the path for the private key
+var KeyPath string
+
+// CertPath is the path for the signing cert or p12 file
+var CertPath string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -28,6 +40,10 @@ func main() {
 	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
 	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
 	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", "", "MicroMDM Server API Key")
+	flag.BoolVar(&Sign, "sign", false, "Sign profiles prior to sending to MicroMDM.")
+	flag.StringVar(&KeyPassword, "password", "", "Password to encrypt/read the signing key(optional) or p12 file.")
+	flag.StringVar(&KeyPath, "private-key", "", "Path to the signing private key. Don't use with p12 file.")
+	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
 
 	flag.Parse()
 

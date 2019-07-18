@@ -2,3 +2,4 @@ settings.json
 build/*
 *.db
 postgres/*
+*.p12

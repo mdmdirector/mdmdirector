@@ -16,3 +16,19 @@ func ApiKey() string {
 func DebugMode() bool {
 	return flag.Lookup("debug").Value.(flag.Getter).Get().(bool)
 }
+
+func Sign() bool {
+	return flag.Lookup("sign").Value.(flag.Getter).Get().(bool)
+}
+
+func KeyPassword() string {
+	return flag.Lookup("password").Value.(flag.Getter).Get().(string)
+}
+
+func KeyPath() string {
+	return flag.Lookup("private-key").Value.(flag.Getter).Get().(string)
+}
+
+func CertPath() string {
+	return flag.Lookup("cert").Value.(flag.Getter).Get().(string)
+}

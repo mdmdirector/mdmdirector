@@ -68,7 +68,7 @@ func sendPush() {
 func ScheduledCheckin() {
 	var delay time.Duration
 	if utils.DebugMode() {
-		delay = 60
+		delay = 5
 	} else {
 		delay = 7200
 	}
@@ -91,7 +91,12 @@ func ScheduledCheckin() {
 func processCheckin() {
 	var devices []types.Device
 	var device types.Device
+
 	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+
+	if utils.DebugMode() {
+		twoHoursAgo = time.Now().Add(-20 * time.Second)
+	}
 	err := db.DB.Model(&device).Where("updated_at < ? AND active = ?", twoHoursAgo, true).Scan(&devices).Error
 	if err != nil {
 		log.Print(err)
@@ -120,7 +125,7 @@ func FetchDevicesFromMDM() {
 
 	req, err := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
 	req.SetBasicAuth("micromdm", utils.ApiKey())
-	log.Print(endpoint.String())
+	// log.Print(endpoint.String())
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Print(err)

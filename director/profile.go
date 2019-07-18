@@ -1,17 +1,27 @@
 package director
 
 import (
+	"crypto"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
 
+	"github.com/fullsailor/pkcs7"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
+	"github.com/pkg/errors"
+	"golang.org/x/crypto/pkcs12"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +47,21 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			log.Print(err)
 		}
 
+		var tempProfileDict map[string]interface{}
+		err = plist.Unmarshal(mobileconfig, &tempProfileDict)
+		if err != nil {
+			log.Print(err)
+		}
+
+		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
+
+		tempProfileDict["PayloadUUID"] = profile.HashedPayloadUUID
+
+		mobileconfig, err = plist.MarshalIndent(&tempProfileDict, "\t")
+		if err != nil {
+			log.Print(err)
+		}
+
 		profile.MobileconfigData = mobileconfig
 		mobileconfigData := []byte(mobileconfig)
 		hash := sha256.Sum256(mobileconfigData)
@@ -45,6 +70,21 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		profiles = append(profiles, profile)
 
 		err = plist.Unmarshal(mobileconfig, &sharedProfile)
+		if err != nil {
+			log.Print(err)
+		}
+
+		sharedProfile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
+
+		var sharedTempProfileDict map[string]interface{}
+		err = plist.Unmarshal(mobileconfig, &sharedTempProfileDict)
+		if err != nil {
+			log.Print(err)
+		}
+
+		sharedTempProfileDict["PayloadUUID"] = sharedProfile.HashedPayloadUUID
+
+		mobileconfig, err = plist.MarshalIndent(&sharedTempProfileDict, "\t")
 		if err != nil {
 			log.Print(err)
 		}
@@ -133,7 +173,6 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 					err := db.DB.Model(&profilesModel).Where("payload_uuid = ? and payload_identifier = ? and device_ud_id IN (?)", profile.UUID, profile.PayloadIdentifier, deviceIds).Update("installed", false).Scan(&profiles).Error
 					if err != nil {
 						log.Print(err)
-						log.Print("fuckfuckfuck")
 						continue
 					}
 
@@ -162,8 +201,20 @@ func ProcessProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 			var commandPayload types.CommandPayload
 
 			commandPayload.RequestType = "InstallProfile"
-			// Next job: sign this
-			commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+			if utils.Sign() == true {
+				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
+				if err != nil {
+					log.Printf("loading signing certificate and private key: %v", err)
+				}
+				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
+				if err != nil {
+					log.Printf("signing profile with the specified key: %v", err)
+				}
+
+				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
+			} else {
+				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+			}
 
 			commandPayload.UDID = device.UDID
 
@@ -233,8 +284,21 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 			// var jsonString []byte
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
-			// Next job: sign this
-			commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+
+			if utils.Sign() == true {
+				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
+				if err != nil {
+					log.Printf("loading signing certificate and private key: %v", err)
+				}
+				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
+				if err != nil {
+					log.Printf("signing profile with the specified key: %v", err)
+				}
+
+				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
+			} else {
+				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+			}
 
 			SendCommand(commandPayload)
 
@@ -261,7 +325,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	// For each, loop over the present profiles
 	for _, savedProfile := range profiles {
 		for _, incomingProfile := range profileListData.ProfileList {
-			if savedProfile.PayloadUUID != incomingProfile.PayloadUUID || savedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
+			if savedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID || savedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				profilesToInstall = append(profilesToInstall, savedProfile)
 			}
@@ -278,7 +342,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	for _, savedSharedProfile := range sharedProfiles {
 		for _, incomingProfile := range profileListData.ProfileList {
-			if savedSharedProfile.PayloadUUID != incomingProfile.PayloadUUID || savedSharedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
+			if savedSharedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID || savedSharedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				sharedProfilesToInstall = append(sharedProfilesToInstall, savedSharedProfile)
 			}
@@ -306,4 +370,69 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 
 	w.Write(output)
 
+}
+
+// Sign takes an unsigned payload and signs it with the provided private key and certificate.
+func SignProfile(key crypto.PrivateKey, cert *x509.Certificate, mobileconfig []byte) ([]byte, error) {
+	sd, err := pkcs7.NewSignedData(mobileconfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "create signed data for mobileconfig")
+	}
+
+	if err := sd.AddSigner(cert, key, pkcs7.SignerInfoConfig{}); err != nil {
+		return nil, errors.Wrap(err, "add crypto signer to mobileconfig signed data")
+	}
+
+	signedMobileconfig, err := sd.Finish()
+	return signedMobileconfig, errors.Wrap(err, "complete mobileconfig signing")
+}
+
+func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509.Certificate, error) {
+	certData, err := ioutil.ReadFile(certPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	isP12 := filepath.Ext(certPath) == ".p12"
+	if isP12 {
+		pkey, cert, err := pkcs12.Decode(certData, keyPass)
+		return pkey, cert, errors.Wrap(err, "decode p12 contents")
+	}
+
+	keyData, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "read key from file")
+	}
+
+	keyDataBlock, _ := pem.Decode(keyData)
+	if keyDataBlock == nil {
+		return nil, nil, errors.Errorf("invalid PEM data for private key %s", keyPath)
+	}
+	var pemKeyData []byte
+	if x509.IsEncryptedPEMBlock(keyDataBlock) {
+		b, err := x509.DecryptPEMBlock(keyDataBlock, []byte(keyPass))
+		if err != nil {
+			return nil, nil, fmt.Errorf("decrypting DES private key %s", err)
+		}
+		pemKeyData = b
+	} else {
+		pemKeyData = keyDataBlock.Bytes
+	}
+
+	priv, err := x509.ParsePKCS1PrivateKey(pemKeyData)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "parse private key")
+	}
+
+	pub, _ := pem.Decode(certData)
+	if pub == nil {
+		return nil, nil, errors.Errorf("invalid PEM data for certificate %q", certPath)
+	}
+
+	cert, err := x509.ParseCertificate(pub.Bytes)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "parse PEM certificate data")
+	}
+
+	return priv, cert, nil
 }

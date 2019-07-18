@@ -5,6 +5,7 @@ type DeviceProfile struct {
 	ID                uint `gorm:"primary_key"`
 	PayloadUUID       string
 	PayloadIdentifier string
+	HashedPayloadUUID string
 	MobileconfigData  []byte
 	MobileconfigHash  []byte
 	DeviceUDID        string
@@ -15,6 +16,7 @@ type DeviceProfile struct {
 type SharedProfile struct {
 	ID                uint `gorm:"primary_key"`
 	PayloadUUID       string
+	HashedPayloadUUID string
 	PayloadIdentifier string
 	MobileconfigData  []byte
 	MobileconfigHash  []byte

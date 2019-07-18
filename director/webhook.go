@@ -35,9 +35,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// We need to wait for the token update to get here before we can send commands
 	if out.Topic == "mdm.Authenticate" {
 		device.TokenUpdateRecieved = false
-	}
-
-	if out.Topic == "mdm.TokenUpdate" {
+	} else {
 		device.TokenUpdateRecieved = true
 	}
 
@@ -99,8 +97,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Print(err)
 			}
-			// fmt.Print(string(out.AcknowledgeEvent.RawPayload))
-			// fmt.Print(deviceInformationQueryResponses.QueryResponses)
 			UpdateDevice(deviceInformationQueryResponses.QueryResponses)
 		}
 
