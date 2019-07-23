@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/grahamgilbert/mdmdirector/types"
-	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
 )
 
@@ -37,10 +36,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.AuthenticateRecieved = true
 		device.TokenUpdateRecieved = false
 		device.InitialTasksRun = false
-		log.Print("First auth here")
-		utils.PrintStruct(device)
+		// log.Print("First auth here")
+		// utils.PrintStruct(device)
 	} else if out.Topic == "mdm.TokenUpdate" {
-		log.Print("Token update")
+		// log.Print("Token update")
 		device.TokenUpdateRecieved = true
 		device.AuthenticateRecieved = true
 	}

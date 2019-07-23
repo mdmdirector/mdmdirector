@@ -341,11 +341,16 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	for _, savedSharedProfile := range sharedProfiles {
+		var found = false
 		for _, incomingProfile := range profileListData.ProfileList {
-			if savedSharedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID || savedSharedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
-				// If missing, queue up to be installed
-				sharedProfilesToInstall = append(sharedProfilesToInstall, savedSharedProfile)
+			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID {
+				found = true
+				continue
 			}
+		}
+
+		if found == false {
+			sharedProfilesToInstall = append(sharedProfilesToInstall, savedSharedProfile)
 		}
 	}
 

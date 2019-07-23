@@ -30,13 +30,15 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 		if err != nil {
 			log.Print(err)
 		}
-		if newDevice.InitialTasksRun == false {
-			RunInitialTasks(newDevice.UDID)
-		}
+
 	}
 	err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&newDevice).Error
 	if err != nil {
 		log.Print(err)
+	}
+
+	if newDevice.InitialTasksRun == false && newDevice.TokenUpdateRecieved == true {
+		RunInitialTasks(newDevice.UDID)
 	}
 
 	return &newDevice
