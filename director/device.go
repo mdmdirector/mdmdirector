@@ -30,6 +30,9 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 		if err != nil {
 			log.Print(err)
 		}
+		if newDevice.InitialTasksRun == false {
+			RunInitialTasks(newDevice.UDID)
+		}
 	}
 	err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&newDevice).Error
 	if err != nil {
@@ -88,9 +91,15 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RequestDeviceInformation(device types.Device) {
+	var requestType = "DeviceInformation"
+	inQueue := CommandInQueue(device, requestType)
+	if inQueue {
+		log.Printf("%v is already in queue for %v", requestType, device.UDID)
+		return
+	}
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
-	payload.RequestType = "DeviceInformation"
+	payload.RequestType = requestType
 	payload.Queries = types.DeviceInformationQueries
 	SendCommand(payload)
 }

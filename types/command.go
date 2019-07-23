@@ -25,9 +25,10 @@ func (command *Command) AfterUpdate() (err error) {
 type CommandPayload struct {
 	UDID        string   `json:"udid"`
 	RequestType string   `json:"request_type"`
-	Payload     string   `json:"payload"`
-	Queries     []string `json:"Queries"`
-	Identifier  string   `json:"identifier"`
+	Payload     string   `json:"payload,omitempty"`
+	Queries     []string `json:"Queries,omitempty"`
+	Identifier  string   `json:"identifier,omitempty"`
+	ManifestURL string   `json:"manifest_url,omitempty"`
 }
 
 type CommandResponse struct {

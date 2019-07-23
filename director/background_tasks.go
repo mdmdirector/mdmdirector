@@ -67,11 +67,7 @@ func sendPush() {
 
 func ScheduledCheckin() {
 	var delay time.Duration
-	if utils.DebugMode() {
-		delay = 5
-	} else {
-		delay = 7200
-	}
+	delay = 10
 	ticker := time.NewTicker(delay * time.Second)
 	defer ticker.Stop()
 	fn := func() {
@@ -95,7 +91,7 @@ func processCheckin() {
 	twoHoursAgo := time.Now().Add(-2 * time.Hour)
 
 	if utils.DebugMode() {
-		twoHoursAgo = time.Now().Add(-20 * time.Second)
+		twoHoursAgo = time.Now().Add(-2 * time.Minute)
 	}
 	err := db.DB.Model(&device).Where("updated_at < ? AND active = ?", twoHoursAgo, true).Scan(&devices).Error
 	if err != nil {
@@ -103,11 +99,7 @@ func processCheckin() {
 	}
 
 	for _, staleDevice := range devices {
-		var commandPayload types.CommandPayload
-		commandPayload.UDID = staleDevice.UDID
-		commandPayload.RequestType = "ProfileList"
-
-		SendCommand(commandPayload)
+		RequestProfileList(staleDevice)
 		RequestSecurityInfo(staleDevice)
 		RequestDeviceInformation(staleDevice)
 	}
@@ -116,7 +108,6 @@ func processCheckin() {
 func FetchDevicesFromMDM() {
 
 	var deviceModel types.Device
-	// var deviceFromMDM types.DeviceFromMDM
 	var devices types.DevicesFromMDM
 
 	client := &http.Client{}
@@ -148,6 +139,11 @@ func FetchDevicesFromMDM() {
 		device.UDID = newDevice.UDID
 		device.SerialNumber = newDevice.SerialNumber
 		device.Active = newDevice.EnrollmentStatus
+		if newDevice.EnrollmentStatus == true {
+			device.AuthenticateRecieved = true
+			device.TokenUpdateRecieved = true
+			device.InitialTasksRun = true
+		}
 		err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).FirstOrCreate(&device).Error
 		if err != nil {
 			log.Print(err)

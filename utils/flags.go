@@ -32,3 +32,7 @@ func KeyPath() string {
 func CertPath() string {
 	return flag.Lookup("cert").Value.(flag.Getter).Get().(string)
 }
+
+func PushOnNewBuild() bool {
+	return flag.Lookup("push-new-build").Value.(flag.Getter).Get().(bool)
+}

@@ -66,11 +66,14 @@ type Device struct {
 	EthernetMAC              string
 	UDID                     string `gorm:"primary_key"`
 	Active                   bool
-	Profiles                 []DeviceProfile `gorm:"ForeignKey:DeviceUDID"`
-	Commands                 []Command       `gorm:"ForeignKey:DeviceUDID"`
-	SecurityInfo             SecurityInfo    `gorm:"ForeignKey:DeviceUDID"`
+	Profiles                 []DeviceProfile            `gorm:"ForeignKey:DeviceUDID"`
+	Commands                 []Command                  `gorm:"ForeignKey:DeviceUDID"`
+	InstallApplications      []DeviceInstallApplication `gorm:"ForeignKey:DeviceUDID"`
+	SecurityInfo             SecurityInfo               `gorm:"ForeignKey:DeviceUDID"`
 	UpdatedAt                time.Time
-	TokenUpdateRecieved      bool
+	AuthenticateRecieved     bool `gorm:"default:false"`
+	TokenUpdateRecieved      bool `gorm:"default:false"`
+	InitialTasksRun          bool `gorm:"default:false"`
 }
 
 var DeviceInformationQueries = []string{"ActiveManagedUsers", "AppAnalyticsEnabled", "AutoSetupAdminAccounts", "AvailableDeviceCapacity", "AwaitingConfiguration", "BatteryLevel", "BluetoothMAC", "BuildVersion", "CarrierSettingsVersion", "CellularTechnology", "CurrentMCC", "CurrentMNC", "DataRoamingEnabled", "DeviceCapacity", "DeviceID", "DeviceName", "DiagnosticSubmissionEnabled", "EASDeviceIdentifier", "ICCID", "IMEI", "IsActivationLockEnabled", "IsCloudBackupEnabled", "IsDeviceLocatorServiceEnabled", "IsDoNotDisturbInEffect", "IsMDMLostModeEnabled", "IsMultiUser", "IsNetworkTethered", "IsRoaming", "IsSupervised", "iTunesStoreAccountHash", "iTunesStoreAccountIsActive", "LastCloudBackupDate", "MaximumResidentUsers", "MDMOptions", "MEID", "Model", "ModelName", "ModemFirmwareVersion", "OrganizationInfo", "OSUpdateSettings", "OSVersion", "PersonalHotspotEnabled", "PhoneNumber", "ProductName", "PushToken", "SerialNumber", "ServiceSubscriptions", "SIMCarrierNetwork", "SIMMCC", "SIMMNC", "SubscriberCarrierNetwork", "SubscriberMCC", "SubscriberMNC", "SystemIntegrityProtectionEnabled", "UDID", "VoiceRoamingEnabled", "WiFiMAC", "EthernetMAC"}

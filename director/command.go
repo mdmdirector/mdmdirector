@@ -66,3 +66,17 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
 		}
 	}
 }
+
+func CommandInQueue(device types.Device, command string) bool {
+	var commandModel types.Command
+
+	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ?", device.UDID, command).Where("status = ? OR status = ?", "", "NotNow").First(&commandModel).Error
+	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			return false
+		}
+	}
+
+	return true
+
+}

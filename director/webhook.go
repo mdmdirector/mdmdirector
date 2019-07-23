@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
 )
 
@@ -32,18 +33,23 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.Active = true
 	}
 
-	// We need to wait for the token update to get here before we can send commands
 	if out.Topic == "mdm.Authenticate" {
+		device.AuthenticateRecieved = true
 		device.TokenUpdateRecieved = false
-	} else {
+		device.InitialTasksRun = false
+		log.Print("First auth here")
+		utils.PrintStruct(device)
+	} else if out.Topic == "mdm.TokenUpdate" {
+		log.Print("Token update")
 		device.TokenUpdateRecieved = true
+		device.AuthenticateRecieved = true
 	}
 
 	UpdateDevice(device)
 
-	if device.TokenUpdateRecieved == false {
-		return
-	}
+	// if device.TokenUpdateRecieved == false {
+	// 	return
+	// }
 
 	if out.AcknowledgeEvent != nil {
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)

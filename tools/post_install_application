@@ -1,0 +1,11 @@
+#!/bin/bash
+
+endpoint="http://localhost:8000/installapplication"
+jq -n \
+  --arg udid "$1" \
+  --arg manifesturl "$2" \
+  '.udids = [$udid]
+  |.manifest_urls[0].url = $manifesturl
+  |.manifest_urls[0].bootstrap_only = "false"
+  '|\
+  curl -X POST "$endpoint" -d@-

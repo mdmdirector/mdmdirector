@@ -436,3 +436,18 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 
 	return priv, cert, nil
 }
+
+func RequestProfileList(device types.Device) {
+	var requestType = "ProfileList"
+	inQueue := CommandInQueue(device, requestType)
+	if inQueue {
+		log.Printf("%v is already in queue for %v", requestType, device.UDID)
+		return
+	}
+
+	var commandPayload types.CommandPayload
+	commandPayload.UDID = device.UDID
+	commandPayload.RequestType = requestType
+
+	SendCommand(commandPayload)
+}

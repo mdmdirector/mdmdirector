@@ -10,6 +10,7 @@ import (
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/director"
 	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/grahamgilbert/mdmdirector/utils"
 )
 
 // MicroMDMURL is the url for your MicroMDM server
@@ -33,10 +34,16 @@ var KeyPath string
 // CertPath is the path for the signing cert or p12 file
 var CertPath string
 
+// PushNewBuild is whether to push all profiles if the device's build number changes
+var PushNewBuild bool
+
+const BasicAuthUser = "mdmdirector"
+
 func main() {
 	var port string
 	var debugMode bool
 	flag.BoolVar(&debugMode, "debug", false, "Enable debug output")
+	flag.BoolVar(&PushNewBuild, "push-new-build", false, "Re-push profiles if the device's build number changes.")
 	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
 	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
 	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", "", "MicroMDM Server API Key")
@@ -60,7 +67,8 @@ func main() {
 	r.HandleFunc("/profile", director.PostProfileHandler).Methods("POST")
 	r.HandleFunc("/profile", director.DeleteProfileHandler).Methods("DELETE")
 	r.HandleFunc("/profile/{udid}", director.GetDeviceProfiles).Methods("GET")
-	r.HandleFunc("/device", director.DeviceHandler).Methods("GET")
+	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler, BasicAuthUser, "123456", "Please enter your username and password for this site")).Methods("GET")
+	r.HandleFunc("/installapplication", director.PostInstallApplicationHandler).Methods("POST")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
@@ -79,6 +87,8 @@ func main() {
 		&types.FirmwarePasswordStatus{},
 		&types.ManagementStatus{},
 		&types.OSUpdateSettings{},
+		&types.SharedInstallApplication{},
+		&types.DeviceInstallApplication{},
 	)
 
 	fmt.Println("mdmdirector is running, hold onto your butts...")
