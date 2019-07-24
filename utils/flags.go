@@ -44,3 +44,7 @@ func GetBasicAuthUser() string {
 func GetBasicAuthPassword() string {
 	return flag.Lookup("password").Value.(flag.Getter).Get().(string)
 }
+
+func DBConnectionString() string {
+	return flag.Lookup("dbconnection").Value.(flag.Getter).Get().(string)
+}

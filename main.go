@@ -41,6 +41,9 @@ var BasicAuthUser = utils.GetBasicAuthUser()
 // BasicAuthPass is the password used for basic auth
 var BasicAuthPass string
 
+// DBConnectionString is used to connect to the datbase
+var DBConnectionString string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -54,7 +57,7 @@ func main() {
 	flag.StringVar(&KeyPath, "private-key", "", "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", "", "Password used for basic authentication")
-
+	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
 	flag.Parse()
 
 	if MicroMDMURL == "" {
@@ -67,6 +70,10 @@ func main() {
 
 	if BasicAuthPass == "" {
 		log.Fatal("Basic Auth password missing. Exiting.")
+	}
+
+	if DBConnectionString == "" {
+		log.Fatal("Database details missing. Exiting.")
 	}
 
 	r := mux.NewRouter()
