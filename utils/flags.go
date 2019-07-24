@@ -22,7 +22,7 @@ func Sign() bool {
 }
 
 func KeyPassword() string {
-	return flag.Lookup("password").Value.(flag.Getter).Get().(string)
+	return flag.Lookup("key-password").Value.(flag.Getter).Get().(string)
 }
 
 func KeyPath() string {
@@ -35,4 +35,12 @@ func CertPath() string {
 
 func PushOnNewBuild() bool {
 	return flag.Lookup("push-new-build").Value.(flag.Getter).Get().(bool)
+}
+
+func GetBasicAuthUser() string {
+	return "mdmdirector"
+}
+
+func GetBasicAuthPassword() string {
+	return flag.Lookup("password").Value.(flag.Getter).Get().(string)
 }

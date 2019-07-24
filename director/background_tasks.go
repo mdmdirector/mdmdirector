@@ -65,13 +65,31 @@ func sendPush() {
 	}
 }
 
+func pushDevice(udid string) {
+
+	client := &http.Client{}
+
+	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint.Path = path.Join(endpoint.Path, "push", udid)
+	req, err := http.NewRequest("GET", endpoint.String(), nil)
+	req.SetBasicAuth("micromdm", utils.ApiKey())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Print(err)
+	}
+
+	resp.Body.Close()
+}
+
 func ScheduledCheckin() {
 	var delay time.Duration
 	delay = 10
 	ticker := time.NewTicker(delay * time.Second)
 	defer ticker.Stop()
 	fn := func() {
-		processCheckin()
+		processScheduledCheckin()
+		clearCommands()
 	}
 
 	fn()
@@ -84,9 +102,11 @@ func ScheduledCheckin() {
 	}
 }
 
-func processCheckin() {
+func processScheduledCheckin() {
 	var devices []types.Device
 	var device types.Device
+	var awaitingConfigDevices []types.Device
+	var awaitingConfigDevice types.Device
 
 	twoHoursAgo := time.Now().Add(-2 * time.Hour)
 
@@ -102,6 +122,23 @@ func processCheckin() {
 		RequestProfileList(staleDevice)
 		RequestSecurityInfo(staleDevice)
 		RequestDeviceInformation(staleDevice)
+		pushDevice(staleDevice.UDID)
+	}
+
+	thirtySecondsAgo := time.Now().Add(-30 * time.Second)
+
+	err = db.DB.Model(&awaitingConfigDevice).Where("updated_at < ? AND awaiting_configuration = ? AND initial_tasks_run = ?", thirtySecondsAgo, true, false).Scan(&awaitingConfigDevices).Error
+	if err != nil {
+		log.Print(err)
+	}
+
+	if len(awaitingConfigDevices) == 0 {
+		return
+	}
+
+	for _, unconfiguredDevice := range awaitingConfigDevices {
+		log.Print("Running initial tasks due to schedule")
+		RunInitialTasks(unconfiguredDevice.UDID)
 	}
 }
 
@@ -151,4 +188,19 @@ func FetchDevicesFromMDM() {
 
 	}
 
+}
+
+func clearCommands() {
+	var command types.Command
+	var commands []types.Command
+	twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
+
+	if utils.DebugMode() {
+		twentyFourHoursAgo = time.Now().Add(-5 * time.Minute)
+	}
+
+	err := db.DB.Model(&command).Where("updated_at < ?", twentyFourHoursAgo).Where("status = ? OR status = ?", "", "NotNow").Delete(&commands).Error
+	if err != nil {
+		log.Print(err)
+	}
 }

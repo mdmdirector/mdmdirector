@@ -6,4 +6,4 @@ jq -n \
   '.udids = ["*"]
   |.profiles = [$payload]
   '|\
-  curl -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-

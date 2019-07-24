@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -37,7 +36,10 @@ var CertPath string
 // PushNewBuild is whether to push all profiles if the device's build number changes
 var PushNewBuild bool
 
-const BasicAuthUser = "mdmdirector"
+var BasicAuthUser = utils.GetBasicAuthUser()
+
+// BasicAuthPass is the password used for basic auth
+var BasicAuthPass string
 
 func main() {
 	var port string
@@ -48,9 +50,10 @@ func main() {
 	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
 	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", "", "MicroMDM Server API Key")
 	flag.BoolVar(&Sign, "sign", false, "Sign profiles prior to sending to MicroMDM.")
-	flag.StringVar(&KeyPassword, "password", "", "Password to encrypt/read the signing key(optional) or p12 file.")
+	flag.StringVar(&KeyPassword, "key-password", "", "Password to encrypt/read the signing key(optional) or p12 file.")
 	flag.StringVar(&KeyPath, "private-key", "", "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
+	flag.StringVar(&BasicAuthPass, "password", "", "Password used for basic authentication")
 
 	flag.Parse()
 
@@ -62,13 +65,17 @@ func main() {
 		log.Fatal("MicroMDM API Key missing. Exiting.")
 	}
 
+	if BasicAuthPass == "" {
+		log.Fatal("Basic Auth password missing. Exiting.")
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/webhook", director.WebhookHandler).Methods("POST")
-	r.HandleFunc("/profile", director.PostProfileHandler).Methods("POST")
-	r.HandleFunc("/profile", director.DeleteProfileHandler).Methods("DELETE")
-	r.HandleFunc("/profile/{udid}", director.GetDeviceProfiles).Methods("GET")
-	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler, BasicAuthUser, "123456", "Please enter your username and password for this site")).Methods("GET")
-	r.HandleFunc("/installapplication", director.PostInstallApplicationHandler).Methods("POST")
+	r.HandleFunc("/profile", utils.BasicAuth(director.PostProfileHandler)).Methods("POST")
+	r.HandleFunc("/profile", utils.BasicAuth(director.DeleteProfileHandler)).Methods("DELETE")
+	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
+	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
@@ -76,7 +83,7 @@ func main() {
 	}
 	defer db.Close()
 
-	db.DB.LogMode(debugMode)
+	// db.DB.LogMode(debugMode)
 
 	db.DB.AutoMigrate(
 		&types.Device{},
@@ -91,7 +98,7 @@ func main() {
 		&types.DeviceInstallApplication{},
 	)
 
-	fmt.Println("mdmdirector is running, hold onto your butts...")
+	log.Print("mdmdirector is running, hold onto your butts...")
 
 	go director.RetryCommands()
 	go director.ScheduledCheckin()

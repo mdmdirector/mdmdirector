@@ -41,6 +41,10 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 
 	defer resp.Body.Close()
 
+	if CommandPayload.RequestType == "InstallApplication" {
+		command.Data = CommandPayload.ManifestURL
+	}
+
 	command.DeviceUDID = CommandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
 	command.RequestType = CommandPayload.RequestType
@@ -51,19 +55,31 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 
 func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
 	var command types.Command
+
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			log.Print("Command not found in the queue")
 			return
 		}
 	} else {
-
-		err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
-			Status: ackEvent.Status,
-		}).Error
-		if err != nil {
-			log.Print(err)
+		if ackEvent.Status == "Error" {
+			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
+				Status:      ackEvent.Status,
+				ErrorString: string(ackEvent.RawPayload),
+			}).Error
+			if err != nil {
+				log.Print(err)
+			}
+		} else {
+			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
+				Status:      ackEvent.Status,
+				ErrorString: "",
+			}).Error
+			if err != nil {
+				log.Print(err)
+			}
 		}
+
 	}
 }
 
@@ -79,4 +95,28 @@ func CommandInQueue(device types.Device, command string) bool {
 
 	return true
 
+}
+
+func InstallAppInQueue(device types.Device, data string) bool {
+	var commandModel types.Command
+
+	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ? AND data = ?", device.UDID, "InstallApplication", data).Where("status = ? OR status = ?", "", "NotNow").First(&commandModel).Error
+	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			return false
+		}
+	}
+
+	return true
+
+}
+
+func ClearCommands(device *types.Device) {
+	var command types.Command
+	var commands []types.Command
+	log.Printf("Clearing command queue for %v", device.UDID)
+	err := db.DB.Model(&command).Where("device_ud_id = ?", device.UDID).Where("status = ? OR status = ?", "", "NotNow").Delete(&commands).Error
+	if err != nil {
+		log.Print(err)
+	}
 }

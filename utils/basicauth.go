@@ -6,8 +6,11 @@ import (
 )
 
 //BasicAuth provides basic authentication for certain routes
-func BasicAuth(handler http.HandlerFunc, username, password, realm string) http.HandlerFunc {
+func BasicAuth(handler http.HandlerFunc) http.HandlerFunc {
+	var username = GetBasicAuthUser()
+	var password = GetBasicAuthPassword()
 
+	var realm = "Please enter your username and password for this site"
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		user, pass, ok := r.BasicAuth()

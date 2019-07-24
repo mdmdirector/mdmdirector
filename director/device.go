@@ -26,22 +26,19 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 			db.DB.Create(&newDevice)
 		}
 	} else {
-		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&device).Update(&newDevice).Error
+		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&device).Save(&newDevice).Error
 		if err != nil {
 			log.Print(err)
 		}
 
 	}
-	err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&newDevice).Error
-	if err != nil {
-		log.Print(err)
-	}
 
-	if newDevice.InitialTasksRun == false && newDevice.TokenUpdateRecieved == true {
-		RunInitialTasks(newDevice.UDID)
-	}
+	// err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
+	// if err != nil {
+	// 	log.Print(err)
+	// }
 
-	return &newDevice
+	return &device
 }
 
 func GetDevice(udid string) types.Device {

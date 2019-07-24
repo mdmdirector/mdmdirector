@@ -9,4 +9,4 @@ jq -n \
   |.profiles[0].uuid = $identifier
   |.profiles[0].payload_identifier = $payload_identifier
   '|\
-  curl -X DELETE "$endpoint" -d@-
+  curl -u "mdmdirector:secret" -X DELETE "$endpoint" -d@-

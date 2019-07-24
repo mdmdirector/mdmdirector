@@ -264,7 +264,6 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 }
 
 func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile) {
-	log.Print("in DeleteDeviceProfiles")
 	for _, device := range devices {
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
@@ -307,7 +306,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 }
 
 func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) {
-
+	log.Printf("Verifying mdm profiles for %v", device.UDID)
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
 	var sharedProfile types.SharedProfile
@@ -455,4 +454,30 @@ func RequestProfileList(device types.Device) {
 	commandPayload.RequestType = requestType
 
 	SendCommand(commandPayload)
+}
+
+func InstallAllProfiles(device types.Device) {
+	var profile types.DeviceProfile
+	var profiles []types.DeviceProfile
+	var sharedProfile types.SharedProfile
+	var sharedProfiles []types.SharedProfile
+	var devices []types.Device
+
+	devices = append(devices, device)
+
+	// Get the profiles that should be installed on the device
+	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
+	if err != nil {
+		log.Print(err)
+	}
+
+	ProcessProfiles(devices, profiles)
+
+	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
+	if err != nil {
+		log.Print(err)
+	}
+
+	PushSharedProfiles(devices, sharedProfiles)
+
 }

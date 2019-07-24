@@ -32,7 +32,7 @@ type Device struct {
 	AppAnalyticsEnabled bool
 	// AutoSetupAdminAccounts interface
 	IsMDMLostModeEnabled        bool
-	AwaitingConfiguration       bool
+	AwaitingConfiguration       bool `gorm:"default:false"`
 	MaximumResidentUsers        int
 	BluetoothMAC                string
 	CarrierSettingsVersion      string

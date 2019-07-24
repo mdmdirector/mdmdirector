@@ -24,4 +24,4 @@ mdmdirector_nosign: build
 	build/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug
 
 mdmdirector: build
-	build/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -password=password
+	build/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret

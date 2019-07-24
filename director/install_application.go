@@ -157,6 +157,12 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) {
 	for _, device := range devices {
 
+		inQueue := InstallAppInQueue(device, installApplication.ManifestURL)
+		if inQueue {
+			log.Printf("%v is already in queue for %v", installApplication.ManifestURL, device.UDID)
+			return
+		}
+
 		var commandPayload types.CommandPayload
 		commandPayload.UDID = device.UDID
 		commandPayload.RequestType = "InstallApplication"
@@ -171,22 +177,28 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 func SaveSharedInstallApplications(payload types.InstallApplicationPayload) {
 	var sharedInstallApplication types.SharedInstallApplication
 	if len(payload.ManifestURLs) == 0 {
+		log.Print("No manifest urls")
 		return
 	}
-	tx := db.DB.Model(&sharedInstallApplication)
+
 	for _, ManifestURL := range payload.ManifestURLs {
 		sharedInstallApplication.ManifestURL = ManifestURL.URL
-		tx = tx.Assign(&sharedInstallApplication).FirstOrCreate(&sharedInstallApplication)
+		err := db.DB.Model(&sharedInstallApplication).Where("manifest_url = ?", ManifestURL.URL).Assign(&sharedInstallApplication).FirstOrCreate(&sharedInstallApplication)
+		if err != nil {
+			fmt.Print(err)
+		}
 	}
 
-	err := tx.Error
-	if err != nil {
-		fmt.Print(err)
-	}
 }
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) {
 	for _, device := range devices {
+
+		inQueue := InstallAppInQueue(device, installSharedApplication.ManifestURL)
+		if inQueue {
+			log.Printf("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
+			return
+		}
 
 		var commandPayload types.CommandPayload
 		commandPayload.UDID = device.UDID

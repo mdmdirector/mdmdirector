@@ -28,6 +28,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if out.Topic == "mdm.CheckOut" {
 		device.Active = false
+		device.AuthenticateRecieved = false
+		device.TokenUpdateRecieved = false
+		device.InitialTasksRun = false
+		ClearCommands(&device)
 	} else {
 		device.Active = true
 	}
@@ -36,15 +40,22 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.AuthenticateRecieved = true
 		device.TokenUpdateRecieved = false
 		device.InitialTasksRun = false
-		// log.Print("First auth here")
+		ClearCommands(&device)
+		log.Print("First auth here")
 		// utils.PrintStruct(device)
 	} else if out.Topic == "mdm.TokenUpdate" {
-		// log.Print("Token update")
+		log.Print("Token update")
 		device.TokenUpdateRecieved = true
 		device.AuthenticateRecieved = true
+		// ClearCommands(device)
 	}
 
 	UpdateDevice(device)
+	// utils.PrintStruct(updatedDevice)
+	if device.InitialTasksRun == false && device.TokenUpdateRecieved == true {
+		log.Print("Running initial tasks due to device update")
+		RunInitialTasks(device.UDID)
+	}
 
 	// if device.TokenUpdateRecieved == false {
 	// 	return
@@ -63,6 +74,8 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Print(err)
 		}
+
+		// utils.PrintStruct(payloadDict)
 
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]
