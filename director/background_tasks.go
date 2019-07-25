@@ -89,7 +89,7 @@ func ScheduledCheckin() {
 	defer ticker.Stop()
 	fn := func() {
 		processScheduledCheckin()
-		clearCommands()
+		// clearCommands()
 	}
 
 	fn()

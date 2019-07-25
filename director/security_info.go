@@ -27,6 +27,7 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	securityInfo = securityInfoData.SecurityInfo
 	managementStatus = securityInfo.ManagementStatus
 	firmwarePasswordStatus = securityInfo.FirmwarePasswordStatus
+	log.Printf("Saving SecurityInfo for %v", device.UDID)
 	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
 	if err != nil {
 		log.Print(err)

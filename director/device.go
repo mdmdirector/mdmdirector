@@ -26,17 +26,17 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 			db.DB.Create(&newDevice)
 		}
 	} else {
-		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&device).Save(&newDevice).Error
+		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&newDevice).Save(&newDevice).Error
 		if err != nil {
 			log.Print(err)
 		}
 
 	}
 
-	// err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
-	// if err != nil {
-	// 	log.Print(err)
-	// }
+	err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
+	if err != nil {
+		log.Print(err)
+	}
 
 	return &device
 }
@@ -75,9 +75,21 @@ func GetAllDevices() []types.Device {
 	return devices
 }
 
-func DeviceHandler(w http.ResponseWriter, r *http.Request) {
+func GetAllDevicesAndAssociations() *[]types.Device {
 	var devices []types.Device
-	devices = GetAllDevices()
+
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Find(&devices).Error
+	if err != nil {
+		fmt.Println(err)
+		log.Print("Couldn't scan to Device model")
+	}
+
+	return &devices
+}
+
+func DeviceHandler(w http.ResponseWriter, r *http.Request) {
+	// var devices []types.Device
+	devices := GetAllDevicesAndAssociations()
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
 	if err != nil {
@@ -101,4 +113,13 @@ func RequestDeviceInformation(device types.Device) {
 	payload.RequestType = requestType
 	payload.Queries = types.DeviceInformationQueries
 	SendCommand(payload)
+}
+
+func SetTokenUpdate(device types.Device) {
+	var deviceModel types.Device
+	log.Printf("TokenUpdate received for %v", device.UDID)
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).Error
+	if err != nil {
+		log.Print(err)
+	}
 }

@@ -37,22 +37,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if out.Topic == "mdm.Authenticate" {
-		device.AuthenticateRecieved = true
-		device.TokenUpdateRecieved = false
-		device.InitialTasksRun = false
-		ClearCommands(&device)
-		log.Print("First auth here")
-		// utils.PrintStruct(device)
+		ResetDevice(device)
 	} else if out.Topic == "mdm.TokenUpdate" {
-		log.Print("Token update")
-		device.TokenUpdateRecieved = true
-		device.AuthenticateRecieved = true
-		// ClearCommands(device)
+		SetTokenUpdate(device)
 	}
 
-	UpdateDevice(device)
-	// utils.PrintStruct(updatedDevice)
-	if device.InitialTasksRun == false && device.TokenUpdateRecieved == true {
+	updatedDevice := UpdateDevice(device)
+	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
 		log.Print("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
 	}
@@ -62,6 +53,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	if out.AcknowledgeEvent != nil {
+
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
 		if err != nil {
 			log.Print(err)
