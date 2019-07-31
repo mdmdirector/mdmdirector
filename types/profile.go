@@ -28,6 +28,7 @@ type ProfilePayload struct {
 	SerialNumbers []string `json:"serial_numbers,omitempty"`
 	DeviceUDIDs   []string `json:"udids,omitempty"`
 	Mobileconfigs []string `json:"profiles"`
+	PushNow       bool     `json:"push_now"`
 }
 
 type DeleteProfilePayload struct {

@@ -101,13 +101,18 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.DeviceUDIDs[0] == "*" {
 				devices = GetAllDevices()
 				SaveSharedProfiles(sharedProfiles)
-				PushSharedProfiles(devices, sharedProfiles)
+				if out.PushNow == true {
+					PushSharedProfiles(devices, sharedProfiles)
+				}
 			} else {
 				for _, item := range out.DeviceUDIDs {
 					device := GetDevice(item)
 					devices = append(devices, device)
 				}
-				ProcessProfiles(devices, profiles)
+				SaveProfiles(devices, profiles)
+				if out.PushNow == true {
+					PushProfiles(devices, profiles)
+				}
 			}
 		}
 
@@ -117,13 +122,18 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.SerialNumbers[0] == "*" {
 				devices = GetAllDevices()
 				SaveSharedProfiles(sharedProfiles)
-				PushSharedProfiles(devices, sharedProfiles)
+				if out.PushNow == true {
+					PushSharedProfiles(devices, sharedProfiles)
+				}
 			} else {
 				for _, item := range out.SerialNumbers {
 					device := GetDeviceSerial(item)
 					devices = append(devices, device)
 				}
-				ProcessProfiles(devices, profiles)
+				SaveProfiles(devices, profiles)
+				if out.PushNow == true {
+					PushProfiles(devices, profiles)
+				}
 			}
 		}
 
@@ -184,9 +194,8 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ProcessProfiles(devices []types.Device, profiles []types.DeviceProfile) {
+func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	var profile types.DeviceProfile
-
 	for _, device := range devices {
 		tx := db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID)
 		for _, profileData := range profiles {
@@ -196,6 +205,11 @@ func ProcessProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 		}
 		tx.Delete(&profile)
 		db.DB.Model(&device).Association("Profiles").Append(profiles)
+	}
+}
+
+func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) {
+	for _, device := range devices {
 
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
@@ -332,7 +346,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	devices = append(devices, device)
-	ProcessProfiles(devices, profilesToInstall)
+	PushProfiles(devices, profilesToInstall)
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
@@ -471,7 +485,7 @@ func InstallAllProfiles(device types.Device) {
 		log.Print(err)
 	}
 
-	ProcessProfiles(devices, profiles)
+	PushProfiles(devices, profiles)
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
