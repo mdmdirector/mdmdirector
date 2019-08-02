@@ -89,7 +89,7 @@ func ScheduledCheckin() {
 	defer ticker.Stop()
 	fn := func() {
 		processScheduledCheckin()
-		// clearCommands()
+		clearCommands()
 	}
 
 	fn()
@@ -193,13 +193,13 @@ func FetchDevicesFromMDM() {
 func clearCommands() {
 	var command types.Command
 	var commands []types.Command
-	twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
+	clearTime := time.Now().Add(-2 * time.Hour)
 
 	if utils.DebugMode() {
-		twentyFourHoursAgo = time.Now().Add(-5 * time.Minute)
+		clearTime = time.Now().Add(-5 * time.Minute)
 	}
 
-	err := db.DB.Model(&command).Where("updated_at < ?", twentyFourHoursAgo).Where("status = ? OR status = ?", "", "NotNow").Delete(&commands).Error
+	err := db.DB.Model(&command).Where("updated_at < ?", clearTime).Where("status = ? OR status = ?", "", "NotNow").Delete(&commands).Error
 	if err != nil {
 		log.Print(err)
 	}

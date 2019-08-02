@@ -390,6 +390,24 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
+	var profiles []types.SharedProfile
+
+	err := db.DB.Find(&profiles).Scan(&profiles).Error
+	if err != nil {
+		fmt.Println(err)
+		log.Print("Couldn't scan to Profiles model")
+	}
+	output, err := json.MarshalIndent(&profiles, "", "    ")
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+
+}
+
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
 func SignProfile(key crypto.PrivateKey, cert *x509.Certificate, mobileconfig []byte) ([]byte, error) {
 	sd, err := pkcs7.NewSignedData(mobileconfig)
