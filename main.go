@@ -84,6 +84,8 @@ func main() {
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
+	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
+	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
@@ -108,9 +110,9 @@ func main() {
 
 	log.Print("mdmdirector is running, hold onto your butts...")
 
-	go director.RetryCommands()
 	go director.ScheduledCheckin()
 	go director.FetchDevicesFromMDM()
+	go director.RetryCommands()
 
 	log.Print(http.ListenAndServe(":"+port, nil))
 }

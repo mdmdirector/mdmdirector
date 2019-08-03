@@ -313,6 +313,8 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
 			}
 
+			utils.PrintStruct(commandPayload)
+
 			SendCommand(commandPayload)
 
 		}
@@ -475,12 +477,12 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 
 func RequestProfileList(device types.Device) {
 	var requestType = "ProfileList"
-	inQueue := CommandInQueue(device, requestType)
-	if inQueue {
-		log.Printf("%v is already in queue for %v", requestType, device.UDID)
-		return
-	}
-
+	// inQueue := CommandInQueue(device, requestType)
+	// if inQueue {
+	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
+	// 	return
+	// }
+	log.Print("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType

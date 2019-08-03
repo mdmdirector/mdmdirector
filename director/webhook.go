@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
+	"github.com/jinzhu/gorm"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +65,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if out.AcknowledgeEvent.CommandUUID != "" {
 			UpdateCommand(out.AcknowledgeEvent, device)
 		}
+
+		if out.AcknowledgeEvent.Status == "Idle" {
+			RequestDeviceUpdate(device)
+			return
+		}
 		var payloadDict map[string]interface{}
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
 		if err != nil {
@@ -112,4 +121,38 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+}
+
+func RequestDeviceUpdate(device types.Device) {
+	var deviceModel types.Device
+
+	hourAgo := time.Now().Add(1 * time.Hour)
+
+	if utils.DebugMode() {
+		hourAgo = time.Now().Add(-2 * time.Minute)
+	}
+
+	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", hourAgo, device.UDID).First(&device).Error; err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			log.Print("Last updated was under an hour ago")
+			return
+		}
+	}
+
+	// if err == nil {
+	// 	log.Print("Last updated was under an hour ago")
+	// 	return
+	// } else {
+	// 	log.Printf("Requesting all the info for %v", device.UDID)
+	// }
+
+	RequestProfileList(device)
+	RequestSecurityInfo(device)
+	RequestDeviceInformation(device)
+
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	if err != nil {
+		log.Print(err)
+	}
+	// PushDevice(device.UDID)
 }

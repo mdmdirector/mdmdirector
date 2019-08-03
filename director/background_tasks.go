@@ -25,7 +25,7 @@ func RetryCommands() {
 	ticker := time.NewTicker(delay * time.Second)
 	defer ticker.Stop()
 	fn := func() {
-		sendPush()
+		pushNotNow()
 	}
 
 	fn()
@@ -38,7 +38,80 @@ func RetryCommands() {
 	}
 }
 
-func sendPush() {
+// func PushAllDevices() {
+// 	var delay time.Duration
+// 	if utils.DebugMode() {
+// 		delay = 1
+// 	} else {
+// 		delay = 24
+// 	}
+// 	ticker := time.NewTicker(delay * time.Hour)
+// 	defer ticker.Stop()
+// 	fn := func() {
+// 		pushAll()
+// 	}
+
+// 	fn()
+
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			fn()
+// 		}
+// 	}
+// }
+
+// func PushUnack() {
+// 	var delay time.Duration
+// 	if utils.DebugMode() {
+// 		delay = 1
+// 	} else {
+// 		delay = 60
+// 	}
+// 	ticker := time.NewTicker(delay * time.Minute)
+// 	defer ticker.Stop()
+// 	fn := func() {
+// 		pushPending()
+// 	}
+
+// 	fn()
+
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			fn()
+// 		}
+// 	}
+// }
+
+// func pushPending() {
+// 	var command types.Command
+// 	var commands []types.Command
+// 	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "").Scan(&commands).Error
+// 	if err != nil {
+// 		log.Print(err)
+// 	}
+
+// 	client := &http.Client{}
+
+// 	for _, queuedCommand := range commands {
+
+// 		endpoint, err := url.Parse(utils.ServerURL())
+// 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
+// 		req, err := http.NewRequest("GET", endpoint.String(), nil)
+// 		req.SetBasicAuth("micromdm", utils.ApiKey())
+
+// 		resp, err := client.Do(req)
+// 		if err != nil {
+// 			log.Print(err)
+// 			continue
+// 		}
+
+// 		resp.Body.Close()
+// 	}
+// }
+
+func pushNotNow() {
 	var command types.Command
 	var commands []types.Command
 	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
@@ -65,7 +138,37 @@ func sendPush() {
 	}
 }
 
-func pushDevice(udid string) {
+func pushAll() {
+	var device types.Device
+	var devices []types.Device
+	err := db.DB.Find(&device).Scan(&devices).Error
+	if err != nil {
+		log.Print(err)
+	}
+
+	client := &http.Client{}
+	if utils.DebugMode() {
+		log.Print("Pushing to all in debug mode")
+	}
+
+	for _, device := range devices {
+
+		endpoint, err := url.Parse(utils.ServerURL())
+		endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
+		req, err := http.NewRequest("GET", endpoint.String(), nil)
+		req.SetBasicAuth("micromdm", utils.ApiKey())
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+
+		resp.Body.Close()
+	}
+}
+
+func PushDevice(udid string) {
 
 	client := &http.Client{}
 
@@ -83,13 +186,16 @@ func pushDevice(udid string) {
 }
 
 func ScheduledCheckin() {
-	var delay time.Duration
-	delay = 10
-	ticker := time.NewTicker(delay * time.Second)
+	// var delay time.Duration
+	ticker := time.NewTicker(1 * time.Hour)
+	if utils.DebugMode() {
+		ticker = time.NewTicker(20 * time.Second)
+	}
+
 	defer ticker.Stop()
 	fn := func() {
 		processScheduledCheckin()
-		clearCommands()
+		// clearCommands()
 	}
 
 	fn()
@@ -103,31 +209,31 @@ func ScheduledCheckin() {
 }
 
 func processScheduledCheckin() {
-	var devices []types.Device
-	var device types.Device
+	// var devices []types.Device
+	// var device types.Device
 	var awaitingConfigDevices []types.Device
 	var awaitingConfigDevice types.Device
 
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	// twoHoursAgo := time.Now().Add(-1 * time.Hour)
 
+	// if utils.DebugMode() {
+	// 	twoHoursAgo = time.Now().Add(-2 * time.Minute)
+	// }
+	// err := db.DB.Find(&devices).Scan(&devices).Error
+	// if err != nil {
+	// 	log.Print(err)
+	// }
+
+	// for _, staleDevice := range devices {
+	// 	PushDevice(staleDevice.UDID)
+	// }
 	if utils.DebugMode() {
-		twoHoursAgo = time.Now().Add(-2 * time.Minute)
+		log.Print("Processing scheduledCheckin in debug mode")
 	}
-	err := db.DB.Model(&device).Where("updated_at < ? AND active = ?", twoHoursAgo, true).Scan(&devices).Error
-	if err != nil {
-		log.Print(err)
-	}
-
-	for _, staleDevice := range devices {
-		RequestProfileList(staleDevice)
-		RequestSecurityInfo(staleDevice)
-		RequestDeviceInformation(staleDevice)
-		pushDevice(staleDevice.UDID)
-	}
-
+	pushAll()
 	thirtySecondsAgo := time.Now().Add(-30 * time.Second)
 
-	err = db.DB.Model(&awaitingConfigDevice).Where("updated_at < ? AND awaiting_configuration = ? AND initial_tasks_run = ?", thirtySecondsAgo, true, false).Scan(&awaitingConfigDevices).Error
+	err := db.DB.Model(&awaitingConfigDevice).Where("updated_at < ? AND awaiting_configuration = ? AND initial_tasks_run = ?", thirtySecondsAgo, true, false).Scan(&awaitingConfigDevices).Error
 	if err != nil {
 		log.Print(err)
 	}

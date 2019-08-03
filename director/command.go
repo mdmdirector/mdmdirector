@@ -3,6 +3,7 @@ package director
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -119,4 +120,40 @@ func ClearCommands(device *types.Device) {
 	if err != nil {
 		log.Print(err)
 	}
+}
+
+func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
+	var commands []types.Command
+
+	err := db.DB.Find(&commands).Where("status = ? OR status = ?", "", "NotNow").Scan(&commands).Error
+	if err != nil {
+		fmt.Println(err)
+		log.Print("Couldn't scan to Commands model")
+	}
+	output, err := json.MarshalIndent(&commands, "", "    ")
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+
+}
+
+func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
+	var commands []types.Command
+
+	err := db.DB.Find(&commands).Where("status = ?", "Error").Scan(&commands).Error
+	if err != nil {
+		fmt.Println(err)
+		log.Print("Couldn't scan to Commands model")
+	}
+	output, err := json.MarshalIndent(&commands, "", "    ")
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+
 }

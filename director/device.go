@@ -103,11 +103,12 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 func RequestDeviceInformation(device types.Device) {
 	var requestType = "DeviceInformation"
-	inQueue := CommandInQueue(device, requestType)
-	if inQueue {
-		log.Printf("%v is already in queue for %v", requestType, device.UDID)
-		return
-	}
+	// inQueue := CommandInQueue(device, requestType)
+	// if inQueue {
+	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
+	// 	return
+	// }
+	log.Print("Requesting Device Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType

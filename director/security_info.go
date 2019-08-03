@@ -9,11 +9,12 @@ import (
 
 func RequestSecurityInfo(device types.Device) {
 	var requestType = "SecurityInfo"
-	inQueue := CommandInQueue(device, requestType)
-	if inQueue {
-		log.Printf("%v is already in queue for %v", requestType, device.UDID)
-		return
-	}
+	// inQueue := CommandInQueue(device, requestType)
+	// if inQueue {
+	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
+	// 	return
+	// }
+	log.Print("Requesting Security Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
