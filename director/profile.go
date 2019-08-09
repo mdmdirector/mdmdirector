@@ -197,13 +197,11 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	var profile types.DeviceProfile
 	for _, device := range devices {
-		tx := db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID)
 		for _, profileData := range profiles {
 			if profileData.PayloadIdentifier != "" {
-				tx = tx.Where("payload_identifier = ?", profileData.PayloadIdentifier)
+				db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile)
 			}
 		}
-		tx.Delete(&profile)
 		db.DB.Model(&device).Association("Profiles").Append(profiles)
 	}
 }
@@ -294,7 +292,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
-			// var jsonString []byte
+
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
 
