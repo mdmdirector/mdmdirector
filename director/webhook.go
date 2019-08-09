@@ -126,33 +126,28 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
 
-	hourAgo := time.Now().Add(1 * time.Hour)
+	// hourAgo := time.Now().Add(1 * time.Hour)
+	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 
 	if utils.DebugMode() {
-		hourAgo = time.Now().Add(-2 * time.Minute)
+		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
 	}
 
-	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", hourAgo, device.UDID).First(&device).Error; err != nil {
+	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			log.Print("Last updated was under an hour ago")
+			log.Print("Last updated was under 30 minutes ago")
 			return
 		}
 	}
-
-	// if err == nil {
-	// 	log.Print("Last updated was under an hour ago")
-	// 	return
-	// } else {
-	// 	log.Printf("Requesting all the info for %v", device.UDID)
-	// }
-
-	RequestProfileList(device)
-	RequestSecurityInfo(device)
-	RequestDeviceInformation(device)
 
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
 		log.Print(err)
 	}
+	log.Printf("Requesting Update device due to idle response from device %v", device.UDID)
+	RequestProfileList(device)
+	RequestSecurityInfo(device)
+	RequestDeviceInformation(device)
+
 	// PushDevice(device.UDID)
 }

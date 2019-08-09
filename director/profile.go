@@ -243,22 +243,22 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 	if len(profiles) == 0 {
 		return
 	}
-	tx := db.DB.Model(&profile)
+
 	for _, profileData := range profiles {
 		if profileData.PayloadIdentifier != "" {
-			tx = tx.Where("payload_identifier = ?", profileData.PayloadIdentifier)
+			err := db.DB.Model(&profile).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile).Error
+			if err != nil {
+				fmt.Print(err)
+			}
 		}
 	}
-	err := tx.Delete(&profile).Error
-	if err != nil {
-		fmt.Print(err)
-	}
+
 	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
 		tx2 = tx2.Create(&profileData)
 	}
 
-	err = tx2.Error
+	err := tx2.Error
 	if err != nil {
 		fmt.Print(err)
 	}
@@ -313,7 +313,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
 			}
 
-			utils.PrintStruct(commandPayload)
+			// utils.PrintStruct(commandPayload)
 
 			SendCommand(commandPayload)
 
@@ -482,7 +482,7 @@ func RequestProfileList(device types.Device) {
 	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
 	// 	return
 	// }
-	log.Print("Requesting Profile List for %v", device.UDID)
+	log.Printf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType

@@ -2,6 +2,7 @@ package director
 
 import (
 	"log"
+	"time"
 
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/types"
@@ -12,11 +13,16 @@ func RunInitialTasks(udid string) {
 		log.Print("No Device UDID")
 		return
 	}
+	var deviceModel types.Device
 	device := GetDevice(udid)
 	log.Print("Running initial tasks")
 	ClearCommands(&device)
-	RequestProfileList(device)
+	// RequestProfileList(device)
 	InstallAllProfiles(device)
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	if err != nil {
+		log.Print(err)
+	}
 	RequestSecurityInfo(device)
 	RequestDeviceInformation(device)
 	InstallBootstrapPackages(device)

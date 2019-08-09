@@ -14,7 +14,7 @@ func RequestSecurityInfo(device types.Device) {
 	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
 	// 	return
 	// }
-	log.Print("Requesting Security Info for %v", device.UDID)
+	log.Printf("Requesting Security Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/grahamgilbert/mdmdirector/db"
@@ -124,7 +125,11 @@ func pushNotNow() {
 	for _, queuedCommand := range commands {
 
 		endpoint, err := url.Parse(utils.ServerURL())
+		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
+		queryString := endpoint.Query()
+		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		req.SetBasicAuth("micromdm", utils.ApiKey())
 
@@ -154,7 +159,11 @@ func pushAll() {
 	for _, device := range devices {
 
 		endpoint, err := url.Parse(utils.ServerURL())
+		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
+		queryString := endpoint.Query()
+		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		req.SetBasicAuth("micromdm", utils.ApiKey())
 
@@ -173,7 +182,12 @@ func PushDevice(udid string) {
 	client := &http.Client{}
 
 	endpoint, err := url.Parse(utils.ServerURL())
+	retry := time.Now().Unix() + 3600
+
 	endpoint.Path = path.Join(endpoint.Path, "push", udid)
+	queryString := endpoint.Query()
+	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+	endpoint.RawQuery = queryString.Encode()
 	req, err := http.NewRequest("GET", endpoint.String(), nil)
 	req.SetBasicAuth("micromdm", utils.ApiKey())
 
@@ -187,7 +201,7 @@ func PushDevice(udid string) {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(30 * time.Minute)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
