@@ -16,26 +16,35 @@ import (
 
 func UpdateDevice(newDevice types.Device) *types.Device {
 	var device types.Device
+	var oldDevice types.Device
 
 	if newDevice.UDID == "" {
 		return &newDevice
 	}
 
-	if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
+	if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			db.DB.Create(&newDevice)
 		}
 	} else {
-		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&newDevice).Save(&newDevice).Error
+		// err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&newDevice).Save(&newDevice).Error
+		// if err != nil {
+		// 	log.Print(err)
+		// }
+
+		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
 		if err != nil {
 			log.Print(err)
 		}
 
-	}
+		// The below needs more work
+		// if utils.PushOnNewBuild() {
+		// 	if !cmp.Equal(&oldDevice.BuildVersion, &newDevice.BuildVersion) {
+		// 		log.Printf("Re-pushing all profiles to %v due to build number change", device.UDID)
+		// 		InstallAllProfiles(device)
+		// 	}
+		// }
 
-	err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
-	if err != nil {
-		log.Print(err)
 	}
 
 	return &device

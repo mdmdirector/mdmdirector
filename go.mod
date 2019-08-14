@@ -5,6 +5,7 @@ go 1.12
 require (
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/go-pg/pg v8.0.4+incompatible // indirect
+	github.com/google/go-cmp v0.3.1
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.2
 	github.com/groob/plist v0.0.0-20190114192801-a99fbe489d03

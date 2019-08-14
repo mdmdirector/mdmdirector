@@ -50,6 +50,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
 		log.Print("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
+		return
 	}
 
 	// if device.TokenUpdateRecieved == false {

@@ -19,15 +19,15 @@ func RunInitialTasks(udid string) {
 	ClearCommands(&device)
 	// RequestProfileList(device)
 	InstallAllProfiles(device)
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
-	if err != nil {
-		log.Print(err)
-	}
 	RequestSecurityInfo(device)
 	RequestDeviceInformation(device)
 	InstallBootstrapPackages(device)
 	SendDeviceConfigured(device)
 	SaveDeviceConfigured(device)
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	if err != nil {
+		log.Print(err)
+	}
 }
 
 func SendDeviceConfigured(device types.Device) {
