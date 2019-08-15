@@ -144,9 +144,9 @@ func pushNotNow() {
 }
 
 func pushAll() {
-	var device types.Device
+	// var device types.Device
 	var devices []types.Device
-	err := db.DB.Find(&device).Scan(&devices).Error
+	err := db.DB.Find(&devices).Scan(&devices).Error
 	if err != nil {
 		log.Print(err)
 	}
@@ -157,24 +157,26 @@ func pushAll() {
 	}
 
 	for _, device := range devices {
-
-		endpoint, err := url.Parse(utils.ServerURL())
-		retry := time.Now().Unix() + 3600
-		endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
-		queryString := endpoint.Query()
-		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
-		endpoint.RawQuery = queryString.Encode()
-		req, err := http.NewRequest("GET", endpoint.String(), nil)
-		req.SetBasicAuth("micromdm", utils.ApiKey())
-
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Print(err)
-			continue
-		}
-
-		resp.Body.Close()
+		go pushConcurrent(device, client)
 	}
+}
+
+func pushConcurrent(device types.Device, client *http.Client) {
+	endpoint, err := url.Parse(utils.ServerURL())
+	retry := time.Now().Unix() + 3600
+	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
+	queryString := endpoint.Query()
+	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+	endpoint.RawQuery = queryString.Encode()
+	req, err := http.NewRequest("GET", endpoint.String(), nil)
+	req.SetBasicAuth("micromdm", utils.ApiKey())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Print(err)
+	}
+
+	resp.Body.Close()
 }
 
 func PushDevice(udid string) {
@@ -201,7 +203,8 @@ func PushDevice(udid string) {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
-	ticker := time.NewTicker(30 * time.Minute)
+	// ticker := time.NewTicker(30 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
