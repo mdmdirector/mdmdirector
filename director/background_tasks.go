@@ -203,8 +203,7 @@ func PushDevice(udid string) {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
-	// ticker := time.NewTicker(30 * time.Minute)
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(30 * time.Minute)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
