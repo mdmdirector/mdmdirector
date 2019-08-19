@@ -27,24 +27,10 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 			db.DB.Create(&newDevice)
 		}
 	} else {
-		// err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).First(&newDevice).Save(&newDevice).Error
-		// if err != nil {
-		// 	log.Print(err)
-		// }
-
 		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
 		if err != nil {
 			log.Print(err)
 		}
-
-		// The below needs more work
-		// if utils.PushOnNewBuild() {
-		// 	if !cmp.Equal(&oldDevice.BuildVersion, &newDevice.BuildVersion) {
-		// 		log.Printf("Re-pushing all profiles to %v due to build number change", device.UDID)
-		// 		InstallAllProfiles(device)
-		// 	}
-		// }
-
 	}
 
 	return &device

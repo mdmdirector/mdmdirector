@@ -10,6 +10,7 @@ import (
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
+	"github.com/hashicorp/go-version"
 	"github.com/jinzhu/gorm"
 )
 
@@ -46,16 +47,31 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		SetTokenUpdate(device)
 	}
 
+	if utils.PushOnNewBuild() {
+		oldDevice := GetDevice(device.UDID)
+		// Only compare if there is actually a build version set
+		if oldDevice.BuildVersion != "" {
+			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)
+			if err != nil {
+				log.Print("Couldn't parse old build version")
+			}
+			currentVersion, err := version.NewVersion(device.BuildVersion)
+			if err != nil {
+				log.Print("Couldn't parse new build version")
+			}
+
+			if oldVersion.LessThan(currentVersion) {
+				InstallAllProfiles(device)
+			}
+		}
+	}
+
 	updatedDevice := UpdateDevice(device)
 	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
 		log.Print("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
 		return
 	}
-
-	// if device.TokenUpdateRecieved == false {
-	// 	return
-	// }
 
 	if out.AcknowledgeEvent != nil {
 
