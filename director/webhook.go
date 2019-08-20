@@ -2,11 +2,11 @@ package director
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
@@ -18,7 +18,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	var device types.Device
@@ -26,7 +26,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.CheckinEvent != nil {
 		err = plist.Unmarshal(out.CheckinEvent.RawPayload, &device)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 	}
@@ -36,7 +36,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.AuthenticateRecieved = false
 		device.TokenUpdateRecieved = false
 		device.InitialTasksRun = false
-		ClearCommands(&device)
+		err := ClearCommands(&device)
+		if err != nil {
+			log.Error(err)
+		}
 	} else {
 		device.Active = true
 	}
@@ -53,11 +56,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if oldDevice.BuildVersion != "" {
 			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)
 			if err != nil {
-				log.Print("Couldn't parse old build version")
+				log.Error("Couldn't parse old build version")
 			}
 			currentVersion, err := version.NewVersion(device.BuildVersion)
 			if err != nil {
-				log.Print("Couldn't parse new build version")
+				log.Error("Couldn't parse new build version")
 			}
 
 			if oldVersion.LessThan(currentVersion) {
@@ -68,7 +71,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	updatedDevice := UpdateDevice(device)
 	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
-		log.Print("Running initial tasks due to device update")
+		log.Error("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
 		return
 	}
@@ -77,7 +80,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 		if out.AcknowledgeEvent.CommandUUID != "" {
 			UpdateCommand(out.AcknowledgeEvent, device)
@@ -90,7 +93,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		var payloadDict map[string]interface{}
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		// utils.PrintStruct(payloadDict)
@@ -101,7 +104,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
-				log.Print(err)
+				log.Error(err)
 			}
 			VerifyMDMProfiles(profileListData, device)
 		}
@@ -111,7 +114,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var securityInfoData types.SecurityInfoData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
 			if err != nil {
-				log.Print(err)
+				log.Error(err)
 			}
 			SaveSecurityInfo(securityInfoData, device)
 		}
@@ -121,7 +124,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var securityInfoData types.SecurityInfoData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
 			if err != nil {
-				log.Print(err)
+				log.Error(err)
 			}
 			SaveSecurityInfo(securityInfoData, device)
 		}
@@ -131,7 +134,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &deviceInformationQueryResponses)
 			if err != nil {
-				log.Print(err)
+				log.Error(err)
 			}
 			UpdateDevice(deviceInformationQueryResponses.QueryResponses)
 		}
@@ -152,16 +155,16 @@ func RequestDeviceUpdate(device types.Device) {
 
 	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			log.Print("Last updated was under 30 minutes ago")
+			log.Info("Last updated was under 30 minutes ago")
 			return
 		}
 	}
 
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
-	log.Printf("Requesting Update device due to idle response from device %v", device.UDID)
+	log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
 	RequestProfileList(device)
 	RequestSecurityInfo(device)
 	RequestDeviceInformation(device)

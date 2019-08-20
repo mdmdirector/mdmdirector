@@ -1,20 +1,14 @@
 package director
 
 import (
-	"log"
-
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 )
 
 func RequestSecurityInfo(device types.Device) {
 	var requestType = "SecurityInfo"
-	// inQueue := CommandInQueue(device, requestType)
-	// if inQueue {
-	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
-	// 	return
-	// }
-	log.Printf("Requesting Security Info for %v", device.UDID)
+	log.Infof("Requesting Security Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -28,19 +22,19 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	securityInfo = securityInfoData.SecurityInfo
 	managementStatus = securityInfo.ManagementStatus
 	firmwarePasswordStatus = securityInfo.FirmwarePasswordStatus
-	log.Printf("Saving SecurityInfo for %v", device.UDID)
+	log.Infof("Saving SecurityInfo for %v", device.UDID)
 	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 }

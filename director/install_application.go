@@ -2,11 +2,10 @@ package director
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 )
 
@@ -18,7 +17,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	if out.DeviceUDIDs != nil {
@@ -85,60 +84,6 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
-// 	var profiles []types.DeviceProfile
-// 	var profilesModel types.DeviceProfile
-// 	var sharedProfiles []types.SharedProfile
-// 	var sharedProfileModel types.SharedProfile
-// 	var devices []types.Device
-// 	var out types.DeleteProfilePayload
-
-// 	err := json.NewDecoder(r.Body).Decode(&out)
-// 	if err != nil {
-// 		log.Print(err)
-// 	}
-
-// 	for _, profile := range out.Mobileconfigs {
-// 		if out.DeviceUDIDs != nil {
-// 			// Not empty list
-// 			if len(out.DeviceUDIDs) > 0 {
-// 				// Shared profiles
-// 				if out.DeviceUDIDs[0] == "*" {
-// 					var devices = GetAllDevices()
-// 					var deviceIds []string
-// 					for _, item := range devices {
-// 						deviceIds = append(deviceIds, item.UDID)
-// 					}
-// 					err := db.DB.Model(&sharedProfileModel).Where("payload_uuid = ? and payload_identifier = ?", profile.UUID, profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
-// 					if err != nil {
-// 						log.Print(err)
-// 						continue
-// 					}
-
-// 					DeleteSharedProfiles(devices, sharedProfiles)
-
-// 				} else {
-// 					var deviceIds []string
-// 					for _, item := range out.DeviceUDIDs {
-// 						device := GetDevice(item)
-// 						devices = append(devices, device)
-// 						deviceIds = append(deviceIds, device.UDID)
-// 					}
-
-// 					err := db.DB.Model(&profilesModel).Where("payload_uuid = ? and payload_identifier = ? and device_ud_id IN (?)", profile.UUID, profile.PayloadIdentifier, deviceIds).Update("installed", false).Scan(&profiles).Error
-// 					if err != nil {
-// 						log.Print(err)
-// 						continue
-// 					}
-
-// 					DeleteDeviceProfiles(devices, profiles)
-// 				}
-
-// 			}
-// 		}
-// 	}
-// }
-
 func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) {
 	var installApplication types.DeviceInstallApplication
 
@@ -148,7 +93,7 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 			installApplication.DeviceUDID = device.UDID
 			err := db.DB.Model(&device).Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
 			if err != nil {
-				log.Print(err)
+				log.Error(err)
 			}
 		}
 	}
@@ -159,7 +104,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 
 		inQueue := InstallAppInQueue(device, installApplication.ManifestURL)
 		if inQueue {
-			log.Printf("%v is already in queue for %v", installApplication.ManifestURL, device.UDID)
+			log.Infof("%v is already in queue for %v", installApplication.ManifestURL, device.UDID)
 			return
 		}
 
@@ -177,7 +122,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 func SaveSharedInstallApplications(payload types.InstallApplicationPayload) {
 	var sharedInstallApplication types.SharedInstallApplication
 	if len(payload.ManifestURLs) == 0 {
-		log.Print("No manifest urls")
+		log.Debug("No manifest urls")
 		return
 	}
 
@@ -185,7 +130,7 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) {
 		sharedInstallApplication.ManifestURL = ManifestURL.URL
 		err := db.DB.Model(&sharedInstallApplication).Where("manifest_url = ?", ManifestURL.URL).Assign(&sharedInstallApplication).FirstOrCreate(&sharedInstallApplication)
 		if err != nil {
-			fmt.Print(err)
+			log.Error(err)
 		}
 	}
 
@@ -196,7 +141,7 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 
 		inQueue := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
-			log.Printf("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
+			log.Infof("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
 			return
 		}
 
@@ -222,7 +167,7 @@ func InstallBootstrapPackages(device types.Device) {
 
 	err := db.DB.Model(&sharedInstallApplication).Scan(&sharedInstallApplications).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	// Push all the apps
@@ -232,7 +177,7 @@ func InstallBootstrapPackages(device types.Device) {
 
 	err = db.DB.Model(&deviceInstallApplication).Where("device_ud_id = ?", device.UDID).Scan(&deviceInstallApplications).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	// Push all the apps
@@ -240,22 +185,3 @@ func InstallBootstrapPackages(device types.Device) {
 		PushInstallApplication(devices, savedApp)
 	}
 }
-
-// func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
-// 	var profiles []types.DeviceProfile
-// 	vars := mux.Vars(r)
-
-// 	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		log.Print("Couldn't scan to Device model")
-// 	}
-// 	output, err := json.MarshalIndent(&profiles, "", "    ")
-// 	if err != nil {
-// 		log.Print(err)
-// 		w.WriteHeader(http.StatusInternalServerError)
-// 	}
-
-// 	w.Write(output)
-
-// }

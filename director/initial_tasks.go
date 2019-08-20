@@ -1,22 +1,25 @@
 package director
 
 import (
-	"log"
+	"errors"
 	"time"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 )
 
-func RunInitialTasks(udid string) {
+func RunInitialTasks(udid string) error {
 	if udid == "" {
-		log.Print("No Device UDID")
-		return
+		return errors.New("No Device UDID")
 	}
 	var deviceModel types.Device
 	device := GetDevice(udid)
-	log.Print("Running initial tasks")
-	ClearCommands(&device)
+	log.Info("Running initial tasks")
+	err := ClearCommands(&device)
+	if err != nil {
+		return err
+	}
 	// RequestProfileList(device)
 	InstallAllProfiles(device)
 	RequestSecurityInfo(device)
@@ -24,42 +27,44 @@ func RunInitialTasks(udid string) {
 	InstallBootstrapPackages(device)
 	SendDeviceConfigured(device)
 	SaveDeviceConfigured(device)
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
-		log.Print(err)
+		return err
 	}
+
+	return nil
 }
 
 func SendDeviceConfigured(device types.Device) {
 
 	var requestType = "DeviceConfigured"
-	// var deviceModel types.Device
-	// inQueue := CommandInQueue(device, requestType)
-	// if inQueue {
-	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
-	// 	return
-	// }
-	// savedDevice := GetDevice(device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
 	SendCommand(commandPayload)
 }
 
-func SaveDeviceConfigured(device types.Device) {
+func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"awaiting_configuration": false, "token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true}).Error
 	if err != nil {
-		log.Print(err)
+		return err
 	}
+
+	return nil
 }
 
-func ResetDevice(device types.Device) {
+func ResetDevice(device types.Device) error {
 	var deviceModel types.Device
-	ClearCommands(&device)
-	log.Printf("Resetting %v", device.UDID)
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false}).Error
+	err := ClearCommands(&device)
 	if err != nil {
-		log.Print(err)
+		return err
 	}
+	log.Infof("Resetting %v", device.UDID)
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false}).Error
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

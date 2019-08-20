@@ -3,11 +3,11 @@ package director
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"log"
+	"errors"
 	"net/http"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/jinzhu/gorm"
@@ -18,7 +18,6 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 	var commandResponse types.CommandResponse
 	jsonStr, err := json.Marshal(CommandPayload)
 	if err != nil {
-		log.Print(err)
 		return nil, err
 	}
 	req, err := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
@@ -28,15 +27,12 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Print(err)
 		return nil, err
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&commandResponse)
 
 	if err != nil {
-		log.Print("No decoding for you")
-		log.Print(err)
 		return nil, err
 	}
 
@@ -54,13 +50,12 @@ func SendCommand(CommandPayload types.CommandPayload) (*types.Command, error) {
 	return &command, nil
 }
 
-func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
+func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error {
 	var command types.Command
 
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			log.Print("Command not found in the queue")
-			return
+			return errors.New("Command not found in the queue")
 		}
 	} else {
 		if ackEvent.Status == "Error" {
@@ -69,7 +64,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
 				ErrorString: string(ackEvent.RawPayload),
 			}).Error
 			if err != nil {
-				log.Print(err)
+				return err
 			}
 		} else {
 			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
@@ -77,11 +72,12 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) {
 				ErrorString: "",
 			}).Error
 			if err != nil {
-				log.Print(err)
+				return err
 			}
 		}
 
 	}
+	return nil
 }
 
 func CommandInQueue(device types.Device, command string) bool {
@@ -112,14 +108,16 @@ func InstallAppInQueue(device types.Device, data string) bool {
 
 }
 
-func ClearCommands(device *types.Device) {
+func ClearCommands(device *types.Device) error {
 	var command types.Command
 	var commands []types.Command
-	log.Printf("Clearing command queue for %v", device.UDID)
+	log.Infof("Clearing command queue for %v", device.UDID)
 	err := db.DB.Model(&command).Where("device_ud_id = ?", device.UDID).Where("status = ? OR status = ?", "", "NotNow").Delete(&commands).Error
 	if err != nil {
-		log.Print(err)
+		return err
 	}
+
+	return nil
 }
 
 func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -127,12 +125,11 @@ func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
 
 	err := db.DB.Find(&commands).Where("status = ? OR status = ?", "", "NotNow").Scan(&commands).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Commands model")
+		log.Errorf("Couldn't scan to Commands model: %v", err)
 	}
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
@@ -145,12 +142,11 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 
 	err := db.DB.Find(&commands).Where("status = ?", "Error").Scan(&commands).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Commands model")
+		log.Errorf("Couldn't scan to Commands model: %v", err)
 	}
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 

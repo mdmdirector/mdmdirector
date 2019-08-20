@@ -2,12 +2,12 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/director"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
 )
@@ -44,6 +44,9 @@ var BasicAuthPass string
 // DBConnectionString is used to connect to the datbase
 var DBConnectionString string
 
+// LogLevel = log level
+var LogLevel string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -58,6 +61,7 @@ func main() {
 	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", "", "Password used for basic authentication")
 	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
+	flag.StringVar(&LogLevel, "loglevel", "warn", "Log level. One of debug, info, warn, error")
 	flag.Parse()
 
 	if MicroMDMURL == "" {
@@ -74,6 +78,10 @@ func main() {
 
 	if DBConnectionString == "" {
 		log.Fatal("Database details missing. Exiting.")
+	}
+
+	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
+		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
 	r := mux.NewRouter()
@@ -108,11 +116,11 @@ func main() {
 		&types.DeviceInstallApplication{},
 	)
 
-	log.Print("mdmdirector is running, hold onto your butts...")
+	log.Info("mdmdirector is running, hold onto your butts...")
 
 	go director.ScheduledCheckin()
 	go director.FetchDevicesFromMDM()
 	go director.RetryCommands()
 
-	log.Print(http.ListenAndServe(":"+port, nil))
+	log.Info(http.ListenAndServe(":"+port, nil))
 }

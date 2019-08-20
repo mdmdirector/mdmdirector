@@ -9,7 +9,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"path/filepath"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
 	"github.com/groob/plist"
@@ -32,7 +32,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	for _, payload := range out.Mobileconfigs {
@@ -40,17 +40,17 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		var sharedProfile types.SharedProfile
 		mobileconfig, err := base64.StdEncoding.DecodeString(string(payload))
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 		err = plist.Unmarshal(mobileconfig, &profile)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		var tempProfileDict map[string]interface{}
 		err = plist.Unmarshal(mobileconfig, &tempProfileDict)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
@@ -59,7 +59,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		mobileconfig, err = plist.MarshalIndent(&tempProfileDict, "\t")
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		profile.MobileconfigData = mobileconfig
@@ -71,7 +71,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = plist.Unmarshal(mobileconfig, &sharedProfile)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		sharedProfile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
@@ -79,14 +79,14 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		var sharedTempProfileDict map[string]interface{}
 		err = plist.Unmarshal(mobileconfig, &sharedTempProfileDict)
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		sharedTempProfileDict["PayloadUUID"] = sharedProfile.HashedPayloadUUID
 
 		mobileconfig, err = plist.MarshalIndent(&sharedTempProfileDict, "\t")
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 
 		sharedProfile.MobileconfigData = mobileconfig
@@ -150,7 +150,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	for _, profile := range out.Mobileconfigs {
@@ -166,7 +166,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					err := db.DB.Model(&sharedProfileModel).Where("payload_uuid = ? and payload_identifier = ?", profile.UUID, profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
 					if err != nil {
-						log.Print(err)
+						log.Error(err)
 						continue
 					}
 
@@ -182,7 +182,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 					err := db.DB.Model(&profilesModel).Where("payload_uuid = ? and payload_identifier = ? and device_ud_id IN (?)", profile.UUID, profile.PayloadIdentifier, deviceIds).Update("installed", false).Scan(&profiles).Error
 					if err != nil {
-						log.Print(err)
+						log.Error(err)
 						continue
 					}
 
@@ -216,11 +216,11 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 			if utils.Sign() == true {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
 				if err != nil {
-					log.Printf("loading signing certificate and private key: %v", err)
+					log.Errorf("loading signing certificate and private key: %v", err)
 				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
-					log.Printf("signing profile with the specified key: %v", err)
+					log.Errorf("signing profile with the specified key: %v", err)
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
@@ -246,7 +246,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 		if profileData.PayloadIdentifier != "" {
 			err := db.DB.Model(&profile).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile).Error
 			if err != nil {
-				fmt.Print(err)
+				log.Error(err)
 			}
 		}
 	}
@@ -258,7 +258,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 
 	err := tx2.Error
 	if err != nil {
-		fmt.Print(err)
+		log.Error(err)
 	}
 	// db.DB.Create(&profiles)
 }
@@ -299,19 +299,17 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 			if utils.Sign() == true {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
 				if err != nil {
-					log.Printf("loading signing certificate and private key: %v", err)
+					log.Errorf("loading signing certificate and private key: %v", err)
 				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
-					log.Printf("signing profile with the specified key: %v", err)
+					log.Errorf("signing profile with the specified key: %v", err)
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
 			} else {
 				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
 			}
-
-			// utils.PrintStruct(commandPayload)
 
 			SendCommand(commandPayload)
 
@@ -320,7 +318,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 }
 
 func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) {
-	log.Printf("Verifying mdm profiles for %v", device.UDID)
+	log.Debugf("Verifying mdm profiles for %v", device.UDID)
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
 	var sharedProfile types.SharedProfile
@@ -332,7 +330,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	// For each, loop over the present profiles
@@ -350,7 +348,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	for _, savedSharedProfile := range sharedProfiles {
@@ -377,12 +375,11 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 
 	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Device model")
+		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
 	}
 	output, err := json.MarshalIndent(&profiles, "", "    ")
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
@@ -395,12 +392,11 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 
 	err := db.DB.Find(&profiles).Scan(&profiles).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Profiles model")
+		log.Error("Couldn't scan to Shared Profiles model", err)
 	}
 	output, err := json.MarshalIndent(&profiles, "", "    ")
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
@@ -475,12 +471,7 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 
 func RequestProfileList(device types.Device) {
 	var requestType = "ProfileList"
-	// inQueue := CommandInQueue(device, requestType)
-	// if inQueue {
-	// 	log.Printf("%v is already in queue for %v", requestType, device.UDID)
-	// 	return
-	// }
-	log.Printf("Requesting Profile List for %v", device.UDID)
+	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
@@ -500,14 +491,14 @@ func InstallAllProfiles(device types.Device) {
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	PushProfiles(devices, profiles)
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 
 	PushSharedProfiles(devices, sharedProfiles)

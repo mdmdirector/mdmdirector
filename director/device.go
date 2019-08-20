@@ -2,11 +2,10 @@ package director
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 
 	// sqlite
@@ -29,7 +28,7 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 	} else {
 		err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
 		if err != nil {
-			log.Print(err)
+			log.Error(err)
 		}
 	}
 
@@ -41,8 +40,7 @@ func GetDevice(udid string) types.Device {
 
 	err := db.DB.Model(device).Where("ud_id = ?", udid).First(&device).Scan(&device).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Device model")
+		log.Error("Couldn't scan to Device model from GetDevice ", err, device)
 	}
 	return device
 }
@@ -52,8 +50,7 @@ func GetDeviceSerial(serial string) types.Device {
 
 	err := db.DB.Model(device).Where("serial_number = ?", serial).First(&device).Scan(&device).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Device model")
+		log.Error("Couldn't scan to Device model from GetDeviceSerial", err)
 	}
 	return device
 }
@@ -64,8 +61,7 @@ func GetAllDevices() []types.Device {
 
 	err := db.DB.Find(&devices).Scan(&devices).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Device model")
+		log.Error("Couldn't scan to Device model from GetAllDevices", err)
 	}
 	return devices
 }
@@ -75,8 +71,7 @@ func GetAllDevicesAndAssociations() *[]types.Device {
 
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Find(&devices).Error
 	if err != nil {
-		fmt.Println(err)
-		log.Print("Couldn't scan to Device model")
+		log.Error("Couldn't scan to Device model from GetAllDevicesAndAssociations", err)
 	}
 
 	return &devices
@@ -87,7 +82,7 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
@@ -97,7 +92,7 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 func RequestDeviceInformation(device types.Device) {
 	var requestType = "DeviceInformation"
-	log.Printf("Requesting Device Info for %v", device.UDID)
+	log.Debugf("Requesting Device Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -107,9 +102,9 @@ func RequestDeviceInformation(device types.Device) {
 
 func SetTokenUpdate(device types.Device) {
 	var deviceModel types.Device
-	log.Printf("TokenUpdate received for %v", device.UDID)
+	log.Debugf("TokenUpdate received for %v", device.UDID)
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 }

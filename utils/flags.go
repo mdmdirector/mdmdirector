@@ -48,3 +48,7 @@ func GetBasicAuthPassword() string {
 func DBConnectionString() string {
 	return flag.Lookup("dbconnection").Value.(flag.Getter).Get().(string)
 }
+
+func LogLevel() string {
+	return flag.Lookup("loglevel").Value.(flag.Getter).Get().(string)
+}

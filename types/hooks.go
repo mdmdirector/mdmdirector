@@ -1,10 +1,10 @@
 package types
 
 import (
-	"log"
 	"time"
 
 	"github.com/grahamgilbert/mdmdirector/db"
+	"github.com/grahamgilbert/mdmdirector/log"
 )
 
 func BumpDeviceLastUpdated(udid string) {
@@ -17,6 +17,6 @@ func BumpDeviceLastUpdated(udid string) {
 		UpdatedAt: t,
 	}).Error
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 	}
 }
