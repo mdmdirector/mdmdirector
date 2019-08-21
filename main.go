@@ -50,7 +50,7 @@ var LogLevel string
 func main() {
 	var port string
 	var debugMode bool
-	flag.BoolVar(&debugMode, "debug", false, "Enable debug output")
+	flag.BoolVar(&debugMode, "debug", false, "Enable debug mode")
 	flag.BoolVar(&PushNewBuild, "push-new-build", true, "Re-push profiles if the device's build number changes.")
 	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
 	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
