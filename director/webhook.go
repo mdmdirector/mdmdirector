@@ -2,6 +2,7 @@ package director
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -49,31 +50,21 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	} else if out.Topic == "mdm.TokenUpdate" {
 		SetTokenUpdate(device)
 	}
-
-	if utils.PushOnNewBuild() {
-		oldDevice := GetDevice(device.UDID)
-		// Only compare if there is actually a build version set
-		if oldDevice.BuildVersion != "" {
-			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)
-			if err != nil {
-				log.Error("Couldn't parse old build version")
-			}
-			currentVersion, err := version.NewVersion(device.BuildVersion)
-			if err != nil {
-				log.Error("Couldn't parse new build version")
-			}
-
-			if oldVersion.LessThan(currentVersion) {
-				InstallAllProfiles(device)
-			}
-		}
-	}
-
+	oldUDID := device.UDID
+	oldBuild := device.BuildVersion
 	updatedDevice := UpdateDevice(device)
+
 	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
 		log.Error("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
 		return
+	}
+
+	if utils.PushOnNewBuild() {
+		err := pushOnNewBuild(oldUDID, oldBuild)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	if out.AcknowledgeEvent != nil {
@@ -170,4 +161,32 @@ func RequestDeviceUpdate(device types.Device) {
 	RequestDeviceInformation(device)
 
 	// PushDevice(device.UDID)
+}
+
+func pushOnNewBuild(udid string, currentBuild string) error {
+
+	// Only compare if there is actually a build version set
+	if udid == "" {
+		return fmt.Errorf("Device does not have a udid set %v", udid)
+	}
+
+	oldDevice := GetDevice(udid)
+	if oldDevice.BuildVersion != "" {
+		if currentBuild != "" {
+			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)
+			if err != nil {
+				return err
+			}
+			currentVersion, err := version.NewVersion(currentBuild)
+			if err != nil {
+				return err
+			}
+
+			if oldVersion.LessThan(currentVersion) {
+				InstallAllProfiles(oldDevice)
+			}
+		}
+	}
+
+	return nil
 }

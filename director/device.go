@@ -38,6 +38,10 @@ func UpdateDevice(newDevice types.Device) *types.Device {
 func GetDevice(udid string) types.Device {
 	var device types.Device
 
+	if udid == "" {
+		log.Error("UDID is empty")
+	}
+
 	err := db.DB.Model(device).Where("ud_id = ?", udid).First(&device).Scan(&device).Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from GetDevice ", err, device)
