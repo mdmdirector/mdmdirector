@@ -1,6 +1,6 @@
 # MDMDirector
 
-MDMDirector is an opinionated orchestrator for MicroMDM. It enables profiles to be managed with MicroMDM in a stateful manner, via a RESTful API. It also allows for installation of packages either just at enrollment or immediately.
+MDMDirector is an opinionated orchestrator for MicroMDM. It enables profiles to be managed with MicroMDM in a stateful manner, via a RESTful API. It also allows for installation of packages either just at enrollment or immediately. It uses MicroMDM's webhook functionality to recieve events from MicroMDM and then instructs MicroMDM to perform appropriate action. As such, MDMDirector does not need to be exposed to the public internet.
 
 ## Usage
 
@@ -20,3 +20,16 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 * `-private-key string` - Path to the signing private key. Don't use with p12 file.
 * `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
 * `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
+
+## Todo
+
+### Documentation
+
+* Posting / removing profiles and apps
+* Example for systemd
+
+### App
+
+* Wrap errors correctly
+* Support for Lock/Wipe
+* App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
