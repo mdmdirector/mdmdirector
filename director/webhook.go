@@ -13,6 +13,7 @@ import (
 	"github.com/groob/plist"
 	"github.com/hashicorp/go-version"
 	"github.com/jinzhu/gorm"
+	"github.com/pkg/errors"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +30,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Error(err)
 		}
-
+	} else if out.AcknowledgeEvent != nil {
+		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	if out.Topic == "mdm.CheckOut" {
@@ -46,13 +51,26 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if out.Topic == "mdm.Authenticate" {
-		ResetDevice(device)
+		err := ResetDevice(device)
+		if err != nil {
+			log.Error(err)
+		}
 	} else if out.Topic == "mdm.TokenUpdate" {
-		SetTokenUpdate(device)
+		err := SetTokenUpdate(device)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 	oldUDID := device.UDID
 	oldBuild := device.BuildVersion
-	updatedDevice := UpdateDevice(device)
+	if device.UDID == "" {
+		log.Error(out)
+		log.Fatal("No device udiD set")
+	}
+	updatedDevice, err := UpdateDevice(device)
+	if err != nil {
+		log.Error(err)
+	}
 
 	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
 		log.Error("Running initial tasks due to device update")
@@ -63,7 +81,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if utils.PushOnNewBuild() {
 		err := pushOnNewBuild(oldUDID, oldBuild)
 		if err != nil {
-			log.Error(err)
+			log.Info(err)
 		}
 	}
 
@@ -127,7 +145,9 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error(err)
 			}
+			// utils.PrintStruct(deviceInformationQueryResponses.QueryResponses)
 			UpdateDevice(deviceInformationQueryResponses.QueryResponses)
+
 		}
 
 	}
@@ -167,10 +187,14 @@ func pushOnNewBuild(udid string, currentBuild string) error {
 
 	// Only compare if there is actually a build version set
 	if udid == "" {
-		return fmt.Errorf("Device does not have a udid set %v", udid)
+		err := fmt.Errorf("Device does not have a udid set %v", udid)
+		return errors.Wrap(err, "No Device UDID set")
 	}
 
-	oldDevice := GetDevice(udid)
+	oldDevice, err := GetDevice(udid)
+	if err != nil {
+		return errors.Wrap(err, "push on new build")
+	}
 	if oldDevice.BuildVersion != "" {
 		if currentBuild != "" {
 			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)

@@ -14,16 +14,6 @@ type Command struct {
 	ErrorString string
 }
 
-// func (command *Command) AfterCreate() (err error) {
-// 	BumpDeviceLastUpdated(command.DeviceUDID)
-// 	return
-// }
-
-// func (command *Command) AfterUpdate() (err error) {
-// 	BumpDeviceLastUpdated(command.DeviceUDID)
-// 	return
-// }
-
 type CommandPayload struct {
 	UDID        string   `json:"udid"`
 	RequestType string   `json:"request_type"`

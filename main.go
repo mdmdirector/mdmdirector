@@ -10,6 +10,7 @@ import (
 	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
 	"github.com/grahamgilbert/mdmdirector/utils"
+	"github.com/sirupsen/logrus"
 )
 
 // MicroMDMURL is the url for your MicroMDM server
@@ -50,6 +51,7 @@ var LogLevel string
 func main() {
 	var port string
 	var debugMode bool
+	logrus.SetLevel(logrus.DebugLevel)
 	flag.BoolVar(&debugMode, "debug", false, "Enable debug mode")
 	flag.BoolVar(&PushNewBuild, "push-new-build", true, "Re-push profiles if the device's build number changes.")
 	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
@@ -93,7 +95,9 @@ func main() {
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
+	r.HandleFunc("/command/pending/delete", utils.BasicAuth(director.DeletePendingCommands)).Methods("GET")
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
+	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
@@ -119,6 +123,7 @@ func main() {
 	log.Info("mdmdirector is running, hold onto your butts...")
 
 	go director.ScheduledCheckin()
+	// go director.UnconfiguredDevices()
 	go director.FetchDevicesFromMDM()
 	go director.RetryCommands()
 

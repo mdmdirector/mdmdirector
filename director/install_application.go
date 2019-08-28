@@ -7,6 +7,7 @@ import (
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/pkg/errors"
 )
 
 func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
@@ -18,6 +19,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
 	if out.DeviceUDIDs != nil {
@@ -25,7 +27,11 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.DeviceUDIDs) > 0 {
 			// Targeting all devices
 			if out.DeviceUDIDs[0] == "*" {
-				devices = GetAllDevices()
+				devices, err = GetAllDevices()
+				if err != nil {
+					log.Error(err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
 				SaveSharedInstallApplications(out)
 				for _, ManifestURL := range out.ManifestURLs {
 					// Push these out to existing devices right now now now
@@ -37,7 +43,11 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				for _, item := range out.DeviceUDIDs {
-					device := GetDevice(item)
+					device, err := GetDevice(item)
+					if err != nil {
+						log.Error(err)
+						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					}
 					devices = append(devices, device)
 					SaveInstallApplications(devices, out)
 				}
@@ -56,7 +66,11 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
 			if out.SerialNumbers[0] == "*" {
-				devices = GetAllDevices()
+				devices, err = GetAllDevices()
+				if err != nil {
+					log.Error(err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
 				SaveSharedInstallApplications(out)
 				for _, ManifestURL := range out.ManifestURLs {
 					// Push these out to existing devices right now now now
@@ -68,7 +82,10 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				for _, item := range out.SerialNumbers {
-					device := GetDeviceSerial(item)
+					device, err := GetDeviceSerial(item)
+					if err != nil {
+						continue
+					}
 					devices = append(devices, device)
 				}
 				for _, ManifestURL := range out.ManifestURLs {
@@ -84,7 +101,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) {
+func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) error {
 	var installApplication types.DeviceInstallApplication
 
 	for _, device := range devices {
@@ -93,19 +110,27 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 			installApplication.DeviceUDID = device.UDID
 			err := db.DB.Model(&device).Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
 			if err != nil {
-				log.Error(err)
+				return errors.Wrap(err, "SaveInstallApplications")
 			}
 		}
 	}
+
+	return nil
 }
 
-func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) {
+func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
+	var sentCommands []types.Command
 	for _, device := range devices {
 
-		inQueue := InstallAppInQueue(device, installApplication.ManifestURL)
+		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
+		if err != nil {
+			// Shit went wrong for this device, but logging here feels wrong
+			log.Error(err)
+			continue
+		}
 		if inQueue {
 			log.Infof("%v is already in queue for %v", installApplication.ManifestURL, device.UDID)
-			return
+			continue
 		}
 
 		var commandPayload types.CommandPayload
@@ -113,36 +138,44 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		commandPayload.RequestType = "InstallApplication"
 		commandPayload.ManifestURL = installApplication.ManifestURL
 
-		SendCommand(commandPayload)
+		command, err := SendCommand(commandPayload)
+		if err != nil {
+			// We should return an error or something here
+			log.Error(err)
+			continue
+		} else {
+			sentCommands = append(sentCommands, command)
+		}
 
 	}
-
+	return sentCommands, nil
 }
 
-func SaveSharedInstallApplications(payload types.InstallApplicationPayload) {
+func SaveSharedInstallApplications(payload types.InstallApplicationPayload) error {
 	var sharedInstallApplication types.SharedInstallApplication
 	if len(payload.ManifestURLs) == 0 {
 		log.Debug("No manifest urls")
-		return
+		return nil
 	}
 
 	for _, ManifestURL := range payload.ManifestURLs {
 		sharedInstallApplication.ManifestURL = ManifestURL.URL
-		err := db.DB.Model(&sharedInstallApplication).Where("manifest_url = ?", ManifestURL.URL).Assign(&sharedInstallApplication).FirstOrCreate(&sharedInstallApplication)
+		err := db.DB.Model(&sharedInstallApplication).Where("manifest_url = ?", ManifestURL.URL).Assign(&sharedInstallApplication).FirstOrCreate(&sharedInstallApplication).Error
 		if err != nil {
-			log.Error(err)
+			return errors.Wrap(err, "SaveSharedInstallApplications")
 		}
 	}
-
+	return nil
 }
 
-func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) {
+func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
+	var sentCommands []types.Command
 	for _, device := range devices {
 
-		inQueue := InstallAppInQueue(device, installSharedApplication.ManifestURL)
+		inQueue, err := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
 			log.Infof("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
-			return
+			continue
 		}
 
 		var commandPayload types.CommandPayload
@@ -150,38 +183,61 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 		commandPayload.RequestType = "InstallApplication"
 		commandPayload.ManifestURL = installSharedApplication.ManifestURL
 
-		SendCommand(commandPayload)
+		command, err := SendCommand(commandPayload)
+		if err != nil {
+			return sentCommands, errors.Wrap(err, "Push Shared Install Application")
+		}
+		sentCommands = append(sentCommands, command)
 
 	}
-
+	return sentCommands, nil
 }
 
-func InstallBootstrapPackages(device types.Device) {
+func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 	var sharedInstallApplication types.SharedInstallApplication
 	var deviceInstallApplication types.DeviceInstallApplication
 	var sharedInstallApplications []types.SharedInstallApplication
 	var deviceInstallApplications []types.DeviceInstallApplication
 	var devices []types.Device
+	var sentCommands []types.Command
 
 	devices = append(devices, device)
 
 	err := db.DB.Model(&sharedInstallApplication).Scan(&sharedInstallApplications).Error
 	if err != nil {
-		log.Error(err)
+		return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:dbcall")
 	}
 
 	// Push all the apps
 	for _, savedApp := range sharedInstallApplications {
-		PushSharedInstallApplication(devices, savedApp)
+		log.Debugf("InstallApplication: %v", savedApp)
+		commands, err := PushSharedInstallApplication(devices, savedApp)
+		if err != nil {
+			return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:PushSharedInstallApplication")
+		}
+
+		for _, command := range commands {
+			sentCommands = append(sentCommands, command)
+		}
+
 	}
 
 	err = db.DB.Model(&deviceInstallApplication).Where("device_ud_id = ?", device.UDID).Scan(&deviceInstallApplications).Error
 	if err != nil {
-		log.Error(err)
+		return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:dbcall2")
 	}
 
 	// Push all the apps
 	for _, savedApp := range deviceInstallApplications {
-		PushInstallApplication(devices, savedApp)
+		log.Debugf("InstallApplication: %v", savedApp)
+		commands, err := PushInstallApplication(devices, savedApp)
+		if err != nil {
+			return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:PushInstallApplication")
+		}
+		for _, command := range commands {
+			sentCommands = append(sentCommands, command)
+		}
 	}
+
+	return sentCommands, nil
 }

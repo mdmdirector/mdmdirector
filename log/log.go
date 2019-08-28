@@ -7,42 +7,42 @@ import (
 
 func Debug(msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "debug" || level == "info" || level == "warn" || level == "error" {
+	if level == "debug" {
 		log.Debug(msg...)
 	}
 }
 
 func Debugf(format string, msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "debug" || level == "info" || level == "warn" || level == "error" {
+	if level == "debug" {
 		log.Debugf(format, msg...)
 	}
 }
 
 func Info(msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "info" || level == "warn" || level == "error" {
+	if level == "debug" || level == "info" {
 		log.Info(msg...)
 	}
 }
 
 func Infof(format string, msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "info" || level == "warn" || level == "error" {
+	if level == "debug" || level == "info" {
 		log.Infof(format, msg...)
 	}
 }
 
 func Warn(msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "warn" || level == "error" {
+	if level == "debug" || level == "info" || level == "warn" {
 		log.Warn(msg...)
 	}
 }
 
 func Warnf(format string, msg ...interface{}) {
 	level := utils.LogLevel()
-	if level == "warn" || level == "error" {
+	if level == "debug" || level == "info" || level == "warn" {
 		log.Warnf(format, msg...)
 	}
 }
