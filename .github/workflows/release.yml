@@ -11,6 +11,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
-          args:
-            - "mdmdirector-linux"
-            - "mdmdirector-darwin"
+          args: "mdmdirector-linux mdmdirector-darwin"
