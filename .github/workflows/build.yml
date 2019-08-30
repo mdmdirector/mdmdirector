@@ -5,6 +5,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    steps:
-      - name: Build with Go 1.12
-        uses: cedrickring/golang-action/go1.12@1.3.0
+  steps:
+    - uses: actions/checkout@master
+    - uses: actions/setup-go@v1
+      with:
+        go-version: '1.12'
+    - run: go build
