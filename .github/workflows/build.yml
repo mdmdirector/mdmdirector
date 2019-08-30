@@ -1,0 +1,10 @@
+name: Build
+on: [push]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build with Go 1.12
+        uses: cedrickring/golang-action/go1.12@1.3.0

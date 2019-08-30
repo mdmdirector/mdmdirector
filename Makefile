@@ -13,7 +13,7 @@ else
 	CURRENT_PLATFORM = windows
 endif
 
-all: mdmdirector
+all: xp-build
 
 .PHONY: postgres
 
