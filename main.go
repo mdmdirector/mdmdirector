@@ -118,6 +118,7 @@ func main() {
 		&types.OSUpdateSettings{},
 		&types.SharedInstallApplication{},
 		&types.DeviceInstallApplication{},
+		&types.Certificate,
 	)
 
 	log.Info("mdmdirector is running, hold onto your butts...")

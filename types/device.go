@@ -68,6 +68,7 @@ type Device struct {
 	Active                   bool
 	Profiles                 []DeviceProfile            `gorm:"ForeignKey:DeviceUDID"`
 	Commands                 []Command                  `gorm:"ForeignKey:DeviceUDID"`
+	Certificates             []Certificate              `gorm:"ForeignKey:DeviceUDID"`
 	InstallApplications      []DeviceInstallApplication `gorm:"ForeignKey:DeviceUDID"`
 	SecurityInfo             SecurityInfo               `gorm:"ForeignKey:DeviceUDID"`
 	UpdatedAt                time.Time
