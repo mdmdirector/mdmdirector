@@ -138,6 +138,21 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			SaveSecurityInfo(securityInfoData, device)
 		}
 
+		_, ok = payloadDict["CertificateList"]
+		if ok {
+			var certificateListData types.CertificateListData
+			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &certificateListData)
+			if err != nil {
+				log.Error(err)
+				return
+			}
+			err := processCertificateList(certificateListData)
+			if err != nil {
+				log.Error(err)
+				return
+			}
+		}
+
 		_, ok = payloadDict["QueryResponses"]
 		if ok {
 			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
