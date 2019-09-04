@@ -229,6 +229,13 @@ func processScheduledCheckin() error {
 		return err
 	}
 
+	var certificates []types.Certificate
+
+	err = db.DB.Unscoped().Model(&certificates).Where("device_ud_id is NULL").Delete(&types.Certificate{}).Error
+	if err != nil {
+		return errors.Wrap(err, "processScheduledCheckin::CleanupNullCertificates")
+	}
+
 	return nil
 }
 

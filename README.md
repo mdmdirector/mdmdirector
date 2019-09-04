@@ -33,3 +33,4 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 * Shard out the push for inactive devices (total number of devices / 30 / 60 and then group the pushes into one group every second)
 * Support for Lock/Wipe
 * App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
+* Re-push enrollment profile when SCEP certificate is coming up to expiry
