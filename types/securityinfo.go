@@ -15,7 +15,7 @@ type SecurityInfo struct {
 	FDEHasPersonalRecoveryKey       bool   `plist:"FDE_HasPersonalRecoveryKey"`
 	FDEHasInstitutionalRecoveryKey  bool   `plist:"FDE_HasInstitutionalRecoveryKey"`
 	FDEPersonalRecoveryKeyCMS       []byte `plist:"FDE_PersonalRecoveryKeyCMS"`
-	FDEPersonalRecoveryKeyDeviceKey string `plist:"FDE_PersonalRecoveryKeyDeviceKey"`
+	FDEPersonalRecoveryKeyDeviceKey string `plist:"FDE_PersonalRecoveryKeyDeviceKey";gorm:"-"`
 	// Split this out into it's own struct
 	// FirewallSettings                 interface{}     `plist:"FirewallSettings"`
 	SystemIntegrityProtectionEnabled bool                   `plist:"SystemIntegrityProtectionEnabled"`
