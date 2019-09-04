@@ -1,13 +1,15 @@
 package types
 
+import uuid "github.com/satori/go.uuid"
+
 type DeviceInstallApplication struct {
-	ID          uint `gorm:"primary_key"`
+	ID          uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
 	ManifestURL string
 	DeviceUDID  string
 }
 
 type SharedInstallApplication struct {
-	ID          uint `gorm:"primary_key"`
+	ID          uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
 	ManifestURL string
 }
 

@@ -1,8 +1,10 @@
 package types
 
+import uuid "github.com/satori/go.uuid"
+
 // DeviceProfile (s) are profiles that are individual to the device.
 type DeviceProfile struct {
-	ID                uint `gorm:"primary_key"`
+	ID                uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
 	PayloadUUID       string
 	PayloadIdentifier string
 	HashedPayloadUUID string
@@ -14,7 +16,7 @@ type DeviceProfile struct {
 
 // SharedProfile (s) are profiles that go on every device.
 type SharedProfile struct {
-	ID                uint `gorm:"primary_key"`
+	ID                uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
 	PayloadUUID       string
 	HashedPayloadUUID string
 	PayloadIdentifier string
