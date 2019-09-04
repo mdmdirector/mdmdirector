@@ -146,7 +146,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 				log.Error(err)
 				return
 			}
-			err := processCertificateList(certificateListData)
+			err := processCertificateList(certificateListData, device)
 			if err != nil {
 				log.Error(err)
 				return
@@ -194,6 +194,7 @@ func RequestDeviceUpdate(device types.Device) {
 	RequestProfileList(device)
 	RequestSecurityInfo(device)
 	RequestDeviceInformation(device)
+	RequestCertificateList(device)
 
 	// PushDevice(device.UDID)
 }

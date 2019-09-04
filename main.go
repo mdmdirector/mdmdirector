@@ -106,7 +106,7 @@ func main() {
 	defer db.Close()
 
 	// db.DB.LogMode(debugMode)
-
+	db.DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
 	db.DB.AutoMigrate(
 		&types.Device{},
 		&types.DeviceProfile{},
@@ -118,7 +118,7 @@ func main() {
 		&types.OSUpdateSettings{},
 		&types.SharedInstallApplication{},
 		&types.DeviceInstallApplication{},
-		&types.Certificate,
+		&types.Certificate{},
 	)
 
 	log.Info("mdmdirector is running, hold onto your butts...")

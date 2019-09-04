@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/go-version v1.2.0
 	github.com/jinzhu/gorm v1.9.9
 	github.com/pkg/errors v0.8.0
+	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.4.2
 	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 	mellium.im/sasl v0.2.1 // indirect
