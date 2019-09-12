@@ -331,6 +331,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
+			log.Infof("Pushing profile to %v", device.UDID)
 
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"

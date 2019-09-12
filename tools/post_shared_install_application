@@ -1,10 +1,10 @@
 #!/bin/bash
 
-endpoint="http://localhost:8000/installapplication"
+endpoint="https://***REMOVED***/installapplication"
 jq -n \
   --arg manifesturl "$1" \
   '.udids = ["*"]
   |.manifest_urls[0].url = $manifesturl
   |.manifest_urls[0].bootstrap_only = true
   '|\
-  curl -v -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -v -u "mdmdirector:***REMOVED***" -X POST "$endpoint" -d@-

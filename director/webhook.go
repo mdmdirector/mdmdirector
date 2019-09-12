@@ -181,7 +181,7 @@ func RequestDeviceUpdate(device types.Device) {
 
 	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			log.Info("Last updated was under 30 minutes ago")
+			log.Debug("Last updated was under 30 minutes ago")
 			return
 		}
 	}
