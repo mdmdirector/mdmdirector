@@ -52,6 +52,7 @@ type ProfileListData struct {
 type ProfileList struct {
 	HasRemovalPasscode       bool          `plist:"HasRemovalPasscode"`
 	IsEncrypted              bool          `plist:"IsEncrypted"`
+	IsManaged                bool          `plist:"IsManaged"`
 	PayloadContent           []interface{} `plist:"PaylodContent"`
 	PayloadDescription       string        `plist:"PayloadDescription"`
 	PayloadDisplayName       string        `plist:"PayloadDisplayName"`
