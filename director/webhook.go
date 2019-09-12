@@ -65,7 +65,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	oldBuild := device.BuildVersion
 	if device.UDID == "" {
 		log.Error(out)
-		log.Fatal("No device udiD set")
+		log.Fatal("No device UDID set")
 	}
 	updatedDevice, err := UpdateDevice(device)
 	if err != nil {

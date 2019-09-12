@@ -17,6 +17,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const MAX = 20
+
 func RetryCommands() {
 	var delay time.Duration
 	if utils.DebugMode() {
@@ -82,12 +84,19 @@ func pushAll() error {
 	client := &http.Client{}
 
 	log.Debug("Pushing to all in debug mode")
-
+	sem := make(chan int, MAX)
+	counter := 0
 	for _, device := range devices {
 		log.Debugf("Pushing to %v", device.UDID)
-		go pushConcurrent(device, client)
+		log.Debug("Processed ", counter)
+		sem <- 1 // will block if there is MAX ints in sem
+		go func() {
+			pushConcurrent(device, client)
+			<-sem // removes an int from sem, allowing another to proceed
+		}()
+		counter = counter + 1
 	}
-
+	log.Infof("Completed pushing to %v devices", counter)
 	return nil
 }
 

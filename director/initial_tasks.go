@@ -24,10 +24,10 @@ func RunInitialTasks(udid string) error {
 		return nil
 	}
 	log.Info("Running initial tasks")
-	err = ClearCommands(&device)
-	if err != nil {
-		return err
-	}
+	// err = ClearCommands(&device)
+	// if err != nil {
+	// 	return err
+	// }
 
 	profileCommands, err := InstallAllProfiles(device)
 	if err != nil {

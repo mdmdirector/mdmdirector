@@ -171,7 +171,7 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
 	var sentCommands []types.Command
 	for _, device := range devices {
-
+		log.Infof("Pushing InstallApplication to %v", device.UDID)
 		inQueue, err := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
 			log.Infof("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
@@ -240,4 +240,21 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 	}
 
 	return sentCommands, nil
+}
+
+func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
+	var installApplications []types.SharedInstallApplication
+
+	err := db.DB.Find(&installApplications).Scan(&installApplications).Error
+	if err != nil {
+		log.Error("Couldn't scan to Shared InstallApplications model", err)
+	}
+	output, err := json.MarshalIndent(&installApplications, "", "    ")
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+
 }

@@ -94,6 +94,7 @@ func main() {
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).Methods("GET")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
 	r.HandleFunc("/command/pending/delete", utils.BasicAuth(director.DeletePendingCommands)).Methods("GET")
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
@@ -105,7 +106,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// db.DB.LogMode(debugMode)
+	// db.DB.LogMode(true)
 	db.DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
 	db.DB.AutoMigrate(
 		&types.Device{},
@@ -123,9 +124,9 @@ func main() {
 
 	log.Info("mdmdirector is running, hold onto your butts...")
 
+	director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin()
 	// go director.UnconfiguredDevices()
-	go director.FetchDevicesFromMDM()
 	go director.RetryCommands()
 
 	log.Info(http.ListenAndServe(":"+port, nil))

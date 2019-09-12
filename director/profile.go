@@ -243,7 +243,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
-
+			log.Infof("Pushing profile to %v", device.UDID)
 			commandPayload.RequestType = "InstallProfile"
 			if utils.Sign() == true {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
