@@ -364,7 +364,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 }
 
 func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) {
-	log.Debugf("Verifying mdm profiles for %v", device.UDID)
+	log.Infof("Verifying mdm profiles for %v", device.UDID)
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
 	var sharedProfile types.SharedProfile

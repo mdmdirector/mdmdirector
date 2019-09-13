@@ -17,7 +17,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-const MAX = 20
+const MAX = 5
+const DelayMinutes = 120
+
+var DevicesFetchedFromMDM bool
 
 func RetryCommands() {
 	var delay time.Duration
@@ -76,6 +79,7 @@ func pushNotNow() error {
 
 func pushAll() error {
 	var devices []types.Device
+
 	err := db.DB.Find(&devices).Scan(&devices).Error
 	if err != nil {
 		return err
@@ -86,8 +90,14 @@ func pushAll() error {
 	log.Debug("Pushing to all in debug mode")
 	sem := make(chan int, MAX)
 	counter := 0
+	total := 0
+	devicesPerMinute := len(devices) / (DelayMinutes - 1)
 	for _, device := range devices {
-		log.Debugf("Pushing to %v", device.UDID)
+		if counter >= devicesPerMinute {
+			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per minute.", total, len(devices), devicesPerMinute)
+			time.Sleep(60 * time.Second)
+			counter = 0
+		}
 		log.Debug("Processed ", counter)
 		sem <- 1 // will block if there is MAX ints in sem
 		go func() {
@@ -95,14 +105,27 @@ func pushAll() error {
 			<-sem // removes an int from sem, allowing another to proceed
 		}()
 		counter = counter + 1
+		total = total + 1
 	}
 	log.Infof("Completed pushing to %v devices", counter)
 	return nil
 }
 
 func pushConcurrent(device types.Device, client *http.Client) {
+	now := time.Now()
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	// If it's been updated within the last two hours, try to push again as it might still be online
+	if device.LastCheckedIn.Before(twoHoursAgo) {
+		log.Infof("%v checked in within two hours", device.UDID)
+		// If it's not been in touch within two hours, only push if it's out of date
+		if now.Before(device.NextPush) {
+			log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
+			return
+		}
+	}
+	log.Infof("Pushing to %v", device.UDID)
 	endpoint, err := url.Parse(utils.ServerURL())
-	retry := time.Now().Unix() + 3600
+	retry := time.Now().Unix() + 86400
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
@@ -204,9 +227,18 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
-	ticker := time.NewTicker(30 * time.Minute)
+	ticker := time.NewTicker(DelayMinutes * time.Minute)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
+	}
+
+	for {
+		if DevicesFetchedFromMDM == false {
+			time.Sleep(30 * time.Second)
+			log.Info("Devices are still being fetched from MicroMDM")
+		} else {
+			break
+		}
 	}
 
 	defer ticker.Stop()
@@ -252,6 +284,7 @@ func FetchDevicesFromMDM() {
 
 	var deviceModel types.Device
 	var devices types.DevicesFromMDM
+	log.Info("Fetching devices from MicroMDM...")
 
 	client := &http.Client{}
 	endpoint, err := url.Parse(utils.ServerURL())
@@ -295,5 +328,6 @@ func FetchDevicesFromMDM() {
 		}
 
 	}
-
+	DevicesFetchedFromMDM = true
+	log.Info("Finished fetching devices from MicroMDM...")
 }

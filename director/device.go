@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/grahamgilbert/mdmdirector/db"
 	"github.com/grahamgilbert/mdmdirector/log"
 	"github.com/grahamgilbert/mdmdirector/types"
@@ -23,7 +25,9 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		err := fmt.Errorf("No device UDID or serial set")
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
-
+	now := time.Now()
+	newDevice.NextPush = now.Add(12 * time.Hour)
+	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
 			if gorm.IsRecordNotFoundError(err) {
@@ -151,6 +155,35 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 	devices := GetAllDevicesAndAssociations()
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+
+}
+
+func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
+	var device types.Device
+	vars := mux.Vars(r)
+
+	device, err := GetDevice(vars["udid"])
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	err = db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").First(&device).Error
+	if err != nil {
+		log.Error("Couldn't scan to Device model from SingleDeviceHandler", err)
+	}
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)

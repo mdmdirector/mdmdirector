@@ -19,10 +19,10 @@ func RunInitialTasks(udid string) error {
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
-	if device.InitialTasksRun == true {
-		log.Infof("Initial tasks already run for %v", device.UDID)
-		return nil
-	}
+	// if device.InitialTasksRun == true {
+	// 	log.Infof("Initial tasks already run for %v", device.UDID)
+	// 	return nil
+	// }
 	log.Info("Running initial tasks")
 	err = ClearCommands(&device)
 	if err != nil {

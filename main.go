@@ -93,6 +93,7 @@ func main() {
 	r.HandleFunc("/profile", utils.BasicAuth(director.GetSharedProfiles)).Methods("GET")
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
+	r.HandleFunc("/device/{udid}", utils.BasicAuth(director.SingleDeviceHandler)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).Methods("GET")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
@@ -124,10 +125,10 @@ func main() {
 
 	log.Info("mdmdirector is running, hold onto your butts...")
 
-	director.FetchDevicesFromMDM()
+	go director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin()
 	// go director.UnconfiguredDevices()
-	go director.RetryCommands()
+	// go director.RetryCommands()
 
 	log.Info(http.ListenAndServe(":"+port, nil))
 }

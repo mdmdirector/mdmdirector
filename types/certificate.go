@@ -16,7 +16,7 @@ type Certificate struct {
 	DeviceUDID string
 }
 
-// CertificateListData - returned data from the ProfileList MDM command
+// CertificateListData - returned data from the CertificateList MDM command
 type CertificateListData struct {
 	CertificateList []CertificateList
 }
