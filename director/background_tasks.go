@@ -18,7 +18,7 @@ import (
 )
 
 const MAX = 5
-const DelayMinutes = 120
+const DelaySeconds = 3600
 
 var DevicesFetchedFromMDM bool
 
@@ -91,11 +91,11 @@ func pushAll() error {
 	sem := make(chan int, MAX)
 	counter := 0
 	total := 0
-	devicesPerMinute := len(devices) / (DelayMinutes - 1)
+	devicesPerSecond := len(devices) / (DelaySeconds - 1)
 	for _, device := range devices {
-		if counter >= devicesPerMinute {
-			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per minute.", total, len(devices), devicesPerMinute)
-			time.Sleep(60 * time.Second)
+		if counter >= devicesPerSecond {
+			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per second.", total, len(devices), devicesPerSecond)
+			time.Sleep(1 * time.Second)
 			counter = 0
 		}
 		log.Debug("Processed ", counter)
@@ -227,7 +227,7 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
-	ticker := time.NewTicker(DelayMinutes * time.Minute)
+	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
