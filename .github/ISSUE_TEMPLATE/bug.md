@@ -18,6 +18,7 @@ A clear and concise description of what you expected to happen.
 
 **Server (please complete the following information):**
  - Host environment [e.g. Docker, Ubuntu, AmigoOS]
+ - All options passed to MDMDirector, with values
  - MDMDirector Version or Commit SHA
  - MicroMDM Version
 
