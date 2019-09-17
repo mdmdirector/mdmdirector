@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/grahamgilbert/mdmdirector/db"
-	"github.com/grahamgilbert/mdmdirector/log"
-	"github.com/grahamgilbert/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/log"
+	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
 )
 

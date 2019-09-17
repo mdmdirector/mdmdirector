@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/grahamgilbert/mdmdirector/db"
-	"github.com/grahamgilbert/mdmdirector/director"
-	"github.com/grahamgilbert/mdmdirector/log"
-	"github.com/grahamgilbert/mdmdirector/types"
-	"github.com/grahamgilbert/mdmdirector/utils"
+	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director"
+	"github.com/mdmdirector/mdmdirector/log"
+	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/sirupsen/logrus"
 )
 

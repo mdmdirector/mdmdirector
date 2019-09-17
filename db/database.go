@@ -3,7 +3,7 @@ package db
 import (
 	"github.com/jinzhu/gorm"
 
-	"github.com/grahamgilbert/mdmdirector/utils"
+	"github.com/mdmdirector/mdmdirector/utils"
 
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 )

@@ -3,8 +3,8 @@ package types
 import (
 	"time"
 
-	"github.com/grahamgilbert/mdmdirector/db"
-	"github.com/grahamgilbert/mdmdirector/log"
+	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/log"
 )
 
 func BumpDeviceLastUpdated(udid string) {

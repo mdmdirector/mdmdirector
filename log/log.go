@@ -1,7 +1,7 @@
 package log
 
 import (
-	"github.com/grahamgilbert/mdmdirector/utils"
+	"github.com/mdmdirector/mdmdirector/utils"
 	log "github.com/sirupsen/logrus"
 )
 

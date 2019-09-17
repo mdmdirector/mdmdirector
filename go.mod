@@ -1,4 +1,4 @@
-module github.com/grahamgilbert/mdmdirector
+module github.com/mdmdirector/mdmdirector
 
 go 1.12
 
