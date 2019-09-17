@@ -34,3 +34,8 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 * App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
 * FileVault Key escrow to Crypt (and compatible servers)
 * Re-push enrollment profile when SCEP certificate is coming up to expiry
+
+## Contributing
+
+* File issues
+* Open Pull Requests
