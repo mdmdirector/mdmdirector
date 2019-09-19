@@ -123,20 +123,21 @@ func pushAll() error {
 }
 
 func pushConcurrent(device types.Device, client *http.Client) {
-	now := time.Now()
-	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	// If it's been updated within the last three hours, try to push again as it might still be online
-	if device.LastCheckedIn.After(threeHoursAgo) {
-		log.Infof("%v checked in within three hours", device.UDID)
-		// If it's not been in touch within hour, only push if it's out of date
-		if now.Before(device.NextPush) {
-			log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
-			return
-		}
-	}
+	// We may re-enable this, but right now let's just push every hour and expire it after two
+	// now := time.Now()
+	// threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	// // If it's been updated within the last three hours, try to push again as it might still be online
+	// if device.LastCheckedIn.After(threeHoursAgo) {
+	// 	log.Infof("%v checked in within three hours", device.UDID)
+	// 	// If it's not been in touch within hour, only push if it's out of date
+	// 	if now.Before(device.NextPush) {
+	// 		log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
+	// 		return
+	// 	}
+	// }
 	log.Infof("Pushing to %v", device.UDID)
 	endpoint, err := url.Parse(utils.ServerURL())
-	retry := time.Now().Unix() + 86400
+	retry := time.Now().Unix() + 7200
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
