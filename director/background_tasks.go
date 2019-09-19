@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"path"
@@ -77,6 +78,16 @@ func pushNotNow() error {
 	return nil
 }
 
+func shuffleDevices(vals []types.Device) []types.Device {
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	ret := make([]types.Device, len(vals))
+	perm := r.Perm(len(vals))
+	for i, randIndex := range perm {
+		ret[i] = vals[randIndex]
+	}
+	return ret
+}
+
 func pushAll() error {
 	var devices []types.Device
 
@@ -92,7 +103,7 @@ func pushAll() error {
 	counter := 0
 	total := 0
 	devicesPerSecond := len(devices) / (DelaySeconds - 1)
-	for _, device := range devices {
+	for _, device := range shuffleDevices(devices) {
 		if counter >= devicesPerSecond {
 			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per second.", total, len(devices), devicesPerSecond)
 			time.Sleep(1 * time.Second)
@@ -113,11 +124,11 @@ func pushAll() error {
 
 func pushConcurrent(device types.Device, client *http.Client) {
 	now := time.Now()
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
-	// If it's been updated within the last two hours, try to push again as it might still be online
-	if device.LastCheckedIn.Before(twoHoursAgo) {
-		log.Infof("%v checked in within two hours", device.UDID)
-		// If it's not been in touch within two hours, only push if it's out of date
+	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	// If it's been updated within the last three hours, try to push again as it might still be online
+	if device.LastCheckedIn.After(threeHoursAgo) {
+		log.Infof("%v checked in within three hours", device.UDID)
+		// If it's not been in touch within hour, only push if it's out of date
 		if now.Before(device.NextPush) {
 			log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
 			return
