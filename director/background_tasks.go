@@ -227,7 +227,7 @@ func processUnconfiguredDevices() error {
 
 	for _, unconfiguredDevice := range awaitingConfigDevices {
 		log.Debugf("Running initial tasks due to schedule %v", unconfiguredDevice.UDID)
-		err := RequestDeviceInformation(unconfiguredDevice)
+		err := RunInitialTasks(unconfiguredDevice.UDID)
 		if err != nil {
 			log.Error(err)
 		}
@@ -307,6 +307,10 @@ func FetchDevicesFromMDM() {
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error(err)
+	}
+
+	if resp.StatusCode != 200 {
+		return
 	}
 
 	defer resp.Body.Close()

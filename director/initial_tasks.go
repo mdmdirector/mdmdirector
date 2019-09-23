@@ -88,9 +88,9 @@ func processDeviceConfigured(uuidList []string, device types.Device) error {
 		return err
 	}
 
-	RequestSecurityInfo(device)
-	RequestDeviceInformation(device)
-	RequestProfileList(device)
+	// RequestSecurityInfo(device)
+	// RequestDeviceInformation(device)
+	// RequestProfileList(device)
 	return nil
 }
 
@@ -101,6 +101,11 @@ func SendDeviceConfigured(device types.Device) error {
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
 	_, err := SendCommand(commandPayload)
+	if err != nil {
+		return errors.Wrap(err, "SendDeviceConfigured")
+	}
+	// Twice for luck
+	_, err = SendCommand(commandPayload)
 	if err != nil {
 		return errors.Wrap(err, "SendDeviceConfigured")
 	}

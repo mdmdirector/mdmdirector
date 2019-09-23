@@ -15,11 +15,11 @@ import (
 	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
-	"github.com/groob/plist"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/pkcs12"
 )
@@ -565,6 +565,8 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 			pushedCommands = append(pushedCommands, command)
 		}
 	}
+
+	RequestProfileList(device)
 
 	return pushedCommands, nil
 
