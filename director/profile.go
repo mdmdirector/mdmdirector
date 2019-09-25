@@ -131,7 +131,6 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-
 	} else if out.SerialNumbers != nil {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
@@ -159,7 +158,6 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-
 	}
 }
 
@@ -182,7 +180,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if len(out.DeviceUDIDs) > 0 {
 				// Shared profiles
 				if out.DeviceUDIDs[0] == "*" {
-					var devices, err = GetAllDevices()
+					devices, err := GetAllDevices()
 					if err != nil {
 						log.Error(err)
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -219,7 +217,6 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 					DeleteDeviceProfiles(devices, profiles)
 				}
-
 			}
 		}
 	}
@@ -240,7 +237,6 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
 	for _, device := range devices {
-
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
 			log.Infof("Pushing profile to %v", device.UDID)
@@ -328,7 +324,6 @@ func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile
 func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
 	for _, device := range devices {
-
 		for _, profileData := range profiles {
 			var commandPayload types.CommandPayload
 			log.Infof("Pushing profile to %v", device.UDID)
@@ -398,7 +393,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	for _, savedSharedProfile := range sharedProfiles {
-		var found = false
+		found := false
 		for _, incomingProfile := range profileListData.ProfileList {
 			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID {
 				found = true
@@ -412,7 +407,6 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	PushSharedProfiles(devices, sharedProfilesToInstall)
-
 }
 
 func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
@@ -430,7 +424,6 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
@@ -447,7 +440,6 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
@@ -516,7 +508,7 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 }
 
 func RequestProfileList(device types.Device) {
-	var requestType = "ProfileList"
+	requestType := "ProfileList"
 	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
@@ -569,5 +561,4 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	RequestProfileList(device)
 
 	return pushedCommands, nil
-
 }

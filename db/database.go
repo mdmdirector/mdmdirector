@@ -18,7 +18,6 @@ func Open() error {
 	}
 
 	return nil
-
 }
 
 func Close() error {

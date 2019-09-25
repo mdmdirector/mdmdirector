@@ -74,7 +74,6 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	}
 
 	return &device, nil
-
 }
 
 func UpdateDeviceBools(newDevice *types.Device) error {
@@ -96,7 +95,6 @@ func UpdateDeviceBools(newDevice *types.Device) error {
 	}
 
 	return nil
-
 }
 
 func GetDevice(udid string) (types.Device, error) {
@@ -161,7 +159,6 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
@@ -190,11 +187,10 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 func RequestDeviceInformation(device types.Device) error {
-	var requestType = "DeviceInformation"
+	requestType := "DeviceInformation"
 	log.Debugf("Requesting Device Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID

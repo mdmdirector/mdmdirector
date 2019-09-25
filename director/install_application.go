@@ -61,7 +61,6 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-
 	} else if out.SerialNumbers != nil {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
@@ -97,7 +96,6 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-
 	}
 }
 
@@ -256,5 +254,4 @@ func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }

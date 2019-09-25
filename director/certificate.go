@@ -11,7 +11,7 @@ import (
 )
 
 func RequestCertificateList(device types.Device) {
-	var requestType = "CertificateList"
+	requestType := "CertificateList"
 	log.Debugf("Requesting Certificate List for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID

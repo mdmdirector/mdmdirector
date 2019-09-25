@@ -19,7 +19,7 @@ var MicroMDMURL string
 // MicroMDMAPIKey is the api key for your MicroMDM server
 var MicroMDMAPIKey string
 
-//MicroMDMUsername is the username for your MicroMDM server
+// MicroMDMUsername is the username for your MicroMDM server
 var MicroMDMUsername = "micromdm"
 
 // Sign is whether profiles should be signed (they really should)

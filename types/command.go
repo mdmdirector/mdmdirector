@@ -1,8 +1,6 @@
 package types
 
-import (
-	"time"
-)
+import "time"
 
 type Command struct {
 	UpdatedAt   time.Time

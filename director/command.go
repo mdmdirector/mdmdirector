@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
-	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
 )
 
@@ -79,7 +79,6 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 				return err
 			}
 		}
-
 	}
 	return nil
 }
@@ -95,7 +94,6 @@ func CommandInQueue(device types.Device, command string) bool {
 	}
 
 	return true
-
 }
 
 func InstallAppInQueue(device types.Device, data string) (bool, error) {
@@ -111,7 +109,6 @@ func InstallAppInQueue(device types.Device, data string) (bool, error) {
 	}
 
 	return true, nil
-
 }
 
 func ClearCommands(device *types.Device) error {
@@ -140,7 +137,6 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +153,6 @@ func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }
 
 func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +169,6 @@ func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	// w.Write(output)
-
 }
 
 func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
@@ -191,5 +185,4 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
-
 }

@@ -95,8 +95,7 @@ func processDeviceConfigured(uuidList []string, device types.Device) error {
 }
 
 func SendDeviceConfigured(device types.Device) error {
-
-	var requestType = "DeviceConfigured"
+	requestType := "DeviceConfigured"
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType

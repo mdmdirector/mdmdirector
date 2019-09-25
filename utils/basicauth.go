@@ -5,14 +5,13 @@ import (
 	"net/http"
 )
 
-//BasicAuth provides basic authentication for certain routes
+// BasicAuth provides basic authentication for certain routes
 func BasicAuth(handler http.HandlerFunc) http.HandlerFunc {
-	var username = GetBasicAuthUser()
-	var password = GetBasicAuthPassword()
+	username := GetBasicAuthUser()
+	password := GetBasicAuthPassword()
 
-	var realm = "Please enter your username and password for this site"
+	realm := "Please enter your username and password for this site"
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		user, pass, ok := r.BasicAuth()
 
 		if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(username)) != 1 || subtle.ConstantTimeCompare([]byte(pass), []byte(password)) != 1 {
