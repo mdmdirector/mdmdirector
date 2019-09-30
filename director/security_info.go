@@ -7,7 +7,7 @@ import (
 )
 
 func RequestSecurityInfo(device types.Device) {
-	var requestType = "SecurityInfo"
+	requestType := "SecurityInfo"
 	log.Debugf("Requesting Security Info for %v", device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID

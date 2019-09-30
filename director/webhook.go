@@ -6,13 +6,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/groob/plist"
+	"github.com/hashicorp/go-version"
+	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
-	"github.com/groob/plist"
-	"github.com/hashicorp/go-version"
-	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
 )
 
@@ -166,7 +166,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 	}
-
 }
 
 func RequestDeviceUpdate(device types.Device) {
@@ -200,7 +199,6 @@ func RequestDeviceUpdate(device types.Device) {
 }
 
 func pushOnNewBuild(udid string, currentBuild string) error {
-
 	// Only compare if there is actually a build version set
 	if udid == "" {
 		err := fmt.Errorf("Device does not have a udid set %v", udid)

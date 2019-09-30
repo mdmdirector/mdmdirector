@@ -154,7 +154,6 @@ func pushConcurrent(device types.Device, client *http.Client) {
 }
 
 func PushDevice(udid string) error {
-
 	client := &http.Client{}
 
 	endpoint, err := url.Parse(utils.ServerURL())
@@ -209,7 +208,6 @@ func UnconfiguredDevices() {
 }
 
 func processUnconfiguredDevices() error {
-
 	var awaitingConfigDevices []types.Device
 	var awaitingConfigDevice types.Device
 
@@ -234,7 +232,6 @@ func processUnconfiguredDevices() error {
 	}
 
 	return nil
-
 }
 
 func ScheduledCheckin() {
@@ -272,7 +269,6 @@ func ScheduledCheckin() {
 }
 
 func processScheduledCheckin() error {
-
 	if utils.DebugMode() {
 		log.Debug("Processing scheduledCheckin in debug mode")
 	}
@@ -293,7 +289,6 @@ func processScheduledCheckin() error {
 }
 
 func FetchDevicesFromMDM() {
-
 	var deviceModel types.Device
 	var devices types.DevicesFromMDM
 	log.Info("Fetching devices from MicroMDM...")
