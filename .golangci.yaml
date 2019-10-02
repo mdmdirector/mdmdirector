@@ -34,7 +34,6 @@ linters:
     - dupl
     - errcheck
     - gocritic
-    - gocyclo
     - gofmt
     - goimports
     - golint
@@ -51,6 +50,7 @@ linters:
 # Disabled
 # - structcheck
 # - unused
+# - gocyclo
 
 # all available settings of specific linters, we can set an option for
 # a given linter even if we deactivate that same linter at runtime

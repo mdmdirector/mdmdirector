@@ -13,10 +13,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-func SendCommand(CommandPayload types.CommandPayload) (types.Command, error) {
+func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	var command types.Command
 	var commandResponse types.CommandResponse
-	jsonStr, err := json.Marshal(CommandPayload)
+	jsonStr, err := json.Marshal(commandPayload)
 	if err != nil {
 		return command, err
 	}
@@ -38,13 +38,13 @@ func SendCommand(CommandPayload types.CommandPayload) (types.Command, error) {
 
 	defer resp.Body.Close()
 
-	if CommandPayload.RequestType == "InstallApplication" {
-		command.Data = CommandPayload.ManifestURL
+	if commandPayload.RequestType == "InstallApplication" {
+		command.Data = commandPayload.ManifestURL
 	}
 
-	command.DeviceUDID = CommandPayload.UDID
+	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
-	command.RequestType = CommandPayload.RequestType
+	command.RequestType = commandPayload.RequestType
 
 	db.DB.Create(&command)
 	return command, nil

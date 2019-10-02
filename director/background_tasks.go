@@ -243,7 +243,8 @@ func processUnconfiguredDevices() error {
 	// 	return nil
 	// }
 
-	for _, unconfiguredDevice := range awaitingConfigDevices {
+	for i := range awaitingConfigDevices {
+		unconfiguredDevice := awaitingConfigDevices[i]
 		log.Debugf("Running initial tasks due to schedule %v", unconfiguredDevice.UDID)
 		err := RunInitialTasks(unconfiguredDevice.UDID)
 		if err != nil {
