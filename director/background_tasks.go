@@ -65,7 +65,7 @@ func pushNotNow() error {
 		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
-		req.SetBasicAuth("micromdm", utils.ApiKey())
+		req.SetBasicAuth("micromdm", utils.APIKey())
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -143,7 +143,7 @@ func pushConcurrent(device types.Device, client *http.Client) {
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
 	endpoint.RawQuery = queryString.Encode()
 	req, err := http.NewRequest("GET", endpoint.String(), nil)
-	req.SetBasicAuth("micromdm", utils.ApiKey())
+	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -171,7 +171,7 @@ func PushDevice(udid string) error {
 	if err != nil {
 		return errors.Wrap(err, "PushDevice")
 	}
-	req.SetBasicAuth("micromdm", utils.ApiKey())
+	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -298,7 +298,7 @@ func FetchDevicesFromMDM() {
 	endpoint.Path = path.Join(endpoint.Path, "v1", "devices")
 
 	req, err := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
-	req.SetBasicAuth("micromdm", utils.ApiKey())
+	req.SetBasicAuth("micromdm", utils.APIKey())
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error(err)

@@ -12,9 +12,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
 
-	// sqlite
 	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
 )
 
 func UpdateDevice(newDevice types.Device) (*types.Device, error) {

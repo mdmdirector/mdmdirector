@@ -9,7 +9,7 @@ func ServerURL() string {
 	return strings.TrimRight(flag.Lookup("micromdmurl").Value.(flag.Getter).Get().(string), "/")
 }
 
-func ApiKey() string {
+func APIKey() string {
 	return flag.Lookup("micromdmapikey").Value.(flag.Getter).Get().(string)
 }
 
