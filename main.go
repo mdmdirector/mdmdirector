@@ -42,7 +42,7 @@ var BasicAuthUser = utils.GetBasicAuthUser()
 // BasicAuthPass is the password used for basic auth
 var BasicAuthPass string
 
-// DBConnectionString is used to connect to the datbase
+// DBConnectionString is used to connect to the database
 var DBConnectionString string
 
 // LogLevel = log level

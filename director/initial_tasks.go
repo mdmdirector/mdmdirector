@@ -29,23 +29,23 @@ func RunInitialTasks(udid string) error {
 		return err
 	}
 
-	profileCommands, err := InstallAllProfiles(device)
+	_, err = InstallAllProfiles(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:InstallAllProfiles")
 	}
 
-	packageCommands, err := InstallBootstrapPackages(device)
+	_, err = InstallBootstrapPackages(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:InstallBootstrapPackages")
 	}
 
-	commandsList := append(profileCommands, packageCommands...)
-	var uuidList []string
-	for _, command := range commandsList {
-		uuidList = append(uuidList, command.CommandUUID)
-	}
+	// commandsList := append(profileCommands, packageCommands...)
+	// var uuidList []string
+	// for _, command := range commandsList {
+	// 	uuidList = append(uuidList, command.CommandUUID)
+	// }
 
-	err = processDeviceConfigured(uuidList, device)
+	err = processDeviceConfigured(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:processDeviceConfigured")
 	}
@@ -53,30 +53,8 @@ func RunInitialTasks(udid string) error {
 	return nil
 }
 
-func processDeviceConfigured(uuidList []string, device types.Device) error {
-	// var commandModel types.Command
+func processDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
-	// This would be cool, but I think we're hitting a race condition somewhere
-	// for {
-	// 	var unackedCommands []types.Command
-	// 	if err := db.DB.Model(&commandModel).Where("(status = ? OR status = ?) AND command_uuid IN (?)", "", "NotNow", uuidList).Scan(&unackedCommands).Error; err != nil {
-	// 		if gorm.IsRecordNotFoundError(err) {
-	// 			log.Debug("No commands that are unacked")
-	// 			break
-	// 		} else {
-	// 			log.Debug(err)
-
-	// 		}
-	// 	} else {
-	// 		if len(unackedCommands) == 0 {
-	// 			log.Debug("No commands that are unacked")
-	// 			break
-	// 		}
-	// 		log.Debug("uacked commands found. Sleeping 1 second")
-	// 		log.Debug(unackedCommands)
-	// 		time.Sleep(1 * time.Second)
-	// 	}
-	// }
 
 	err := SendDeviceConfigured(device)
 	if err != nil {
@@ -113,8 +91,8 @@ func SendDeviceConfigured(device types.Device) error {
 
 func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
-	// err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"awaiting_configuration": false, "token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true}).Error
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true}).Error
+	// err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"awaiting_configuration": false, "token_update_received": true, "authenticate_received": true, "initial_tasks_run": true}).Error
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true, "initial_tasks_run": true}).Error
 	if err != nil {
 		return err
 	}
@@ -129,7 +107,7 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
 	log.Infof("Resetting %v", device.UDID)
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": false, "authenticate_received": false, "initial_tasks_run": false}).Error
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}

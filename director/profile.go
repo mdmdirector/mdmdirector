@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"golang.org/x/crypto/pkcs12"
+
 	"github.com/fullsailor/pkcs7"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -21,7 +23,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/pkcs12"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +114,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				SaveSharedProfiles(sharedProfiles)
-				if out.PushNow == true {
+				if out.PushNow {
 					PushSharedProfiles(devices, sharedProfiles)
 				}
 			} else {
@@ -126,7 +127,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					devices = append(devices, device)
 				}
 				SaveProfiles(devices, profiles)
-				if out.PushNow == true {
+				if out.PushNow {
 					PushProfiles(devices, profiles)
 				}
 			}
@@ -141,7 +142,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				SaveSharedProfiles(sharedProfiles)
-				if out.PushNow == true {
+				if out.PushNow {
 					PushSharedProfiles(devices, sharedProfiles)
 				}
 			} else {
@@ -153,7 +154,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					devices = append(devices, device)
 				}
 				SaveProfiles(devices, profiles)
-				if out.PushNow == true {
+				if out.PushNow {
 					PushProfiles(devices, profiles)
 				}
 			}
@@ -168,8 +169,8 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var sharedProfileModel types.SharedProfile
 	var devices []types.Device
 	var out types.DeleteProfilePayload
-
-	err := json.NewDecoder(r.Body).Decode(&out)
+	var err error
+	err = json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}
@@ -180,15 +181,15 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if len(out.DeviceUDIDs) > 0 {
 				// Shared profiles
 				if out.DeviceUDIDs[0] == "*" {
-					devices, err := GetAllDevices()
+					devices, err = GetAllDevices()
 					if err != nil {
 						log.Error(err)
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
-					var deviceIds []string
-					for _, item := range devices {
-						deviceIds = append(deviceIds, item.UDID)
-					}
+					// var deviceIds []string
+					// for _, item := range devices {
+					// 	deviceIds = append(deviceIds, item.UDID)
+					// }
 					err = db.DB.Model(&sharedProfileModel).Where("payload_uuid = ? and payload_identifier = ?", profile.UUID, profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
 					if err != nil {
 						log.Error(err)
@@ -230,7 +231,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 				db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile)
 			}
 		}
-		db.DB.Model(&device).Association("Profiles").Append(profiles)
+		db.DB.Model(device).Association("Profiles").Append(profiles)
 	}
 }
 
@@ -241,7 +242,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 			var commandPayload types.CommandPayload
 			log.Infof("Pushing profile to %v", device.UDID)
 			commandPayload.RequestType = "InstallProfile"
-			if utils.Sign() == true {
+			if utils.Sign() {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
 				if err != nil {
 					log.Errorf("loading signing certificate and private key: %v", err)
@@ -331,7 +332,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
 
-			if utils.Sign() == true {
+			if utils.Sign() {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
 				if err != nil {
 					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
@@ -401,7 +402,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			}
 		}
 
-		if found == false {
+		if !found {
 			sharedProfilesToInstall = append(sharedProfilesToInstall, savedSharedProfile)
 		}
 	}
@@ -458,6 +459,7 @@ func SignProfile(key crypto.PrivateKey, cert *x509.Certificate, mobileconfig []b
 }
 
 func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509.Certificate, error) {
+	var err error
 	certData, err := ioutil.ReadFile(certPath)
 	if err != nil {
 		return nil, nil, err
@@ -538,9 +540,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	if err != nil {
 		log.Error(err)
 	} else {
-		for _, command := range commands {
-			pushedCommands = append(pushedCommands, command)
-		}
+		pushedCommands = append(pushedCommands, commands...)
 	}
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
@@ -553,9 +553,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	if err != nil {
 		log.Error(err)
 	} else {
-		for _, command := range commands {
-			pushedCommands = append(pushedCommands, command)
-		}
+		pushedCommands = append(pushedCommands, commands...)
 	}
 
 	RequestProfileList(device)

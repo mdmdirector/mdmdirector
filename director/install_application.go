@@ -37,7 +37,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					// Push these out to existing devices right now now now
 					var sharedInstallApplication types.SharedInstallApplication
 					sharedInstallApplication.ManifestURL = ManifestURL.URL
-					if ManifestURL.BootstrapOnly == false {
+					if !ManifestURL.BootstrapOnly {
 						PushSharedInstallApplication(devices, sharedInstallApplication)
 					}
 				}
@@ -55,7 +55,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				for _, ManifestURL := range out.ManifestURLs {
 					var installApplication types.DeviceInstallApplication
 					installApplication.ManifestURL = ManifestURL.URL
-					if ManifestURL.BootstrapOnly == false {
+					if !ManifestURL.BootstrapOnly {
 						PushInstallApplication(devices, installApplication)
 					}
 				}
@@ -75,7 +75,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					// Push these out to existing devices right now now now
 					var sharedInstallApplication types.SharedInstallApplication
 					sharedInstallApplication.ManifestURL = ManifestURL.URL
-					if ManifestURL.BootstrapOnly == false {
+					if !ManifestURL.BootstrapOnly {
 						PushSharedInstallApplication(devices, sharedInstallApplication)
 					}
 				}
@@ -90,7 +90,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				for _, ManifestURL := range out.ManifestURLs {
 					var installApplication types.DeviceInstallApplication
 					installApplication.ManifestURL = ManifestURL.URL
-					if ManifestURL.BootstrapOnly == false {
+					if !ManifestURL.BootstrapOnly {
 						PushInstallApplication(devices, installApplication)
 					}
 				}
@@ -170,7 +170,7 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 	var sentCommands []types.Command
 	for _, device := range devices {
 		log.Infof("Pushing InstallApplication to %v", device.UDID)
-		inQueue, err := InstallAppInQueue(device, installSharedApplication.ManifestURL)
+		inQueue, _ := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
 			log.Infof("%v is already in queue for %v", installSharedApplication.ManifestURL, device.UDID)
 			continue
@@ -214,9 +214,7 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 			return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:PushSharedInstallApplication")
 		}
 
-		for _, command := range commands {
-			sentCommands = append(sentCommands, command)
-		}
+		sentCommands = append(sentCommands, commands...)
 
 	}
 
@@ -232,9 +230,7 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 		if err != nil {
 			return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:PushInstallApplication")
 		}
-		for _, command := range commands {
-			sentCommands = append(sentCommands, command)
-		}
+		sentCommands = append(sentCommands, commands...)
 	}
 
 	return sentCommands, nil

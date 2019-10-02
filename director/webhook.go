@@ -18,7 +18,8 @@ import (
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
-	err := json.NewDecoder(r.Body).Decode(&out)
+	var err error
+	err = json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}
@@ -42,7 +43,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.AuthenticateRecieved = false
 		device.TokenUpdateRecieved = false
 		device.InitialTasksRun = false
-		err := ClearCommands(&device)
+		err = ClearCommands(&device)
 		if err != nil {
 			log.Error(err)
 		}
@@ -51,12 +52,12 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if out.Topic == "mdm.Authenticate" {
-		err := ResetDevice(device)
+		err = ResetDevice(device)
 		if err != nil {
 			log.Error(err)
 		}
 	} else if out.Topic == "mdm.TokenUpdate" {
-		err := SetTokenUpdate(device)
+		err = SetTokenUpdate(device)
 		if err != nil {
 			log.Error(err)
 		}
@@ -72,14 +73,14 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 
-	if updatedDevice.InitialTasksRun == false && updatedDevice.TokenUpdateRecieved == true {
+	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
 		log.Error("Running initial tasks due to device update")
 		RunInitialTasks(device.UDID)
 		return
 	}
 
 	if utils.PushOnNewBuild() {
-		err := pushOnNewBuild(oldUDID, oldBuild)
+		err = pushOnNewBuild(oldUDID, oldBuild)
 		if err != nil {
 			log.Info(err)
 		}
@@ -146,7 +147,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 				log.Error(err)
 				return
 			}
-			err := processCertificateList(certificateListData, device)
+			err = processCertificateList(certificateListData, device)
 			if err != nil {
 				log.Error(err)
 				return
@@ -170,6 +171,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
+	var err error
 
 	// hourAgo := time.Now().Add(1 * time.Hour)
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
@@ -178,14 +180,14 @@ func RequestDeviceUpdate(device types.Device) {
 		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
 	}
 
-	if err := db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
+	if err = db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			log.Debug("Last updated was under 30 minutes ago")
 			return
 		}
 	}
 
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
 		log.Error(err)
 	}
@@ -200,8 +202,9 @@ func RequestDeviceUpdate(device types.Device) {
 
 func pushOnNewBuild(udid string, currentBuild string) error {
 	// Only compare if there is actually a build version set
+	var err error
 	if udid == "" {
-		err := fmt.Errorf("Device does not have a udid set %v", udid)
+		err = fmt.Errorf("Device does not have a udid set %v", udid)
 		return errors.Wrap(err, "No Device UDID set")
 	}
 
