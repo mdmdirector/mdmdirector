@@ -135,10 +135,6 @@ issues:
 
   # List of path and linter specific issues that should be excluded.
   exclude-rules:
-    - path: "^go/src/improbable.io/(cmd|db|lib)"
-      text: "context leak"
-      linters:
-        - govet
     - path: ".go$"
       text: "underscore in package name"
       linters:
