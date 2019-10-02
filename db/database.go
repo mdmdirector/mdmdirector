@@ -5,6 +5,7 @@ import (
 
 	"github.com/mdmdirector/mdmdirector/utils"
 
+	// Need to import postgres
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 )
 

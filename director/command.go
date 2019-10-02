@@ -22,7 +22,7 @@ func SendCommand(CommandPayload types.CommandPayload) (types.Command, error) {
 	}
 	req, err := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
 
-	req.SetBasicAuth("micromdm", utils.ApiKey())
+	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -103,9 +103,8 @@ func InstallAppInQueue(device types.Device, data string) (bool, error) {
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			return false, nil
-		} else {
-			return false, errors.Wrap(err, "Install App in queue")
 		}
+		return false, errors.Wrap(err, "Install App in queue")
 	}
 
 	return true, nil

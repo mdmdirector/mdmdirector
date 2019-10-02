@@ -21,6 +21,12 @@ all: xp-build
 	mkdir -p build/darwin
 	mkdir -p build/linux
 
+lint:
+	golangci-lint run
+
+fix:
+	golangci-lint run --fix
+
 clean:
 	rm -rf build
 

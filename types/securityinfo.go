@@ -15,7 +15,7 @@ type SecurityInfo struct {
 	FDEHasPersonalRecoveryKey       bool   `plist:"FDE_HasPersonalRecoveryKey"`
 	FDEHasInstitutionalRecoveryKey  bool   `plist:"FDE_HasInstitutionalRecoveryKey"`
 	FDEPersonalRecoveryKeyCMS       []byte `plist:"FDE_PersonalRecoveryKeyCMS"`
-	FDEPersonalRecoveryKeyDeviceKey string `plist:"FDE_PersonalRecoveryKeyDeviceKey";gorm:"-"`
+	FDEPersonalRecoveryKeyDeviceKey string `plist:"FDE_PersonalRecoveryKeyDeviceKey" gorm:"-"`
 	// Split this out into it's own struct
 	// FirewallSettings                 interface{}     `plist:"FirewallSettings"`
 	SystemIntegrityProtectionEnabled bool                   `plist:"SystemIntegrityProtectionEnabled"`
@@ -26,7 +26,7 @@ type SecurityInfo struct {
 
 type FirmwarePasswordStatus struct {
 	PasswordExists bool   `plist:"PasswordExists"`
-	ChangePending  bool   `plist:"ChangePending`
+	ChangePending  bool   `plist:"ChangePending"`
 	AllowOroms     bool   `plist:"AllowOroms"`
 	DeviceUDID     string `gorm:"primary_key"`
 }
