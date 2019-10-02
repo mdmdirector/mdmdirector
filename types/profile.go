@@ -66,10 +66,10 @@ type ProfileList struct {
 
 func (profile *DeviceProfile) AfterCreate() (err error) {
 	BumpDeviceLastUpdated(profile.DeviceUDID)
-	return
+	return nil
 }
 
 func (profile *DeviceProfile) AfterUpdate() (err error) {
 	BumpDeviceLastUpdated(profile.DeviceUDID)
-	return
+	return nil
 }

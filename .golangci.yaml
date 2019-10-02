@@ -44,13 +44,13 @@ linters:
     - nakedret
     - scopelint
     - staticcheck
-    - structcheck
     - typecheck
     - unconvert
     - unparam
-    - unused
     - varcheck
-
+# Disabled
+# - structcheck
+# - unused
 
 # all available settings of specific linters, we can set an option for
 # a given linter even if we deactivate that same linter at runtime

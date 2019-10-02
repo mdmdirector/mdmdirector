@@ -20,7 +20,7 @@ func SendCommand(CommandPayload types.CommandPayload) (types.Command, error) {
 	if err != nil {
 		return command, err
 	}
-	req, err := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
+	req, _ := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
 
 	req.SetBasicAuth("micromdm", utils.APIKey())
 

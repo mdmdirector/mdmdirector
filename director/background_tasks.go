@@ -38,12 +38,16 @@ func RetryCommands() {
 
 	fn()
 
-	for {
-		select {
-		case <-ticker.C:
-			fn()
-		}
+	for range ticker.C {
+		fn()
 	}
+
+	// for {
+	// 	select {
+	// 	case <-ticker.C:
+	// 		fn()
+	// 	}
+	// }
 }
 
 func pushNotNow() error {
@@ -59,12 +63,18 @@ func pushNotNow() error {
 	for _, queuedCommand := range commands {
 
 		endpoint, err := url.Parse(utils.ServerURL())
+		if err != nil {
+			log.Error(err)
+		}
 		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
 		queryString := endpoint.Query()
 		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
+		if err != nil {
+			log.Error(err)
+		}
 		req.SetBasicAuth("micromdm", utils.APIKey())
 
 		resp, err := client.Do(req)
@@ -103,7 +113,9 @@ func pushAll() error {
 	counter := 0
 	total := 0
 	devicesPerSecond := len(devices) / (DelaySeconds - 1)
-	for _, device := range shuffleDevices(devices) {
+	var shuffledDevices = shuffleDevices(devices)
+	for i := range shuffledDevices {
+		device := shuffledDevices[i]
 		if counter >= devicesPerSecond {
 			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per second.", total, len(devices), devicesPerSecond)
 			time.Sleep(1 * time.Second)
@@ -115,8 +127,8 @@ func pushAll() error {
 			pushConcurrent(device, client)
 			<-sem // removes an int from sem, allowing another to proceed
 		}()
-		counter = counter + 1
-		total = total + 1
+		counter++
+		total++
 	}
 	log.Infof("Completed pushing to %v devices", counter)
 	return nil
@@ -137,12 +149,18 @@ func pushConcurrent(device types.Device, client *http.Client) {
 	// }
 	log.Infof("Pushing to %v", device.UDID)
 	endpoint, err := url.Parse(utils.ServerURL())
+	if err != nil {
+		log.Error(err)
+	}
 	retry := time.Now().Unix() + 7200
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
 	endpoint.RawQuery = queryString.Encode()
 	req, err := http.NewRequest("GET", endpoint.String(), nil)
+	if err != nil {
+		log.Error(err)
+	}
 	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	resp, err := client.Do(req)
@@ -198,13 +216,15 @@ func UnconfiguredDevices() {
 	}
 
 	fn()
-
-	for {
-		select {
-		case <-ticker.C:
-			fn()
-		}
+	for range ticker.C {
+		fn()
 	}
+	// for {
+	// 	select {
+	// 	case <-ticker.C:
+	// 		fn()
+	// 	}
+	// }
 }
 
 func processUnconfiguredDevices() error {
@@ -242,7 +262,7 @@ func ScheduledCheckin() {
 	}
 
 	for {
-		if DevicesFetchedFromMDM == false {
+		if !DevicesFetchedFromMDM {
 			time.Sleep(30 * time.Second)
 			log.Info("Devices are still being fetched from MicroMDM")
 		} else {
@@ -260,12 +280,16 @@ func ScheduledCheckin() {
 
 	fn()
 
-	for {
-		select {
-		case <-ticker.C:
-			fn()
-		}
+	for range ticker.C {
+		fn()
 	}
+
+	// for {
+	// 	select {
+	// 	case <-ticker.C:
+	// 		fn()
+	// 	}
+	// }
 }
 
 func processScheduledCheckin() error {
@@ -295,9 +319,12 @@ func FetchDevicesFromMDM() {
 
 	client := &http.Client{}
 	endpoint, err := url.Parse(utils.ServerURL())
+	if err != nil {
+		log.Error(err)
+	}
 	endpoint.Path = path.Join(endpoint.Path, "v1", "devices")
 
-	req, err := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
+	req, _ := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
 	req.SetBasicAuth("micromdm", utils.APIKey())
 	resp, err := client.Do(req)
 	if err != nil {
@@ -325,7 +352,7 @@ func FetchDevicesFromMDM() {
 		device.UDID = newDevice.UDID
 		device.SerialNumber = newDevice.SerialNumber
 		device.Active = newDevice.EnrollmentStatus
-		if newDevice.EnrollmentStatus == true {
+		if newDevice.EnrollmentStatus {
 			device.AuthenticateRecieved = true
 			device.TokenUpdateRecieved = true
 			device.InitialTasksRun = true

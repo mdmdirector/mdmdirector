@@ -57,14 +57,14 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		return &device, errors.Wrap(err, "UpdateDevice")
 	}
 
-	if newDevice.AwaitingConfiguration == true && newDevice.InitialTasksRun == true {
+	if newDevice.AwaitingConfiguration && newDevice.InitialTasksRun {
 		err := SendDeviceConfigured(newDevice)
 		if err != nil {
 			return &device, errors.Wrap(err, "UpdateDevice:SendDeviceConfigured")
 		}
 	}
 
-	if newDevice.InitialTasksRun == false && newDevice.AwaitingConfiguration == true {
+	if !newDevice.InitialTasksRun && newDevice.AwaitingConfiguration {
 		err := RunInitialTasks(newDevice.UDID)
 		if err != nil {
 			return &device, errors.Wrap(err, "UpdateDevice:RunInitialTasks")
@@ -205,7 +205,7 @@ func RequestDeviceInformation(device types.Device) error {
 func SetTokenUpdate(device types.Device) error {
 	var deviceModel types.Device
 	log.Debugf("TokenUpdate received for %v", device.UDID)
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).Error
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
 	if err != nil {
 		return errors.Wrap(err, "Set TokenUpdate")
 	}
