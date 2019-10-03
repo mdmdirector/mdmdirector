@@ -32,13 +32,19 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					log.Error(err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
-				SaveSharedInstallApplications(out)
+				err = SaveSharedInstallApplications(out)
+				if err != nil {
+					log.Error(err)
+				}
 				for _, ManifestURL := range out.ManifestURLs {
 					// Push these out to existing devices right now now now
 					var sharedInstallApplication types.SharedInstallApplication
 					sharedInstallApplication.ManifestURL = ManifestURL.URL
 					if !ManifestURL.BootstrapOnly {
-						PushSharedInstallApplication(devices, sharedInstallApplication)
+						_, err = PushSharedInstallApplication(devices, sharedInstallApplication)
+						if err != nil {
+							log.Error(err)
+						}
 					}
 				}
 			} else {
@@ -102,7 +108,8 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) error {
 	var installApplication types.DeviceInstallApplication
 
-	for _, device := range devices {
+	for i := range devices {
+		device := devices[i]
 		for _, ManifestURL := range payload.ManifestURLs {
 			installApplication.ManifestURL = ManifestURL.URL
 			installApplication.DeviceUDID = device.UDID
@@ -118,8 +125,8 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
 	var sentCommands []types.Command
-	for _, device := range devices {
-
+	for i := range devices {
+		device := devices[i]
 		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
 		if err != nil {
 			// Shit went wrong for this device, but logging here feels wrong
@@ -168,7 +175,8 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
 	var sentCommands []types.Command
-	for _, device := range devices {
+	for i := range devices {
+		device := devices[i]
 		log.Infof("Pushing InstallApplication to %v", device.UDID)
 		inQueue, _ := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {

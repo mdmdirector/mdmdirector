@@ -30,8 +30,9 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
 	var out types.ProfilePayload
+	var err error
 
-	err := json.NewDecoder(r.Body).Decode(&out)
+	err = json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -225,8 +226,10 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	var profile types.DeviceProfile
-	for _, device := range devices {
-		for _, profileData := range profiles {
+	for i := range devices {
+		device := devices[i]
+		for i := range profiles {
+			profileData := profiles[i]
 			if profileData.PayloadIdentifier != "" {
 				db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile)
 			}
@@ -237,8 +240,10 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
-	for _, device := range devices {
-		for _, profileData := range profiles {
+	for i := range devices {
+		device := devices[i]
+		for i := range profiles {
+			profileData := profiles[i]
 			var commandPayload types.CommandPayload
 			log.Infof("Pushing profile to %v", device.UDID)
 			commandPayload.RequestType = "InstallProfile"
@@ -288,7 +293,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 
 	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
-		tx2 = tx2.Create(&profileData)
+		tx2 = tx2.Create(profileData)
 	}
 
 	err := tx2.Error
@@ -299,8 +304,10 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 }
 
 func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile) {
-	for _, device := range devices {
-		for _, profileData := range profiles {
+	for i := range devices {
+		device := devices[i]
+		for i := range profiles {
+			profileData := profiles[i]
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -324,8 +331,10 @@ func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile
 
 func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
-	for _, device := range devices {
-		for _, profileData := range profiles {
+	for i := range devices {
+		device := devices[i]
+		for i := range profiles {
+			profileData := profiles[i]
 			var commandPayload types.CommandPayload
 			log.Infof("Pushing profile to %v", device.UDID)
 
@@ -376,8 +385,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	// For each, loop over the present profiles
-	for _, savedProfile := range profiles {
-		for _, incomingProfile := range profileListData.ProfileList {
+	for i := range profiles {
+		savedProfile := profiles[i]
+		for i := range profileListData.ProfileList {
+			incomingProfile := profileListData.ProfileList[i]
 			if savedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID || savedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				profilesToInstall = append(profilesToInstall, savedProfile)
@@ -445,6 +456,7 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
 func SignProfile(key crypto.PrivateKey, cert *x509.Certificate, mobileconfig []byte) ([]byte, error) {
+	var err error
 	sd, err := pkcs7.NewSignedData(mobileconfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "create signed data for mobileconfig")

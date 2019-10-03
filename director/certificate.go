@@ -16,7 +16,10 @@ func RequestCertificateList(device types.Device) {
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
-	SendCommand(payload)
+	_, err := SendCommand(payload)
+	if err != nil {
+		log.Error(errors.Wrap(err, "RequestCertificateList: SendCommand"))
+	}
 }
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {
