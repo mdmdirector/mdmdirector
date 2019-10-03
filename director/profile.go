@@ -396,7 +396,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	for _, savedSharedProfile := range sharedProfiles {
 		found := false
 		for _, incomingProfile := range profileListData.ProfileList {
-			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID {
+			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				found = true
 				continue
 			}
@@ -482,11 +482,10 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 	}
 	var pemKeyData []byte
 	if x509.IsEncryptedPEMBlock(keyDataBlock) {
-		b, err := x509.DecryptPEMBlock(keyDataBlock, []byte(keyPass))
+		pemKeyData, err = x509.DecryptPEMBlock(keyDataBlock, []byte(keyPass))
 		if err != nil {
 			return nil, nil, fmt.Errorf("decrypting DES private key %s", err)
 		}
-		pemKeyData = b
 	} else {
 		pemKeyData = keyDataBlock.Bytes
 	}
