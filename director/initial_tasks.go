@@ -55,12 +55,15 @@ func RunInitialTasks(udid string) error {
 
 func processDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
-
-	err := SendDeviceConfigured(device)
+	var err error
+	err = SendDeviceConfigured(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
-	SaveDeviceConfigured(device)
+	err = SaveDeviceConfigured(device)
+	if err != nil {
+		return err
+	}
 	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
 		return err
