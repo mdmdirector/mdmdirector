@@ -27,6 +27,12 @@ lint:
 fix:
 	golangci-lint run --fix
 
+gomodcheck:
+	@go help mod > /dev/null || (@echo mdmdirector requires Go version 1.11 or  higher for module support && exit 1)
+
+deps: gomodcheck
+	@go mod download
+
 clean:
 	rm -rf build
 
@@ -37,7 +43,6 @@ build: clean .pre-build
 xp-build:  clean .pre-build
 	GOOS=darwin go build -o build/darwin/mdmdirector
 	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector-v0.0.1
-	# GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector-v1
 
 postgres-clean:
 	rm -rf postgres
