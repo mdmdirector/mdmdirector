@@ -8,34 +8,34 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 
 ### Flags
 
-* `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
-* `-dbconnection yourconnectionstring` - (Required) Database connection string. Example: `host=127.0.0.1 port=5432 user=postgres dbname=postgres password=password sslmode=disable`
-* `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
-* `-key-password string` - Password to decrypt the signing key or p12 file.
-* `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
-* `-micromdmapikey string` - (Required) MicroMDM Server API Key
-* `-micromdmurl string` - (Required) MicroMDM Server URL
-* `-password string` - (Required) Password used for basic authentication
-* `-port string` - Port number to run mdmdirector on. (default "8000")
-* `-private-key string` - Path to the signing private key. Don't use with p12 file.
-* `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
-* `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
+- `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
+- `-dbconnection yourconnectionstring` - (Required) Database connection string. Example: `host=127.0.0.1 port=5432 user=postgres dbname=postgres password=password sslmode=disable`
+- `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
+- `-key-password string` - Password to decrypt the signing key or p12 file.
+- `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
+- `-micromdmapikey string` - (Required) MicroMDM Server API Key
+- `-micromdmurl string` - (Required) MicroMDM Server URL
+- `-password string` - (Required) Password used for basic authentication
+- `-port string` - Port number to run mdmdirector on. (default "8000")
+- `-private-key string` - Path to the signing private key. Don't use with p12 file.
+- `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
+- `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
 
 ## Todo
 
 ### Documentation
 
-* Posting / removing profiles and apps
-* Example for systemd
+- Posting / removing profiles and apps
+- [Example for systemd](docs/Managing-mdmdirector-with-systemd.md)
 
 ### App
 
-* Support for Lock/Wipe
-* App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
-* FileVault Key escrow to Crypt (and compatible servers)
-* Re-push enrollment profile when SCEP certificate is coming up to expiry
+- Support for Lock/Wipe
+- App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
+- FileVault Key escrow to Crypt (and compatible servers)
+- Re-push enrollment profile when SCEP certificate is coming up to expiry
 
 ## Contributing
 
-* File issues
-* Open Pull Requests
+- File issues
+- Open Pull Requests
