@@ -293,7 +293,11 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 
 	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
-		tx2 = tx2.Create(profileData)
+		// utils.PrintStruct(profileData)
+		err := tx2.Create(&profileData).Error
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	err := tx2.Error
