@@ -116,8 +116,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 
-		// utils.PrintStruct(payloadDict)
-
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]
 		if ok {

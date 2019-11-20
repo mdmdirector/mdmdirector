@@ -97,6 +97,7 @@ func pushAll() error {
 	now := time.Now()
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	lastCheckinDelay := time.Now().Add(-DelaySeconds * time.Second)
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
@@ -113,6 +114,10 @@ func pushAll() error {
 				continue
 			}
 		}
+		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
+			log.Infof("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, DelaySeconds)
+			continue
+		}
 
 		devices = append(devices, dbDevice)
 	}
@@ -123,13 +128,13 @@ func pushAll() error {
 	sem := make(chan int, MAX)
 	counter := 0
 	total := 0
-	devicesPerSecond := len(devices) / (DelaySeconds - 1)
+	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
 	var shuffledDevices = shuffleDevices(devices)
 	for i := range shuffledDevices {
 		device := shuffledDevices[i]
-		if counter >= devicesPerSecond {
-			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per second.", total, len(devices), devicesPerSecond)
-			time.Sleep(1 * time.Second)
+		if float64(counter) >= devicesPerSecond {
+			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per 0.5 seconds.", total, len(devices), devicesPerSecond)
+			time.Sleep(500 * time.Millisecond)
 			counter = 0
 		}
 		log.Debug("Processed ", counter)
@@ -151,12 +156,6 @@ func pushConcurrent(device types.Device, client *http.Client) {
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
 		log.Error(err)
-	}
-
-	oneHourAgo := time.Now().Add(-1 * time.Hour)
-	if !device.LastScheduledPush.Before(oneHourAgo) {
-		log.Infof("%v last pushed in %v which is within the last hour", device.UDID, device.LastScheduledPush)
-		return
 	}
 
 	log.Infof("Pushing to %v", device.UDID)
@@ -185,6 +184,7 @@ func pushConcurrent(device types.Device, client *http.Client) {
 
 	err = db.DB.Model(&device).Where("ud_id = ?", device.UDID).Updates(types.Device{
 		LastScheduledPush: now,
+		NextPush:          time.Now().Add(12 * time.Hour),
 	}).Error
 	if err != nil {
 		log.Error(err)

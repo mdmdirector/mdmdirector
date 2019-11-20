@@ -24,7 +24,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
 	now := time.Now()
-	newDevice.NextPush = now.Add(12 * time.Hour)
+	// newDevice.NextPush = now.Add(12 * time.Hour)
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
