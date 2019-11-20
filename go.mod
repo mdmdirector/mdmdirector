@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/go-version v1.2.0
 	github.com/jinzhu/gorm v1.9.9
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
-	github.com/lib/pq v1.2.0 // indirect
+	github.com/lib/pq v1.2.0
 	github.com/pkg/errors v0.8.1
 	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.4.2

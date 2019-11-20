@@ -38,10 +38,6 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 
 	defer resp.Body.Close()
 
-	if commandPayload.RequestType == "InstallApplication" {
-		command.Data = commandPayload.ManifestURL
-	}
-
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
 	command.RequestType = commandPayload.RequestType
@@ -57,12 +53,15 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 		log.Errorf("Cannot update command %v without a device UDID!!!!", ackEvent.CommandUUID)
 	}
 
+	log.Debug(ackEvent)
+
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			return errors.New("Command not found in the queue")
 		}
 	} else {
 		if ackEvent.Status == "Error" {
+			log.Info("Error response receieved: %v", ackEvent)
 			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),

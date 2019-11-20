@@ -19,7 +19,7 @@ import (
 )
 
 const MAX = 5
-const DelaySeconds = 3600
+const DelaySeconds = 7200
 
 var DevicesFetchedFromMDM bool
 
@@ -41,13 +41,6 @@ func RetryCommands() {
 	for range ticker.C {
 		fn()
 	}
-
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		fn()
-	// 	}
-	// }
 }
 
 func pushNotNow() error {
@@ -100,10 +93,28 @@ func shuffleDevices(vals []types.Device) []types.Device {
 
 func pushAll() error {
 	var devices []types.Device
+	var dbDevices []types.Device
+	now := time.Now()
 
-	err := db.DB.Find(&devices).Scan(&devices).Error
+	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+
+	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
 		return err
+	}
+
+	for _, dbDevice := range dbDevices {
+
+		// If it's been updated within the last three hours, try to push again as it might still be online
+		if dbDevice.LastCheckedIn.After(threeHoursAgo) {
+			log.Infof("%v checked in more than three hours ago", dbDevice.UDID)
+			if now.Before(dbDevice.NextPush) {
+				log.Infof("Not pushing to %v, next push is %v", dbDevice.UDID, dbDevice.NextPush)
+				continue
+			}
+		}
+
+		devices = append(devices, dbDevice)
 	}
 
 	client := &http.Client{}
@@ -135,24 +146,28 @@ func pushAll() error {
 }
 
 func pushConcurrent(device types.Device, client *http.Client) {
-	// We may re-enable this, but right now let's just push every hour and expire it after two
-	// now := time.Now()
-	// threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	// // If it's been updated within the last three hours, try to push again as it might still be online
-	// if device.LastCheckedIn.After(threeHoursAgo) {
-	// 	log.Infof("%v checked in within three hours", device.UDID)
-	// 	// If it's not been in touch within hour, only push if it's out of date
-	// 	if now.Before(device.NextPush) {
-	// 		log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
-	// 		return
-	// 	}
-	// }
-	log.Infof("Pushing to %v", device.UDID)
+	now := time.Now()
+	var retry int64
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
 		log.Error(err)
 	}
-	retry := time.Now().Unix() + 7200
+
+	oneHourAgo := time.Now().Add(-1 * time.Hour)
+	if !device.LastScheduledPush.Before(oneHourAgo) {
+		log.Infof("%v last pushed in %v which is within the last hour", device.UDID, device.LastScheduledPush)
+		return
+	}
+
+	log.Infof("Pushing to %v", device.UDID)
+
+	if now.After(device.NextPush) {
+		log.Infof("After scheduled push of %v for %v. Pushing with an expiry of 24 hours", device.NextPush, device.UDID)
+		retry = time.Now().Unix() + 86400
+	} else {
+		retry = time.Now().Unix() + DelaySeconds
+	}
+
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
@@ -164,6 +179,13 @@ func pushConcurrent(device types.Device, client *http.Client) {
 	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	resp, err := client.Do(req)
+	if err != nil {
+		log.Error(err)
+	}
+
+	err = db.DB.Model(&device).Where("ud_id = ?", device.UDID).Updates(types.Device{
+		LastScheduledPush: now,
+	}).Error
 	if err != nil {
 		log.Error(err)
 	}
@@ -318,7 +340,11 @@ func FetchDevicesFromMDM() {
 	var devices types.DevicesFromMDM
 	log.Info("Fetching devices from MicroMDM...")
 
-	client := &http.Client{}
+	// Handle Micro having a bad day
+	var client = &http.Client{
+		Timeout: time.Second * 60,
+	}
+
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
 		log.Error(err)

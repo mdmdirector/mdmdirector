@@ -202,13 +202,16 @@ func RequestDeviceInformation(device types.Device) error {
 	return nil
 }
 
-func SetTokenUpdate(device types.Device) error {
+func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
 	log.Debugf("TokenUpdate received for %v", device.UDID)
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
 	if err != nil {
-		return errors.Wrap(err, "Set TokenUpdate")
+		return device, errors.Wrap(err, "Set TokenUpdate")
 	}
-
-	return nil
+	updatedDevice, err := GetDevice(device.UDID)
+	if err != nil {
+		return device, errors.Wrap(err, "Set TokenUpdate")
+	}
+	return updatedDevice, nil
 }

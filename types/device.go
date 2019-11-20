@@ -77,6 +77,7 @@ type Device struct {
 	InitialTasksRun          bool `gorm:"default:false"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
+	LastScheduledPush        time.Time
 	LastCheckedIn            time.Time
 }
 
