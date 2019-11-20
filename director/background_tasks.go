@@ -146,7 +146,7 @@ func pushAll() error {
 		counter++
 		total++
 	}
-	log.Infof("Completed pushing to %v devices", counter)
+	log.Infof("Completed pushing to %v devices", len(devices))
 	return nil
 }
 
