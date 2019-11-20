@@ -20,6 +20,7 @@ import (
 
 const MAX = 5
 const DelaySeconds = 7200
+const HalfDelaySeconds = 7200 / 2
 
 var DevicesFetchedFromMDM bool
 
@@ -97,7 +98,7 @@ func pushAll() error {
 	now := time.Now()
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	lastCheckinDelay := time.Now().Add(-DelaySeconds * time.Second)
+	lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
@@ -114,8 +115,9 @@ func pushAll() error {
 				continue
 			}
 		}
+		// This contrived bit of logic is to handle devices that don't have a LastScheduledPush set yet
 		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
-			log.Infof("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, DelaySeconds)
+			log.Infof("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, HalfDelaySeconds)
 			continue
 		}
 
