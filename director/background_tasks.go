@@ -297,6 +297,7 @@ func ScheduledCheckin() {
 
 	defer ticker.Stop()
 	fn := func() {
+		log.Infof("Running scheduled checkin (%v second) delay", DelaySeconds)
 		err := processScheduledCheckin()
 		if err != nil {
 			log.Error(err)
@@ -306,15 +307,8 @@ func ScheduledCheckin() {
 	fn()
 
 	for range ticker.C {
-		fn()
+		go fn()
 	}
-
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		fn()
-	// 	}
-	// }
 }
 
 func processScheduledCheckin() error {
