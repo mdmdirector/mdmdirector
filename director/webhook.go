@@ -57,9 +57,19 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 	} else if out.Topic == "mdm.TokenUpdate" {
-		err = SetTokenUpdate(device)
+		tokenUpdateDevice, err := SetTokenUpdate(device)
 		if err != nil {
 			log.Error(err)
+		}
+
+		if !tokenUpdateDevice.InitialTasksRun {
+			_, err := UpdateDevice(device)
+			if err != nil {
+				log.Error(err)
+			}
+			log.Error("Running initial tasks due to device update")
+			RunInitialTasks(device.UDID)
+			return
 		}
 	}
 	oldUDID := device.UDID
@@ -105,8 +115,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Error(err)
 		}
-
-		// utils.PrintStruct(payloadDict)
 
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]

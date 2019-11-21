@@ -19,7 +19,8 @@ import (
 )
 
 const MAX = 5
-const DelaySeconds = 3600
+const DelaySeconds = 7200
+const HalfDelaySeconds = 7200 / 2
 
 var DevicesFetchedFromMDM bool
 
@@ -41,13 +42,6 @@ func RetryCommands() {
 	for range ticker.C {
 		fn()
 	}
-
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		fn()
-	// 	}
-	// }
 }
 
 func pushNotNow() error {
@@ -100,10 +94,34 @@ func shuffleDevices(vals []types.Device) []types.Device {
 
 func pushAll() error {
 	var devices []types.Device
+	var dbDevices []types.Device
+	now := time.Now()
 
-	err := db.DB.Find(&devices).Scan(&devices).Error
+	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
+
+	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
 		return err
+	}
+
+	for _, dbDevice := range dbDevices {
+
+		// If it's been updated within the last three hours, try to push again as it might still be online
+		if dbDevice.LastCheckedIn.After(threeHoursAgo) {
+			log.Infof("%v checked in more than three hours ago", dbDevice.UDID)
+			if now.Before(dbDevice.NextPush) {
+				log.Infof("Not pushing to %v, next push is %v", dbDevice.UDID, dbDevice.NextPush)
+				continue
+			}
+		}
+		// This contrived bit of logic is to handle devices that don't have a LastScheduledPush set yet
+		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
+			log.Infof("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, HalfDelaySeconds)
+			continue
+		}
+
+		devices = append(devices, dbDevice)
 	}
 
 	client := &http.Client{}
@@ -112,13 +130,13 @@ func pushAll() error {
 	sem := make(chan int, MAX)
 	counter := 0
 	total := 0
-	devicesPerSecond := len(devices) / (DelaySeconds - 1)
+	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
 	var shuffledDevices = shuffleDevices(devices)
 	for i := range shuffledDevices {
 		device := shuffledDevices[i]
-		if counter >= devicesPerSecond {
-			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per second.", total, len(devices), devicesPerSecond)
-			time.Sleep(1 * time.Second)
+		if float64(counter) >= devicesPerSecond {
+			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per 0.5 seconds.", total, len(devices), devicesPerSecond)
+			time.Sleep(500 * time.Millisecond)
 			counter = 0
 		}
 		log.Debug("Processed ", counter)
@@ -130,29 +148,27 @@ func pushAll() error {
 		counter++
 		total++
 	}
-	log.Infof("Completed pushing to %v devices", counter)
+	log.Infof("Completed pushing to %v devices", len(devices))
 	return nil
 }
 
 func pushConcurrent(device types.Device, client *http.Client) {
-	// We may re-enable this, but right now let's just push every hour and expire it after two
-	// now := time.Now()
-	// threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	// // If it's been updated within the last three hours, try to push again as it might still be online
-	// if device.LastCheckedIn.After(threeHoursAgo) {
-	// 	log.Infof("%v checked in within three hours", device.UDID)
-	// 	// If it's not been in touch within hour, only push if it's out of date
-	// 	if now.Before(device.NextPush) {
-	// 		log.Infof("Not pushing to %v, next push is %v", device.UDID, device.NextPush)
-	// 		return
-	// 	}
-	// }
-	log.Infof("Pushing to %v", device.UDID)
+	now := time.Now()
+	var retry int64
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
 		log.Error(err)
 	}
-	retry := time.Now().Unix() + 7200
+
+	log.Infof("Pushing to %v", device.UDID)
+
+	if now.After(device.NextPush) {
+		log.Infof("After scheduled push of %v for %v. Pushing with an expiry of 24 hours", device.NextPush, device.UDID)
+		retry = time.Now().Unix() + 86400
+	} else {
+		retry = time.Now().Unix() + DelaySeconds
+	}
+
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
@@ -164,6 +180,14 @@ func pushConcurrent(device types.Device, client *http.Client) {
 	req.SetBasicAuth("micromdm", utils.APIKey())
 
 	resp, err := client.Do(req)
+	if err != nil {
+		log.Error(err)
+	}
+
+	err = db.DB.Model(&device).Where("ud_id = ?", device.UDID).Updates(types.Device{
+		LastScheduledPush: now,
+		NextPush:          time.Now().Add(12 * time.Hour),
+	}).Error
 	if err != nil {
 		log.Error(err)
 	}
@@ -273,6 +297,7 @@ func ScheduledCheckin() {
 
 	defer ticker.Stop()
 	fn := func() {
+		log.Infof("Running scheduled checkin (%v second) delay", DelaySeconds)
 		err := processScheduledCheckin()
 		if err != nil {
 			log.Error(err)
@@ -282,15 +307,8 @@ func ScheduledCheckin() {
 	fn()
 
 	for range ticker.C {
-		fn()
+		go fn()
 	}
-
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		fn()
-	// 	}
-	// }
 }
 
 func processScheduledCheckin() error {
@@ -318,7 +336,11 @@ func FetchDevicesFromMDM() {
 	var devices types.DevicesFromMDM
 	log.Info("Fetching devices from MicroMDM...")
 
-	client := &http.Client{}
+	// Handle Micro having a bad day
+	var client = &http.Client{
+		Timeout: time.Second * 60,
+	}
+
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
 		log.Error(err)
