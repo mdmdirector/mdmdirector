@@ -12,15 +12,17 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
-const MAX = 5
-const DelaySeconds = 7200
-const HalfDelaySeconds = 7200 / 2
+const (
+	MAX              = 5
+	DelaySeconds     = 7200
+	HalfDelaySeconds = 7200 / 2
+)
 
 var DevicesFetchedFromMDM bool
 
@@ -131,7 +133,7 @@ func pushAll() error {
 	counter := 0
 	total := 0
 	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
-	var shuffledDevices = shuffleDevices(devices)
+	shuffledDevices := shuffleDevices(devices)
 	for i := range shuffledDevices {
 		device := shuffledDevices[i]
 		if float64(counter) >= devicesPerSecond {
@@ -337,7 +339,7 @@ func FetchDevicesFromMDM() {
 	log.Info("Fetching devices from MicroMDM...")
 
 	// Handle Micro having a bad day
-	var client = &http.Client{
+	client := &http.Client{
 		Timeout: time.Second * 60,
 	}
 

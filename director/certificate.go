@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func RequestCertificateList(device types.Device) {
