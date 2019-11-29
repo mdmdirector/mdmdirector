@@ -1,50 +1,31 @@
 package log
 
 import (
-	"github.com/mdmdirector/mdmdirector/utils"
 	log "github.com/sirupsen/logrus"
 )
 
 func Debug(msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" {
-		log.Debug(msg...)
-	}
+	log.Debug(msg...)
 }
 
 func Debugf(format string, msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" {
-		log.Debugf(format, msg...)
-	}
+	log.Debugf(format, msg...)
 }
 
 func Info(msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" || level == "info" {
-		log.Info(msg...)
-	}
+	log.Info(msg...)
 }
 
 func Infof(format string, msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" || level == "info" {
-		log.Infof(format, msg...)
-	}
+	log.Infof(format, msg...)
 }
 
 func Warn(msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" || level == "info" || level == "warn" {
-		log.Warn(msg...)
-	}
+	log.Warn(msg...)
 }
 
 func Warnf(format string, msg ...interface{}) {
-	level := utils.LogLevel()
-	if level == "debug" || level == "info" || level == "warn" {
-		log.Warnf(format, msg...)
-	}
+	log.Warnf(format, msg...)
 }
 
 func Error(msg ...interface{}) {

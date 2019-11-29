@@ -51,7 +51,6 @@ var LogLevel string
 func main() {
 	var port string
 	var debugMode bool
-	logrus.SetLevel(logrus.DebugLevel)
 	flag.BoolVar(&debugMode, "debug", false, "Enable debug mode")
 	flag.BoolVar(&PushNewBuild, "push-new-build", true, "Re-push profiles if the device's build number changes.")
 	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
@@ -65,6 +64,12 @@ func main() {
 	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
 	flag.StringVar(&LogLevel, "loglevel", "warn", "Log level. One of debug, info, warn, error")
 	flag.Parse()
+
+	logLevel, err := logrus.ParseLevel(LogLevel)
+	if err != nil {
+		log.Errorf("Unable to parse the log level - %s \n", err)
+	}
+	logrus.SetLevel(logLevel)
 
 	if MicroMDMURL == "" {
 		log.Fatal("MicroMDM Server URL missing. Exiting.")
