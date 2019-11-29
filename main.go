@@ -100,6 +100,7 @@ func main() {
 	r.HandleFunc("/command/pending/delete", utils.BasicAuth(director.DeletePendingCommands)).Methods("GET")
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
+	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
