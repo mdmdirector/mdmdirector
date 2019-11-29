@@ -64,7 +64,10 @@ func main() {
 	flag.StringVar(&LogLevel, "loglevel", "warn", "Log level. One of debug, info, warn, error")
 	flag.Parse()
 
-	logLevel, _ := log.ParseLevel(LogLevel)
+	logLevel, err := log.ParseLevel(LogLevel)
+	if err != nil {
+		log.Errorf("Unable to parse the log level - %s \n", err)
+	}
 	log.SetLevel(logLevel)
 
 	if MicroMDMURL == "" {
