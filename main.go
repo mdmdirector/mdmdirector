@@ -10,6 +10,8 @@ import (
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
+
+	"github.com/micromdm/go4/env"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,18 +54,18 @@ func main() {
 	var port string
 	var debugMode bool
 	logrus.SetLevel(logrus.DebugLevel)
-	flag.BoolVar(&debugMode, "debug", false, "Enable debug mode")
-	flag.BoolVar(&PushNewBuild, "push-new-build", true, "Re-push profiles if the device's build number changes.")
-	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
-	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
-	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", "", "MicroMDM Server API Key")
-	flag.BoolVar(&Sign, "sign", false, "Sign profiles prior to sending to MicroMDM.")
-	flag.StringVar(&KeyPassword, "key-password", "", "Password to encrypt/read the signing key(optional) or p12 file.")
-	flag.StringVar(&KeyPath, "private-key", "", "Path to the signing private key. Don't use with p12 file.")
-	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
-	flag.StringVar(&BasicAuthPass, "password", "", "Password used for basic authentication")
+	flag.BoolVar(&debugMode, "debug", env.Bool("DEBUG", false), "Enable debug mode")
+	flag.BoolVar(&PushNewBuild, "push-new-build", env.Bool("PUSH_NEW_BUILD", true), "Re-push profiles if the device's build number changes.")
+	flag.StringVar(&port, "port", env.String("DIRECTOR_PORT", "8000"), "Port number to run mdmdirector on.")
+	flag.StringVar(&MicroMDMURL, "micromdmurl", env.String("MICRO_URL", ""), "MicroMDM Server URL")
+	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", env.String("MICRO_API_KEY", ""), "MicroMDM Server API Key")
+	flag.BoolVar(&Sign, "sign", env.Bool("SIGN", false), "Sign profiles prior to sending to MicroMDM.")
+	flag.StringVar(&KeyPassword, "key-password", env.String("SIGNING_PASSWORD", ""), "Password to encrypt/read the signing key(optional) or p12 file.")
+	flag.StringVar(&KeyPath, "private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
+	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
+	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
 	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
-	flag.StringVar(&LogLevel, "loglevel", "warn", "Log level. One of debug, info, warn, error")
+	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.Parse()
 
 	if MicroMDMURL == "" {
