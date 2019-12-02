@@ -143,7 +143,10 @@ func pushAll() error {
 		sem <- 1 // will block if there is MAX ints in sem
 		go func() {
 			// pushConcurrent(device, client)
-			AddDeviceToScheduledPushQueue(device)
+			err := AddDeviceToScheduledPushQueue(device)
+			if err != nil {
+				log.Error(err)
+			}
 			<-sem // removes an int from sem, allowing another to proceed
 		}()
 		counter++
@@ -175,7 +178,7 @@ func AddDeviceToScheduledPushQueue(device types.Device) error {
 	return nil
 }
 
-func ProcessScehduledCheckinQueue() {
+func ProcessScheduledCheckinQueue() {
 
 	ticker := time.NewTicker(1 * time.Second)
 	client := &http.Client{}
