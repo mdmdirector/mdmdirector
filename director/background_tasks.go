@@ -124,7 +124,7 @@ func pushAll() error {
 		devices = append(devices, dbDevice)
 	}
 
-	client := &http.Client{}
+	// client := &http.Client{}
 
 	log.Debug("Pushing to all in debug mode")
 	sem := make(chan int, MAX)
@@ -142,7 +142,8 @@ func pushAll() error {
 		log.Debug("Processed ", counter)
 		sem <- 1 // will block if there is MAX ints in sem
 		go func() {
-			pushConcurrent(device, client)
+			// pushConcurrent(device, client)
+			AddDeviceToScheduledPushQueue(device)
 			<-sem // removes an int from sem, allowing another to proceed
 		}()
 		counter++
@@ -152,14 +153,11 @@ func pushAll() error {
 	return nil
 }
 
-func pushConcurrent(device types.Device, client *http.Client) {
+func AddDeviceToScheduledPushQueue(device types.Device) error {
+	var scheduledPush types.ScheduledPush
+
 	now := time.Now()
 	var retry int64
-	endpoint, err := url.Parse(utils.ServerURL())
-	if err != nil {
-		log.Error(err)
-	}
-
 	log.Infof("Pushing to %v", device.UDID)
 
 	if now.After(device.NextPush) {
@@ -169,30 +167,96 @@ func pushConcurrent(device types.Device, client *http.Client) {
 		retry = time.Now().Unix() + DelaySeconds
 	}
 
-	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
-	queryString := endpoint.Query()
-	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
-	endpoint.RawQuery = queryString.Encode()
-	req, err := http.NewRequest("GET", endpoint.String(), nil)
+	err := db.DB.Model(&scheduledPush).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
 	if err != nil {
-		log.Error(err)
-	}
-	req.SetBasicAuth("micromdm", utils.APIKey())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "AddDeviceToScheduledPushQueue::ScheduledPushFirstOrCreate")
 	}
 
-	err = db.DB.Model(&device).Where("ud_id = ?", device.UDID).Updates(types.Device{
-		LastScheduledPush: now,
-		NextPush:          time.Now().Add(12 * time.Hour),
-	}).Error
-	if err != nil {
-		log.Error(err)
+	return nil
+}
+
+func ProcessShceduledCheckinQueue() {
+
+	ticker := time.NewTicker(1 * time.Second)
+	client := &http.Client{}
+
+	defer ticker.Stop()
+	fn := func() {
+		err := pushConcurrent(client)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
-	resp.Body.Close()
+	fn()
+	for range ticker.C {
+		fn()
+	}
+
+}
+
+func pushConcurrent(client *http.Client) error {
+
+	var device types.Device
+	var scheduledPush types.ScheduledPush
+	var scheduledPushes []types.ScheduledPush
+	now := time.Now()
+	endpoint, err := url.Parse(utils.ServerURL())
+	if err != nil {
+		return errors.Wrap(err, "pushConcurrent::ParseServerURL")
+	}
+
+	err = db.DB.Model(&scheduledPush).Where("status = ?", "pending").Limit(10).Scan(&scheduledPushes).Error
+	if err != nil {
+		return errors.Wrap(err, "pushConcurrent::retrievePendingPushes")
+	}
+
+	// Mark the devices we are woring on as "in_pogress" and then perform the push
+	for _, push := range scheduledPushes {
+		err = db.DB.Model(&scheduledPush).Where("id = ?", push.ID).Update("status", "in_progress").Error
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		log.Infof("Pushing to %v", push.DeviceUDID)
+
+		endpoint.Path = path.Join(endpoint.Path, "push", push.DeviceUDID)
+		queryString := endpoint.Query()
+		queryString.Set("expiration", string(strconv.FormatInt(push.Expiration, 10)))
+		endpoint.RawQuery = queryString.Encode()
+		req, err := http.NewRequest("GET", endpoint.String(), nil)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		req.SetBasicAuth("micromdm", utils.APIKey())
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		err = db.DB.Delete(push).Error
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		err = db.DB.Model(&device).Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
+			LastScheduledPush: now,
+			NextPush:          time.Now().Add(12 * time.Hour),
+		}).Error
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		resp.Body.Close()
+
+	}
+	return nil
 }
 
 func PushDevice(udid string) error {
@@ -243,29 +307,16 @@ func UnconfiguredDevices() {
 	for range ticker.C {
 		fn()
 	}
-	// for {
-	// 	select {
-	// 	case <-ticker.C:
-	// 		fn()
-	// 	}
-	// }
 }
 
 func processUnconfiguredDevices() error {
 	var awaitingConfigDevices []types.Device
 	var awaitingConfigDevice types.Device
 
-	// thirtySecondsAgo := time.Now().Add(-30 * time.Second)
-
 	err := db.DB.Model(&awaitingConfigDevice).Where("awaiting_configuration = ?", true).Scan(&awaitingConfigDevices).Error
 	if err != nil {
 		return err
 	}
-
-	// if len(awaitingConfigDevices) == 0 {
-	// 	log.Debug("No unconfigured devices")
-	// 	return nil
-	// }
 
 	for i := range awaitingConfigDevices {
 		unconfiguredDevice := awaitingConfigDevices[i]
