@@ -129,7 +129,7 @@ func main() {
 
 	go director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin()
-	go director.ProcessShceduledCheckinQueue()
+	go director.ProcessScheduledCheckinQueue()
 	// go director.UnconfiguredDevices()
 	// go director.RetryCommands()
 

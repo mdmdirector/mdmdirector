@@ -175,7 +175,7 @@ func AddDeviceToScheduledPushQueue(device types.Device) error {
 	return nil
 }
 
-func ProcessShceduledCheckinQueue() {
+func ProcessScehduledCheckinQueue() {
 
 	ticker := time.NewTicker(1 * time.Second)
 	client := &http.Client{}
