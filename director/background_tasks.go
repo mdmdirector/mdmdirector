@@ -226,7 +226,7 @@ func pushConcurrent(client *http.Client) error {
 
 		endpoint.Path = path.Join(endpoint.Path, "push", push.DeviceUDID)
 		queryString := endpoint.Query()
-		queryString.Set("expiration", string(strconv.FormatInt(push.Expiration, 10)))
+		queryString.Set("expiration", strconv.FormatInt(push.Expiration, 10))
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		if err != nil {
