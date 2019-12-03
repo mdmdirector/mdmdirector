@@ -73,12 +73,18 @@ func main() {
 	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
-	flag.StringVar(&DBConnectionString, "db-username", "", "The username associated with the postgress instance")
-	flag.StringVar(&DBConnectionString, "db-password", "", "The password of the db user account")
-	flag.StringVar(&DBConnectionString, "db-name", "", "The name of the postgress database to use")
-	flag.StringVar(&DBConnectionString, "db-host", "", "The hostname or IP of the postgress instance")
+	flag.StringVar(&DBUsername, "db-username", "", "The username associated with the postgress instance")
+	flag.StringVar(&DBPassword, "db-password", "", "The password of the db user account")
+	flag.StringVar(&DBName, "db-name", "", "The name of the postgress database to use")
+	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the postgress instance")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.Parse()
+
+	logLevel, err := logrus.ParseLevel(LogLevel)
+	if err != nil {
+		log.Fatalf("Unable to parse the log level - %s \n", err)
+	}
+	logrus.SetLevel(logLevel)
 
 	if MicroMDMURL == "" {
 		log.Fatal("MicroMDM Server URL missing. Exiting.")
@@ -92,8 +98,8 @@ func main() {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
 
-	if DBConnectionString == "" {
-		log.Fatal("Database details missing. Exiting.")
+	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" {
+		log.Fatal("Required database details missing, Exiting.")
 	}
 
 	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
