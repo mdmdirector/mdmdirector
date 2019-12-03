@@ -124,8 +124,6 @@ func pushAll() error {
 		devices = append(devices, dbDevice)
 	}
 
-	// client := &http.Client{}
-
 	log.Debug("Pushing to all in debug mode")
 	sem := make(chan int, MAX)
 	counter := 0
