@@ -169,7 +169,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error(err)
 			}
-			// utils.PrintStruct(deviceInformationQueryResponses.QueryResponses)
 			UpdateDevice(deviceInformationQueryResponses.QueryResponses)
 
 		}
