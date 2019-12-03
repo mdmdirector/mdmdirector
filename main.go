@@ -67,7 +67,7 @@ func main() {
 
 	logLevel, err := logrus.ParseLevel(LogLevel)
 	if err != nil {
-		log.Errorf("Unable to parse the log level - %s \n", err)
+		log.Fatalf("Unable to parse the log level - %s \n", err)
 	}
 	logrus.SetLevel(logLevel)
 
