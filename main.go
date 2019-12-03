@@ -44,8 +44,17 @@ var BasicAuthUser = utils.GetBasicAuthUser()
 // BasicAuthPass is the password used for basic auth
 var BasicAuthPass string
 
-// DBConnectionString is used to connect to the database
-var DBConnectionString string
+// DBUsername is the account to connect to the database
+var DBUsername string
+
+// DBPassword is used to connect to the database
+var DBPassword string
+
+// DBName is used to connect to the database
+var DBName string
+
+// DBHost is used to connect to the database
+var DBHost string
 
 // LogLevel = log level
 var LogLevel string
@@ -61,10 +70,13 @@ func main() {
 	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", env.String("MICRO_API_KEY", ""), "MicroMDM Server API Key")
 	flag.BoolVar(&Sign, "sign", env.Bool("SIGN", false), "Sign profiles prior to sending to MicroMDM.")
 	flag.StringVar(&KeyPassword, "key-password", env.String("SIGNING_PASSWORD", ""), "Password to encrypt/read the signing key(optional) or p12 file.")
-	flag.StringVar(&KeyPath, "private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
+	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
-	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
+	flag.StringVar(&DBConnectionString, "db-username", "", "The username associated with the postgress instance")
+	flag.StringVar(&DBConnectionString, "db-password", "", "The password of the db user account")
+	flag.StringVar(&DBConnectionString, "db-name", "", "The name of the postgress database to use")
+	flag.StringVar(&DBConnectionString, "db-host", "", "The hostname or IP of the postgress instance")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.Parse()
 
