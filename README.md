@@ -9,7 +9,10 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 ### Flags
 
 * `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
-* `-dbconnection yourconnectionstring` - (Required) Database connection string. Example: `host=127.0.0.1 port=5432 user=postgres dbname=postgres password=password sslmode=disable`
+* `-db-username string` - (Required) Username used to connect to the postgres instance.  
+* `-db-password string` - (Required) Password of the DB user.
+* `-db-name string` - (Required) Name of the database to connect to.
+* `-db-host string` - (Required) Hostname or IP of the postgres instance 
 * `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
 * `-key-password string` - Password to decrypt the signing key or p12 file.
 * `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")

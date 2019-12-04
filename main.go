@@ -10,6 +10,8 @@ import (
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
+
+	"github.com/micromdm/go4/env"
 	"github.com/sirupsen/logrus"
 )
 
@@ -42,8 +44,23 @@ var BasicAuthUser = utils.GetBasicAuthUser()
 // BasicAuthPass is the password used for basic auth
 var BasicAuthPass string
 
-// DBConnectionString is used to connect to the database
-var DBConnectionString string
+// DBUsername is the account to connect to the database
+var DBUsername string
+
+// DBPassword is used to connect to the database
+var DBPassword string
+
+// DBName is used to connect to the database
+var DBName string
+
+// DBHost is used to connect to the database
+var DBHost string
+
+// DBPort is used to connect to the database
+var DBPort string
+
+// DBSSLMode is used to connect to the database
+var DBSSLMode string
 
 // LogLevel = log level
 var LogLevel string
@@ -52,19 +69,30 @@ func main() {
 	var port string
 	var debugMode bool
 	logrus.SetLevel(logrus.DebugLevel)
-	flag.BoolVar(&debugMode, "debug", false, "Enable debug mode")
-	flag.BoolVar(&PushNewBuild, "push-new-build", true, "Re-push profiles if the device's build number changes.")
-	flag.StringVar(&port, "port", "8000", "Port number to run mdmdirector on.")
-	flag.StringVar(&MicroMDMURL, "micromdmurl", "", "MicroMDM Server URL")
-	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", "", "MicroMDM Server API Key")
-	flag.BoolVar(&Sign, "sign", false, "Sign profiles prior to sending to MicroMDM.")
-	flag.StringVar(&KeyPassword, "key-password", "", "Password to encrypt/read the signing key(optional) or p12 file.")
-	flag.StringVar(&KeyPath, "private-key", "", "Path to the signing private key. Don't use with p12 file.")
-	flag.StringVar(&CertPath, "cert", "", "Path to the signing certificate or p12 file.")
-	flag.StringVar(&BasicAuthPass, "password", "", "Password used for basic authentication")
-	flag.StringVar(&DBConnectionString, "dbconnection", "", "Database connection string")
-	flag.StringVar(&LogLevel, "loglevel", "warn", "Log level. One of debug, info, warn, error")
+	flag.BoolVar(&debugMode, "debug", env.Bool("DEBUG", false), "Enable debug mode")
+	flag.BoolVar(&PushNewBuild, "push-new-build", env.Bool("PUSH_NEW_BUILD", true), "Re-push profiles if the device's build number changes.")
+	flag.StringVar(&port, "port", env.String("DIRECTOR_PORT", "8000"), "Port number to run mdmdirector on.")
+	flag.StringVar(&MicroMDMURL, "micromdmurl", env.String("MICRO_URL", ""), "MicroMDM Server URL")
+	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", env.String("MICRO_API_KEY", ""), "MicroMDM Server API Key")
+	flag.BoolVar(&Sign, "sign", env.Bool("SIGN", false), "Sign profiles prior to sending to MicroMDM.")
+	flag.StringVar(&KeyPassword, "key-password", env.String("SIGNING_PASSWORD", ""), "Password to encrypt/read the signing key(optional) or p12 file.")
+	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
+	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
+	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
+	flag.StringVar(&DBUsername, "db-username", "", "The username associated with the postgress instance")
+	flag.StringVar(&DBPassword, "db-password", "", "The password of the db user account")
+	flag.StringVar(&DBName, "db-name", "", "The name of the postgress database to use")
+	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the postgress instance")
+	flag.StringVar(&DBPort, "db-port", "5432", "The port of the postgress instance")
+	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to postgres")
+	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.Parse()
+
+	logLevel, err := logrus.ParseLevel(LogLevel)
+	if err != nil {
+		log.Fatalf("Unable to parse the log level - %s \n", err)
+	}
+	logrus.SetLevel(logLevel)
 
 	if MicroMDMURL == "" {
 		log.Fatal("MicroMDM Server URL missing. Exiting.")
@@ -78,8 +106,8 @@ func main() {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
 
-	if DBConnectionString == "" {
-		log.Fatal("Database details missing. Exiting.")
+	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" || DBPort == "" || DBSSLMode == "" {
+		log.Fatal("Required database details missing, Exiting.")
 	}
 
 	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
@@ -104,6 +132,7 @@ func main() {
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
+		log.Error(err)
 		log.Fatal("Failed to open database")
 	}
 	defer db.Close()
