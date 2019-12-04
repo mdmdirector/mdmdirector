@@ -56,6 +56,12 @@ var DBName string
 // DBHost is used to connect to the database
 var DBHost string
 
+// DBPort is used to connect to the database
+var DBPort string
+
+// DBSSLMode is used to connect to the database
+var DBSSLMode string
+
 // LogLevel = log level
 var LogLevel string
 
@@ -77,6 +83,8 @@ func main() {
 	flag.StringVar(&DBPassword, "db-password", "", "The password of the db user account")
 	flag.StringVar(&DBName, "db-name", "", "The name of the postgress database to use")
 	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the postgress instance")
+	flag.StringVar(&DBPort, "db-port", "5432", "The port of the postgress instance")
+	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to postgres")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.Parse()
 
@@ -98,7 +106,7 @@ func main() {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
 
-	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" {
+	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" || DBPort == "" || DBSSLMode == "" {
 		log.Fatal("Required database details missing, Exiting.")
 	}
 
@@ -124,6 +132,7 @@ func main() {
 	http.Handle("/", r)
 
 	if err := db.Open(); err != nil {
+		log.Error(err)
 		log.Fatal("Failed to open database")
 	}
 	defer db.Close()

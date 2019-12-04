@@ -61,6 +61,14 @@ func DBHost() string {
 	return flag.Lookup("db-host").Value.(flag.Getter).Get().(string)
 }
 
+func DBPort() string {
+	return flag.Lookup("db-port").Value.(flag.Getter).Get().(string)
+}
+
+func DBSSLMode() string {
+	return flag.Lookup("db-sslmode").Value.(flag.Getter).Get().(string)
+}
+
 func LogLevel() string {
 	return flag.Lookup("loglevel").Value.(flag.Getter).Get().(string)
 }
