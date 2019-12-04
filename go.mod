@@ -14,6 +14,7 @@ require (
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/lib/pq v1.2.0
 	github.com/mdempsky/unconvert v0.0.0-20190921185256-3ecd357795af // indirect
+	github.com/micromdm/go4 v0.0.0-20190530145745-54e7af012bbc
 	github.com/pkg/errors v0.8.1
 	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.4.2
