@@ -19,8 +19,11 @@ func Open() error {
 	password := utils.DBPassword()
 	dbName := utils.DBName()
 	dbHost := utils.DBHost()
+	dbPort := utils.DBPort()
+	dbSSLMode := utils.DBSSLMode()
 
-	dbURI := fmt.Sprintf("host=%s user=%s dbname=%s sslmode=disable password=%s", dbHost, username, dbName, password)
+	dbURI := fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s password=%s", dbHost, dbPort, username, dbName, dbSSLMode, password)
+
 	var err error
 	DB, err = gorm.Open("postgres", dbURI)
 	if err != nil {
