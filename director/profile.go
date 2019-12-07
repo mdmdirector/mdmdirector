@@ -276,10 +276,10 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 	return pushedCommands, nil
 }
 
-func SaveSharedProfiles(profiles []types.SharedProfile) {
+func SaveSharedProfiles(profiles []types.SharedProfile) error {
 	var profile types.SharedProfile
 	if len(profiles) == 0 {
-		return
+		return nil
 	}
 
 	for _, profileData := range profiles {
@@ -287,6 +287,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 			err := db.DB.Model(&profile).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile).Error
 			if err != nil {
 				log.Error(err)
+				return errors.Wrap(err, "Deleting shared profiles")
 			}
 		}
 	}
@@ -302,9 +303,10 @@ func SaveSharedProfiles(profiles []types.SharedProfile) {
 
 	err := tx2.Error
 	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "Saving shared profiles")
 	}
 	// db.DB.Create(&profiles)
+	return nil
 }
 
 func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile) {

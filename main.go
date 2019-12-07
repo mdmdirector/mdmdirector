@@ -151,12 +151,14 @@ func main() {
 		&types.SharedInstallApplication{},
 		&types.DeviceInstallApplication{},
 		&types.Certificate{},
+		&types.ScheduledPush{},
 	)
 
 	log.Info("mdmdirector is running, hold onto your butts...")
 
 	go director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin()
+	go director.ProcessScheduledCheckinQueue()
 	// go director.UnconfiguredDevices()
 	// go director.RetryCommands()
 

@@ -26,7 +26,7 @@ func KeyPassword() string {
 }
 
 func KeyPath() string {
-	return flag.Lookup("private-key").Value.(flag.Getter).Get().(string)
+	return flag.Lookup("signing-private-key").Value.(flag.Getter).Get().(string)
 }
 
 func CertPath() string {
