@@ -19,10 +19,20 @@ import (
 )
 
 const MAX = 5
-const DelaySeconds = 7200
-const HalfDelaySeconds = 7200 / 2
 
 var DevicesFetchedFromMDM bool
+
+func getDelay() (time.Duration, time.Duration) {
+	DelaySeconds := 7200
+
+	if utils.DebugMode() {
+		DelaySeconds = 20
+	}
+
+	HalfDelaySeconds := DelaySeconds / 2
+
+	return time.Duration(DelaySeconds), time.Duration(HalfDelaySeconds)
+}
 
 func RetryCommands() {
 	var delay time.Duration
@@ -62,6 +72,7 @@ func pushNotNow() error {
 		}
 		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
+		log.Debug(endpoint.Path)
 		queryString := endpoint.Query()
 		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
 		endpoint.RawQuery = queryString.Encode()
@@ -96,6 +107,8 @@ func pushAll() error {
 	var devices []types.Device
 	var dbDevices []types.Device
 	now := time.Now()
+
+	DelaySeconds, HalfDelaySeconds := getDelay()
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
@@ -150,22 +163,22 @@ func pushAll() error {
 		counter++
 		total++
 	}
-	log.Infof("Completed pushing to %v devices", len(devices))
+	log.Infof("Completed scheduling pushes to %v devices", len(devices))
 	return nil
 }
 
 func AddDeviceToScheduledPushQueue(device types.Device) error {
 	var scheduledPush types.ScheduledPush
-
+	DelaySeconds, _ := getDelay()
 	now := time.Now()
 	var retry int64
-	log.Infof("Pushing to %v", device.UDID)
+	log.Infof("Adding scheduled push for %v", device.UDID)
 
 	if now.After(device.NextPush) {
 		log.Infof("After scheduled push of %v for %v. Pushing with an expiry of 24 hours", device.NextPush, device.UDID)
 		retry = time.Now().Unix() + 86400
 	} else {
-		retry = time.Now().Unix() + DelaySeconds
+		retry = time.Now().Unix() + int64(DelaySeconds)
 	}
 
 	err := db.DB.Model(&scheduledPush).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
@@ -202,18 +215,18 @@ func pushConcurrent(client *http.Client) error {
 	var scheduledPush types.ScheduledPush
 	var scheduledPushes []types.ScheduledPush
 	now := time.Now()
-	endpoint, err := url.Parse(utils.ServerURL())
-	if err != nil {
-		return errors.Wrap(err, "pushConcurrent::ParseServerURL")
-	}
 
-	err = db.DB.Model(&scheduledPush).Where("status = ?", "pending").Limit(10).Scan(&scheduledPushes).Error
+	err := db.DB.Model(&scheduledPush).Where("status = ?", "pending").Limit(10).Scan(&scheduledPushes).Error
 	if err != nil {
 		return errors.Wrap(err, "pushConcurrent::retrievePendingPushes")
 	}
 
 	// Mark the devices we are woring on as "in_pogress" and then perform the push
 	for _, push := range scheduledPushes {
+		endpoint, err := url.Parse(utils.ServerURL())
+		if err != nil {
+			return errors.Wrap(err, "pushConcurrent::ParseServerURL")
+		}
 		err = db.DB.Model(&scheduledPush).Where("id = ?", push.ID).Update("status", "in_progress").Error
 		if err != nil {
 			log.Error(err)
@@ -269,7 +282,9 @@ func PushDevice(udid string) error {
 	}
 
 	retry := time.Now().Unix() + 3600
-
+	if utils.DebugMode() {
+		retry = time.Now().Unix() + 30
+	}
 	endpoint.Path = path.Join(endpoint.Path, "push", udid)
 	queryString := endpoint.Query()
 	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
@@ -333,6 +348,7 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
+	DelaySeconds, _ := getDelay()
 	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)

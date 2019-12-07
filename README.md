@@ -9,10 +9,10 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 ### Flags
 
 * `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
-* `-db-username string` - (Required) Username used to connect to the postgres instance.  
+* `-db-username string` - (Required) Username used to connect to the postgres instance.
 * `-db-password string` - (Required) Password of the DB user.
 * `-db-name string` - (Required) Name of the database to connect to.
-* `-db-host string` - (Required) Hostname or IP of the postgres instance 
+* `-db-host string` - (Required) Hostname or IP of the postgres instance
 * `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
 * `-key-password string` - Password to decrypt the signing key or p12 file.
 * `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
@@ -20,7 +20,7 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 * `-micromdmurl string` - (Required) MicroMDM Server URL
 * `-password string` - (Required) Password used for basic authentication
 * `-port string` - Port number to run mdmdirector on. (default "8000")
-* `-private-key string` - Path to the signing private key. Don't use with p12 file.
+* `-signing-private-key string` - Path to the signing private key. Don't use with p12 file.
 * `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
 * `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
 
