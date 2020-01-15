@@ -234,7 +234,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 				db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile)
 			}
 		}
-		db.DB.Model(device).Association("Profiles").Append(profiles)
+		db.DB.Model(&device).Association("Profiles").Append(profiles)
 	}
 }
 
@@ -441,7 +441,10 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +460,10 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
