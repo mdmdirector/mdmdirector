@@ -21,9 +21,6 @@ var MicroMDMURL string
 // MicroMDMAPIKey is the api key for your MicroMDM server
 var MicroMDMAPIKey string
 
-// MicroMDMUsername is the username for your MicroMDM server
-var MicroMDMUsername = "micromdm"
-
 // Sign is whether profiles should be signed (they really should)
 var Sign bool
 
@@ -38,8 +35,6 @@ var CertPath string
 
 // PushNewBuild is whether to push all profiles if the device's build number changes
 var PushNewBuild bool
-
-var BasicAuthUser = utils.GetBasicAuthUser()
 
 // BasicAuthPass is the password used for basic auth
 var BasicAuthPass string
