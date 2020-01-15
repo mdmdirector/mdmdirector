@@ -234,7 +234,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 				db.DB.Model(&profile).Where("device_ud_id = ?", device.UDID).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile)
 			}
 		}
-		db.DB.Model(device).Association("Profiles").Append(profiles)
+		db.DB.Model(&device).Association("Profiles").Append(profiles)
 	}
 }
 
@@ -432,6 +432,30 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
 	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
+	if err != nil {
+		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
+	}
+	output, err := json.MarshalIndent(&profiles, "", "    ")
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
+}
+
+func GetDeviceProfilesBySerial(w http.ResponseWriter, r *http.Request) {
+	var profiles []types.DeviceProfile
+	vars := mux.Vars(r)
+
+	var device types.Device
+
+	err := db.DB.Model(&device).Where("serial_number = ?", vars["serial_number"]).First(&device).Error
+	if err != nil {
+		log.Errorf("Couldn't scan to Device model: %v", err)
+	}
+
+	err = db.DB.Find(&profiles).Where("device_ud_id = ?", device.UDID).Scan(&profiles).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
 	}
