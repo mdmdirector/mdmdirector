@@ -441,7 +441,10 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func GetDeviceProfilesBySerial(w http.ResponseWriter, r *http.Request) {
@@ -465,7 +468,10 @@ func GetDeviceProfilesBySerial(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
@@ -481,7 +487,10 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
