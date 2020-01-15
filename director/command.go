@@ -61,7 +61,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 		}
 	} else {
 		if ackEvent.Status == "Error" {
-			log.Info("Error response receieved: %v", ackEvent)
+			log.Infof("Error response receieved: %v", ackEvent)
 			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),
@@ -134,7 +134,10 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +153,10 @@ func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -182,5 +188,8 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
