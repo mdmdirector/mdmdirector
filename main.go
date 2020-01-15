@@ -120,7 +120,6 @@ func main() {
 	r.HandleFunc("/profile", utils.BasicAuth(director.DeleteProfileHandler)).Methods("DELETE")
 	r.HandleFunc("/profile", utils.BasicAuth(director.GetSharedProfiles)).Methods("GET")
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
-	r.HandleFunc("/profile/serial/{serial_number}", utils.BasicAuth(director.GetDeviceProfilesBySerial)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
 	r.HandleFunc("/device/{udid}", utils.BasicAuth(director.SingleDeviceHandler)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")

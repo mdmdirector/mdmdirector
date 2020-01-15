@@ -447,33 +447,6 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func GetDeviceProfilesBySerial(w http.ResponseWriter, r *http.Request) {
-	var profiles []types.DeviceProfile
-	vars := mux.Vars(r)
-
-	var device types.Device
-
-	err := db.DB.Model(&device).Where("serial_number = ?", vars["serial_number"]).First(&device).Error
-	if err != nil {
-		log.Errorf("Couldn't scan to Device model: %v", err)
-	}
-
-	err = db.DB.Find(&profiles).Where("device_ud_id = ?", device.UDID).Scan(&profiles).Error
-	if err != nil {
-		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
-	}
-	output, err := json.MarshalIndent(&profiles, "", "    ")
-	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	_, err = w.Write(output)
-	if err != nil {
-		log.Error(err)
-	}
-}
-
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.SharedProfile
 
