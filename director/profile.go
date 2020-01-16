@@ -325,7 +325,8 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 
 func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	for _, device := range devices {
-		for _, profileData := range profiles {
+		for i := range profiles {
+			profileData := profiles[i]
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -391,8 +392,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to install")
 	}
 
-	for _, incomingProfile := range profileListData.ProfileList {
-		// incomingProfile := profileListData.ProfileList[i]
+	for i := range profileListData.ProfileList {
+		incomingProfile := profileListData.ProfileList[i]
 		profileLists = append(profileLists, incomingProfile)
 	}
 
