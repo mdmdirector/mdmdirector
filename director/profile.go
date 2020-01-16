@@ -464,8 +464,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load shared profiles to remove")
 	}
 
-	for _, savedSharedProfile := range sharedProfiles {
-		for _, incomingProfile := range profileListData.ProfileList {
+	for i := range sharedProfiles {
+		savedSharedProfile := sharedProfiles[i]
+		for i := range profileListData.ProfileList {
+			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
 			}
