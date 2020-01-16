@@ -98,16 +98,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if out.AcknowledgeEvent != nil {
 
-		// utils.PrintStruct(string(out.AcknowledgeEvent.RawPayload))
-		// err = plist.Unmarshal(out.AcknowledgeEvent, &device)
-		// if err != nil {
-		// 	log.Errorf("Error: %v, AckEvent: %v", err, string(out.AcknowledgeEvent))
-		// }
-
-		// device, err = GetDevice(out.AcknowledgeEvent.UDID)
-		// if err != nil {
-		// 	log.Error(err)
-		// }
 		if out.AcknowledgeEvent.CommandUUID != "" {
 			UpdateCommand(out.AcknowledgeEvent, device)
 		}
@@ -125,7 +115,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]
 		if ok {
-			// utils.PrintStruct(out.AcknowledgeEvent)
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
