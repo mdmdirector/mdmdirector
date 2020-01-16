@@ -382,7 +382,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	var sharedProfile types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var profilesToInstall []types.DeviceProfile
+	var profilesToRemove []types.DeviceProfile
 	var sharedProfilesToInstall []types.SharedProfile
+	var sharedProfilesToRemove []types.SharedProfile
 	var devices []types.Device
 	var profileLists []types.ProfileList
 
@@ -437,6 +439,42 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	PushSharedProfiles(devices, sharedProfilesToInstall)
+
+	// Get the profiles that should be removed from the device
+	err = db.DB.Model(&profile).Where("device_ud_id = ? AND installed = false", device.UDID).Scan(&profiles).Error
+	if err != nil {
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to remove")
+	}
+
+	for i := range profiles {
+		savedProfile := profiles[i]
+		for i := range profileListData.ProfileList {
+			incomingProfile := profileListData.ProfileList[i]
+			if savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
+				// If missing, queue up to be installed
+				profilesToRemove = append(profilesToRemove, savedProfile)
+			}
+		}
+	}
+
+	DeleteDeviceProfiles(devices, profilesToRemove)
+
+	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = false").Scan(&sharedProfiles).Error
+	if err != nil {
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load shared profiles to remove")
+	}
+
+	for i := range sharedProfiles {
+		savedSharedProfile := sharedProfiles[i]
+		for i := range profileListData.ProfileList {
+			incomingProfile := profileListData.ProfileList[i]
+			if savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
+				sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
+			}
+		}
+	}
+
+	DeleteSharedProfiles(devices, sharedProfilesToRemove)
 
 	return nil
 }
