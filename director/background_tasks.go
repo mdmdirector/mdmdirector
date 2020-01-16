@@ -396,6 +396,13 @@ func processScheduledCheckin() error {
 		return errors.Wrap(err, "processScheduledCheckin::CleanupNullCertificates")
 	}
 
+	var profileLists []types.ProfileList
+
+	err = db.DB.Unscoped().Model(&profileLists).Where("device_ud_id is NULL").Delete(&types.ProfileList{}).Error
+	if err != nil {
+		return errors.Wrap(err, "processScheduledCheckin::CleanupNullProfileLists")
+	}
+
 	return nil
 }
 

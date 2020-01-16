@@ -147,6 +147,7 @@ func main() {
 		&types.DeviceInstallApplication{},
 		&types.Certificate{},
 		&types.ScheduledPush{},
+		&types.ProfileList{},
 	)
 
 	log.Info("mdmdirector is running, hold onto your butts...")

@@ -53,7 +53,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 		log.Errorf("Cannot update command %v without a device UDID!!!!", ackEvent.CommandUUID)
 	}
 
-	log.Debug(ackEvent)
+	// log.Debug(ackEvent)
 
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {

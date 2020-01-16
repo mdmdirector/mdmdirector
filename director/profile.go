@@ -374,7 +374,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 	return pushedCommands, nil
 }
 
-func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) {
+func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) error {
 	log.Infof("Verifying mdm profiles for %v", device.UDID)
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
@@ -383,11 +383,22 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	var profilesToInstall []types.DeviceProfile
 	var sharedProfilesToInstall []types.SharedProfile
 	var devices []types.Device
+	var profileLists []types.ProfileList
 
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
 	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to install")
+	}
+
+	for _, incomingProfile := range profileListData.ProfileList {
+		// incomingProfile := profileListData.ProfileList[i]
+		profileLists = append(profileLists, incomingProfile)
+	}
+
+	err = db.DB.Model(&device).Association("ProfileList").Replace(profileLists).Error
+	if err != nil {
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot replace Profile List")
 	}
 
 	// For each, loop over the present profiles
@@ -407,7 +418,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load shared profiles to install")
 	}
 
 	for _, savedSharedProfile := range sharedProfiles {
@@ -425,6 +436,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	PushSharedProfiles(devices, sharedProfilesToInstall)
+
+	return nil
 }
 
 func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {

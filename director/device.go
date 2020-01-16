@@ -139,7 +139,7 @@ func GetAllDevices() ([]types.Device, error) {
 func GetAllDevicesAndAssociations() *[]types.Device {
 	var devices []types.Device
 
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Find(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from GetAllDevicesAndAssociations", err)
 	}
