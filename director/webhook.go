@@ -98,10 +98,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if out.AcknowledgeEvent != nil {
 
-		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
-		if err != nil {
-			log.Error(err)
-		}
 		if out.AcknowledgeEvent.CommandUUID != "" {
 			UpdateCommand(out.AcknowledgeEvent, device)
 		}

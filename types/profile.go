@@ -50,10 +50,12 @@ type ProfileListData struct {
 }
 
 type ProfileList struct {
+	ID                       uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	DeviceUDID               string
 	HasRemovalPasscode       bool          `plist:"HasRemovalPasscode"`
 	IsEncrypted              bool          `plist:"IsEncrypted"`
 	IsManaged                bool          `plist:"IsManaged"`
-	PayloadContent           []interface{} `plist:"PaylodContent"`
+	PayloadContent           []interface{} `plist:"PaylodContent" gorm:"-"`
 	PayloadDescription       string        `plist:"PayloadDescription"`
 	PayloadDisplayName       string        `plist:"PayloadDisplayName"`
 	PayloadIdentifier        string        `plist:"PayloadIdentifier"`

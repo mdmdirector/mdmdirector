@@ -57,7 +57,7 @@ linters:
 linters-settings:
   govet:
     # report about shadowed variables
-    check-shadowing: true
+    check-shadowing: false
 
   goimports:
     # put imports beginning with prefix after 3rd-party packages;

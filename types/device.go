@@ -71,6 +71,7 @@ type Device struct {
 	Certificates             []Certificate              `gorm:"ForeignKey:DeviceUDID"`
 	InstallApplications      []DeviceInstallApplication `gorm:"ForeignKey:DeviceUDID"`
 	SecurityInfo             SecurityInfo               `gorm:"ForeignKey:DeviceUDID"`
+	ProfileList              []ProfileList              `gorm:"ForeignKey:DeviceUDID"`
 	UpdatedAt                time.Time
 	AuthenticateRecieved     bool `gorm:"default:false"`
 	TokenUpdateRecieved      bool `gorm:"default:false"`
