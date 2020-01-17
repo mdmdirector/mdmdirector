@@ -207,8 +207,22 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 					PushProfiles(devices, profiles)
 					status = "pushed"
 				}
-			} else if requestType == "delete" {
+			}
 
+		} else if requestType == "delete" {
+			profilePresent, err := SavedProfileIsPresent(device, profile)
+			if err != nil {
+				return metadata, errors.Wrap(err, "Could not determine if saved profile is present.")
+			}
+
+			if profilePresent {
+				err = db.DB.Model(&profiles).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+				if err != nil {
+					return metadata, errors.Wrap(err, "Could not set profile to installed = false.")
+				}
+			}
+			if pushNow {
+				DeleteDeviceProfiles(devices, incomingProfiles)
 			}
 		}
 
