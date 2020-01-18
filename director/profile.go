@@ -177,7 +177,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		w.Write(output)
+		_, err = w.Write(output)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 }
 
@@ -284,7 +287,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		}
 	}
 
-	if strings.ToLower(profileList.PayloadUUID) == strings.ToLower(profile.HashedPayloadUUID) {
+	if strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
 		return true, nil
 	}
 
@@ -389,7 +392,10 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		w.Write(output)
+		_, err = w.Write(output)
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 }
