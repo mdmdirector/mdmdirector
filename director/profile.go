@@ -312,8 +312,6 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	var profilesModel types.DeviceProfile
-	var sharedProfiles []types.SharedProfile
-	var sharedProfileModel types.SharedProfile
 	var devices []types.Device
 	var out types.DeleteProfilePayload
 	var metadata []types.MetadataItem
