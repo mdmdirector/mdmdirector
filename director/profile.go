@@ -291,6 +291,24 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	return false, nil
 }
 
+func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
+	var sharedProfileModel types.SharedProfile
+	var sharedProfiles []types.SharedProfile
+	devices, err := GetAllDevices()
+	if err != nil {
+		return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not get all devices")
+	}
+
+	for _, profile := range payload.Mobileconfigs {
+		err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+		if err != nil {
+			return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not set installed = false")
+		}
+	}
+	DeleteSharedProfiles(devices, sharedProfiles)
+	return nil
+}
+
 func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	var profilesModel types.DeviceProfile
@@ -309,20 +327,11 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.DeviceUDIDs) > 0 {
 			// Targeting all devices
 			if out.DeviceUDIDs[0] == "*" {
-				devices, err = GetAllDevices()
+				err = DisableSharedProfiles(out)
 				if err != nil {
 					log.Error(err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
-
-				for _, profile := range out.Mobileconfigs {
-					err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
-					if err != nil {
-						log.Error(err)
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-				}
-				DeleteSharedProfiles(devices, sharedProfiles)
 				return
 			} else {
 				err := db.DB.Model(&devices).Where("ud_id IN (?)", out.DeviceUDIDs).Scan(&devices).Error
@@ -337,20 +346,11 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if out.SerialNumbers != nil {
 		if len(out.SerialNumbers) > 0 {
 			if out.SerialNumbers[0] == "*" {
-				devices, err = GetAllDevices()
+				err = DisableSharedProfiles(out)
 				if err != nil {
 					log.Error(err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
-
-				for _, profile := range out.Mobileconfigs {
-					err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
-					if err != nil {
-						log.Error(err)
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-				}
-				DeleteSharedProfiles(devices, sharedProfiles)
 				return
 			} else {
 				err := db.DB.Model(&devices).Where("serial_number IN (?)", out.SerialNumbers).Scan(&devices).Error
