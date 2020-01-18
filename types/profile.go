@@ -31,16 +31,18 @@ type ProfilePayload struct {
 	DeviceUDIDs   []string `json:"udids,omitempty"`
 	Mobileconfigs []string `json:"profiles"`
 	PushNow       bool     `json:"push_now"`
+	Metadata      bool     `json:"metadata"`
 }
 
 type DeleteProfilePayload struct {
 	SerialNumbers []string                     `json:"serial_numbers,omitempty"`
 	DeviceUDIDs   []string                     `json:"udids,omitempty"`
+	PushNow       bool                         `json:"push_now"`
 	Mobileconfigs []DeletedMobileconfigPayload `json:"profiles"`
+	Metadata      bool                         `json:"metadata"`
 }
 
 type DeletedMobileconfigPayload struct {
-	UUID              string `json:"uuid"`
 	PayloadIdentifier string `json:"payload_identifier"`
 }
 
@@ -64,6 +66,18 @@ type ProfileList struct {
 	PayloadUUID              string        `plist:"PayloadUUID"`
 	PayloadVersion           int           `plist:"PayloadVersion"`
 	FullPayload              bool          `plist:"FullPayload"`
+}
+
+type MetadataItem struct {
+	Device          Device            `json:"device"`
+	ProfileMetadata []ProfileMetadata `json:"profile_metadata"`
+}
+
+type ProfileMetadata struct {
+	Status            string `json:"status"`
+	PayloadIdentifier string `json:"payload_identifier"`
+	PayloadUUID       string `json:"payload_uuid"`
+	HashedPayloadUUID string `json:"hashed_payload_uuid"`
 }
 
 func (profile *DeviceProfile) AfterCreate() (err error) {

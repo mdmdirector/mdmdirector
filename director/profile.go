@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/pkcs12"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/groob/plist"
+	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
@@ -30,6 +32,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
 	var out types.ProfilePayload
+	var metadata []types.MetadataItem
 	var err error
 
 	err = json.NewDecoder(r.Body).Decode(&out)
@@ -37,6 +40,8 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
+
+	useMetadata := out.Metadata
 
 	for _, payload := range out.Mobileconfigs {
 		var profile types.DeviceProfile
@@ -119,17 +124,19 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					PushSharedProfiles(devices, sharedProfiles)
 				}
 			} else {
+				// Individual devices
 				for _, item := range out.DeviceUDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
 						log.Error(err)
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
-					devices = append(devices, device)
-				}
-				SaveProfiles(devices, profiles)
-				if out.PushNow {
-					PushProfiles(devices, profiles)
+					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
+					if err != nil {
+						log.Error(err)
+						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					}
+					metadata = append(metadata, metadataItem)
 				}
 			}
 		}
@@ -152,76 +159,244 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						continue
 					}
-					devices = append(devices, device)
-				}
-				SaveProfiles(devices, profiles)
-				if out.PushNow {
-					PushProfiles(devices, profiles)
+					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
+					if err != nil {
+						log.Error(err)
+						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					}
+					metadata = append(metadata, metadataItem)
 				}
 			}
 		}
 	}
+
+	if useMetadata {
+		output, err := json.MarshalIndent(&metadata, "", "    ")
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+
+		_, err = w.Write(output)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+}
+
+func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, pushNow bool, requestType string) (types.MetadataItem, error) {
+	var metadata types.MetadataItem
+	var devices []types.Device
+	var profileMetadataList []types.ProfileMetadata
+
+	metadata.Device = device
+	for i := range profiles {
+		var incomingProfiles []types.DeviceProfile
+		var profileMetadata types.ProfileMetadata
+		status := "unchanged"
+		profile := profiles[i]
+
+		incomingProfiles = append(incomingProfiles, profile)
+		devices = append(devices, device)
+		if requestType == "post" {
+			profileDiffers, err := SavedDeviceProfileDiffers(device, profile)
+			if err != nil {
+				return metadata, errors.Wrap(err, "Could not determine if saved profile differs from incoming profile.")
+			}
+			if profileDiffers {
+				SaveProfiles(devices, incomingProfiles)
+				status = "changed"
+				if pushNow {
+					PushProfiles(devices, profiles)
+					status = "pushed"
+				}
+			}
+
+		} else if requestType == "delete" {
+			profilePresent, err := SavedProfileIsPresent(device, profile)
+			if err != nil {
+				return metadata, errors.Wrap(err, "Could not determine if saved profile is present.")
+			}
+
+			if profilePresent {
+				err = db.DB.Model(&profiles).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+				if err != nil {
+					return metadata, errors.Wrap(err, "Could not set profile to installed = false.")
+				}
+			}
+			if pushNow {
+				DeleteDeviceProfiles(devices, incomingProfiles)
+			}
+		}
+
+		profileMetadata.HashedPayloadUUID = profile.HashedPayloadUUID
+		profileMetadata.PayloadIdentifier = profile.PayloadIdentifier
+		profileMetadata.PayloadUUID = profile.PayloadUUID
+		profileMetadata.Status = status
+		profileMetadataList = append(profileMetadataList, profileMetadata)
+
+	}
+
+	metadata.ProfileMetadata = profileMetadataList
+
+	return metadata, nil
+}
+
+func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bool, error) {
+	var savedProfile types.DeviceProfile
+	var profileList types.ProfileList
+	// Make sure profile is marked as install = false
+	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			return true, nil
+		}
+	}
+	// Make sure the profile isn't in the device's profilelist
+	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
+	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			// If it's not found, we'll catch in the false return at the end. Else raise an error
+			return true, errors.Wrap(err, "Could not load ProfileList for device")
+		}
+	}
+
+	return false, nil
+}
+
+func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile) (bool, error) {
+	var savedProfile types.DeviceProfile
+	var profileList types.ProfileList
+	// Profile isn't in the db
+	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, true).First(&savedProfile).Error; err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			return true, nil
+		}
+	}
+
+	// Hash doesn't match
+	if savedProfile.HashedPayloadUUID != profile.HashedPayloadUUID {
+		return true, nil
+	}
+
+	// Profile isn't what we have saved in the profilelist
+	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
+	if err != nil {
+		if !gorm.IsRecordNotFoundError(err) {
+			// If it's not found, we'll catch in the false return at the end. Else raise an error
+			return true, errors.Wrap(err, "Could not load ProfileList for device")
+		}
+	}
+
+	if strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
+	var sharedProfileModel types.SharedProfile
+	var sharedProfiles []types.SharedProfile
+	devices, err := GetAllDevices()
+	if err != nil {
+		return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not get all devices")
+	}
+
+	for _, profile := range payload.Mobileconfigs {
+		err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+		if err != nil {
+			return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not set installed = false")
+		}
+	}
+	DeleteSharedProfiles(devices, sharedProfiles)
+	return nil
 }
 
 func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	var profilesModel types.DeviceProfile
-	var sharedProfiles []types.SharedProfile
-	var sharedProfileModel types.SharedProfile
 	var devices []types.Device
 	var out types.DeleteProfilePayload
+	var metadata []types.MetadataItem
 	var err error
 	err = json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}
-
-	for _, profile := range out.Mobileconfigs {
-		if out.DeviceUDIDs != nil {
-			// Not empty list
-			if len(out.DeviceUDIDs) > 0 {
-				// Shared profiles
-				if out.DeviceUDIDs[0] == "*" {
-					devices, err = GetAllDevices()
-					if err != nil {
-						log.Error(err)
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-					// var deviceIds []string
-					// for _, item := range devices {
-					// 	deviceIds = append(deviceIds, item.UDID)
-					// }
-					err = db.DB.Model(&sharedProfileModel).Where("payload_uuid = ? and payload_identifier = ?", profile.UUID, profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&sharedProfiles).Error
-					if err != nil {
-						log.Error(err)
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-
-					DeleteSharedProfiles(devices, sharedProfiles)
-
-				} else {
-					var deviceIds []string
-					for _, item := range out.DeviceUDIDs {
-						device, err := GetDevice(item)
-						if err != nil {
-							log.Error(err)
-							http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-						}
-						devices = append(devices, device)
-						deviceIds = append(deviceIds, device.UDID)
-					}
-
-					err := db.DB.Model(&profilesModel).Where("payload_uuid = ? and payload_identifier = ? and device_ud_id IN (?)", profile.UUID, profile.PayloadIdentifier, deviceIds).Update("installed", false).Scan(&profiles).Error
-					if err != nil {
-						log.Error(err)
-						continue
-					}
-
-					DeleteDeviceProfiles(devices, profiles)
+	if out.DeviceUDIDs != nil {
+		// Not empty list
+		if len(out.DeviceUDIDs) > 0 {
+			// Targeting all devices
+			if out.DeviceUDIDs[0] == "*" {
+				err = DisableSharedProfiles(out)
+				if err != nil {
+					log.Error(err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
+				return
 			}
+			err := db.DB.Model(&devices).Where("ud_id IN (?)", out.DeviceUDIDs).Scan(&devices).Error
+			if err != nil {
+				log.Error(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+
 		}
 	}
+	if out.SerialNumbers != nil {
+		if len(out.SerialNumbers) > 0 {
+			if out.SerialNumbers[0] == "*" {
+				err = DisableSharedProfiles(out)
+				if err != nil {
+					log.Error(err)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
+				return
+			}
+			err := db.DB.Model(&devices).Where("serial_number IN (?)", out.SerialNumbers).Scan(&devices).Error
+			if err != nil {
+				log.Error(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+
+		}
+	}
+
+	for i := range devices {
+		device := devices[i]
+		for i := range out.Mobileconfigs {
+			var profile types.DeviceProfile
+			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier
+			err = db.DB.Model(&profilesModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&profiles).Error
+			if err != nil {
+				log.Error(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+
+			profiles = append(profiles, profile)
+		}
+
+		metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "delete")
+		if err != nil {
+			log.Error(err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		metadata = append(metadata, metadataItem)
+	}
+
+	if out.Metadata {
+		output, err := json.MarshalIndent(&metadata, "", "    ")
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+
+		_, err = w.Write(output)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+
 }
 
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {

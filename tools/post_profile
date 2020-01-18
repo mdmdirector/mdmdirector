@@ -6,5 +6,6 @@ jq -n \
   --arg payload "$(cat "$2"|openssl base64 -A)" \
   '.udids = [$udid]
   |.profiles = [$payload]
+  |.metadata = true
   '|\
   curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
