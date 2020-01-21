@@ -609,7 +609,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		}
 
 		// Make sure we aren't managing this at a device level
-		for _, deviceProfile := range profilesToInstall {
+		for i := range profilesToInstall {
+			deviceProfile := profilesToInstall[i]
 			if savedSharedProfile.HashedPayloadUUID == deviceProfile.PayloadUUID && savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
 				found = true
 				continue
