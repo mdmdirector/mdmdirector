@@ -1,6 +1,0 @@
-Database table for the queue.
-Each backgrouond run pulls all the applicable devices, and if that device isn't in the queue already, it will add it
-
-Separate background job that pulls the the right number of devices from the queue
-each device when processed is marked as started
-it is deleted from the table when it is finished
