@@ -76,6 +76,8 @@ type Device struct {
 	AuthenticateRecieved     bool `gorm:"default:false"`
 	TokenUpdateRecieved      bool `gorm:"default:false"`
 	InitialTasksRun          bool `gorm:"default:false"`
+	Erase                    bool `gorm:"default:false"`
+	Lock                     bool `gorm:"default:false"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
 	LastScheduledPush        time.Time

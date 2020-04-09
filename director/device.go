@@ -185,6 +185,35 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(output)
+
+}
+
+func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
+	var device types.Device
+	vars := mux.Vars(r)
+
+	device, err := GetDeviceSerial(vars["serial"])
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	err = db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").First(&device).Error
+	if err != nil {
+		log.Error("Couldn't scan to Device model from SingleDeviceSerialHandler", err)
+	}
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
+	if err != nil {
+		log.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.Write(output)
 }
 
 func RequestDeviceInformation(device types.Device) error {
