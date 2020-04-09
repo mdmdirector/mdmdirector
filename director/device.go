@@ -147,6 +147,10 @@ func GetAllDevicesAndAssociations() *[]types.Device {
 	return &devices
 }
 
+func PostDeviceHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
 func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 	devices := GetAllDevicesAndAssociations()
 

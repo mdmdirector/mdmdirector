@@ -8,11 +8,12 @@ import (
 	"net/url"
 	"strings"
 
+	"gopkg.in/ajg/form.v1"
+
 	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
-	"gopkg.in/ajg/form.v1"
 )
 
 func EraseLockDevice(device *types.Device) error {
@@ -59,7 +60,7 @@ func escrowPin(device *types.Device, pin string) error {
 	}
 
 	urlString := strings.Trim(endpoint.String(), "/")
-	urlString = urlString + "/"
+	urlString += "/"
 
 	var payload types.EscrowPayload
 
@@ -101,7 +102,7 @@ func generatePin() (string, error) {
 		if err != nil {
 			return "", errors.Wrap(err, "generatePin")
 		}
-		out = out + result.String()
+		out += result.String()
 	}
 
 	return out, nil
