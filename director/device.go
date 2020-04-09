@@ -169,16 +169,7 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	err = db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").First(&device).Error
-	if err != nil {
-		log.Error("Couldn't scan to Device model from SingleDeviceHandler", err)
-	}
-	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	output, err := json.MarshalIndent(&device, "", "    ")
+	output, err := FetchDeviceAndRelations(device)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -198,22 +189,31 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	err = db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").First(&device).Error
-	if err != nil {
-		log.Error("Couldn't scan to Device model from SingleDeviceSerialHandler", err)
-	}
-	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	output, err := json.MarshalIndent(&device, "", "    ")
+	output, err := FetchDeviceAndRelations(device)
 	if err != nil {
 		log.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	w.Write(output)
+}
+
+func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
+	var empty []byte
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").First(&device).Error
+	if err != nil {
+		log.Error("Couldn't scan to Device model from SingleDeviceSerialHandler", err)
+	}
+	if err != nil {
+		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
+	if err != nil {
+		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
+	}
+
+	return output, nil
 }
 
 func RequestDeviceInformation(device types.Device) error {
