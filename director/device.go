@@ -175,7 +175,10 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 
 }
 
@@ -195,7 +198,10 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
