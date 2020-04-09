@@ -156,7 +156,10 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	w.Write(output)
+	_, err = w.Write(output)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {

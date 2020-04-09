@@ -41,7 +41,6 @@ linters:
     - govet
     - misspell
     - nakedret
-    - scopelint
     - staticcheck
     - typecheck
     - unconvert
@@ -51,6 +50,7 @@ linters:
 # - structcheck
 # - unused
 # - gocyclo
+# - scopelint
 
 # all available settings of specific linters, we can set an option for
 # a given linter even if we deactivate that same linter at runtime
