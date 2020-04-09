@@ -27,6 +27,7 @@ type CommandPayload struct {
 	Queries     []string `json:"Queries,omitempty"`
 	Identifier  string   `json:"identifier,omitempty"`
 	ManifestURL string   `json:"manifest_url,omitempty"`
+	Pin         string   `json:"pin,omitempty"`
 }
 
 type CommandResponse struct {

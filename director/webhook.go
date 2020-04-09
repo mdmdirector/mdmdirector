@@ -112,6 +112,15 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if out.AcknowledgeEvent.Status == "Idle" {
+			if device.Erase || device.Lock {
+				// Got a device checking in that should be wiped or locked. Make it so.
+				err = EraseLockDevice(&device)
+				if err != nil {
+					log.Error(err)
+				}
+				return
+			}
+
 			RequestDeviceUpdate(device)
 			return
 		}

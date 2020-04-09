@@ -29,6 +29,15 @@ func RunInitialTasks(udid string) error {
 		return err
 	}
 
+	if device.Erase || device.Lock {
+		// Got a device checking in that should be wiped or locked. Make it so.
+		err = EraseLockDevice(&device)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
 	_, err = InstallAllProfiles(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:InstallAllProfiles")
