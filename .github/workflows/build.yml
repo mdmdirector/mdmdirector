@@ -12,3 +12,7 @@ jobs:
         with:
           go-version: 1.12
       - run: go build
+      - name: golangci-lint
+        uses: actions-contrib/golangci-lint@v1
+        with:
+          golangci_lint_version: v1.13
