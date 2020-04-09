@@ -33,9 +33,8 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var devices []types.Device
 	var out types.ProfilePayload
 	var metadata []types.MetadataItem
-	var err error
 
-	err = json.NewDecoder(r.Body).Decode(&out)
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -335,8 +334,8 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var devices []types.Device
 	var out types.DeleteProfilePayload
 	var metadata []types.MetadataItem
-	var err error
-	err = json.NewDecoder(r.Body).Decode(&out)
+
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}

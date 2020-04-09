@@ -18,8 +18,8 @@ import (
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
-	var err error
-	err = json.NewDecoder(r.Body).Decode(&out)
+
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}

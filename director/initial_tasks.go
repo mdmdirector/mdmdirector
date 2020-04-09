@@ -55,8 +55,7 @@ func RunInitialTasks(udid string) error {
 
 func processDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
-	var err error
-	err = SendDeviceConfigured(device)
+	err := SendDeviceConfigured(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
