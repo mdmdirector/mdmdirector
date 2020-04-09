@@ -12,7 +12,10 @@ func RequestSecurityInfo(device types.Device) {
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
-	SendCommand(payload)
+	_, err := SendCommand(payload)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) {
