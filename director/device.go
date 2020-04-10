@@ -147,8 +147,75 @@ func GetAllDevicesAndAssociations() *[]types.Device {
 	return &devices
 }
 
-func PostDeviceHandler(w http.ResponseWriter, r *http.Request) {
+func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
+	var out types.DeviceCommandPayload
+	var devices []types.Device
+	vars := mux.Vars(r)
 
+	err := json.NewDecoder(r.Body).Decode(&out)
+	if err != nil {
+		log.Error(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+	}
+
+	command := vars["command"]
+	pushNow := out.PushNow
+	value := out.Value
+	if out.DeviceUDIDs != nil {
+		for i := range out.DeviceUDIDs {
+			device, err := GetDevice(out.DeviceUDIDs[i])
+			if err != nil {
+				log.Error(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+			devices = append(devices, device)
+		}
+	}
+
+	if out.SerialNumbers != nil {
+		for i := range out.SerialNumbers {
+			device, err := GetDeviceSerial(out.SerialNumbers[i])
+			if err != nil {
+				log.Error(err)
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+			devices = append(devices, device)
+		}
+	}
+
+	for i := range devices {
+		device := devices[i]
+		var deviceModel types.Device
+		if command == "device_lock" {
+			err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				"lock": value,
+			}).Error
+			if err != nil {
+				log.Error(err)
+			}
+		}
+
+		if command == "erase_device" {
+			err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				"erase": value,
+			}).Error
+			if err != nil {
+				log.Error(err)
+			}
+		}
+
+		if pushNow {
+			dbDevice, err := GetDevice(device.UDID)
+			if err != nil {
+				log.Error(err)
+			}
+			err = EraseLockDevice(&dbDevice)
+			if err != nil {
+				log.Error(err)
+			}
+		}
+
+	}
 }
 
 func DeviceHandler(w http.ResponseWriter, r *http.Request) {

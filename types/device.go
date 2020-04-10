@@ -104,10 +104,10 @@ type DeviceInformationQueryResponses struct {
 	QueryResponses Device `plist:"QueryResponses"`
 }
 
-type DevicePayload struct {
+type DeviceCommandPayload struct {
 	SerialNumbers []string `json:"serial_numbers,omitempty"`
 	DeviceUDIDs   []string `json:"udids,omitempty"`
-	Command       string   `json:"command"`
+	Value         bool     `json:"value"`
 	PushNow       bool     `json:"push_now"`
 	Metadata      bool     `json:"metadata"`
 }

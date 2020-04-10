@@ -34,6 +34,11 @@ func EraseLockDevice(device *types.Device) error {
 		requestType = "EraseDevice"
 	}
 
+	if requestType == "" {
+		log.Info("Neither lock or erase are set")
+		return nil
+	}
+
 	err = escrowPin(device, pin)
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice")
