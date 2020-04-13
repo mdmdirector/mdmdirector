@@ -4,7 +4,7 @@ endpoint="http://localhost:8000/device/command/device_lock"
 jq -n \
   --arg udid "$1" \
   '.udids = [$udid]
-  |.value = false
+  |.value = true
   |.push_now = true
   '|\
   curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
