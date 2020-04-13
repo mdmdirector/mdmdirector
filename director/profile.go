@@ -33,9 +33,8 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var devices []types.Device
 	var out types.ProfilePayload
 	var metadata []types.MetadataItem
-	var err error
 
-	err = json.NewDecoder(r.Body).Decode(&out)
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -46,7 +45,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	for _, payload := range out.Mobileconfigs {
 		var profile types.DeviceProfile
 		var sharedProfile types.SharedProfile
-		mobileconfig, err := base64.StdEncoding.DecodeString(string(payload))
+		mobileconfig, err := base64.StdEncoding.DecodeString(payload)
 		if err != nil {
 			log.Error(err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -64,7 +63,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
-		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
+		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
 
 		tempProfileDict["PayloadUUID"] = profile.HashedPayloadUUID
 
@@ -75,7 +74,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		profile.MobileconfigData = mobileconfig
-		mobileconfigData := []byte(mobileconfig)
+		mobileconfigData := mobileconfig
 		hash := sha256.Sum256(mobileconfigData)
 		profile.MobileconfigHash = hash[:]
 
@@ -87,7 +86,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
-		sharedProfile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(mobileconfig)).String()
+		sharedProfile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
 
 		var sharedTempProfileDict map[string]interface{}
 		err = plist.Unmarshal(mobileconfig, &sharedTempProfileDict)
@@ -119,9 +118,16 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					log.Error(err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
-				SaveSharedProfiles(sharedProfiles)
+				err = SaveSharedProfiles(sharedProfiles)
+				if err != nil {
+					log.Error(err)
+				}
+
 				if out.PushNow {
-					PushSharedProfiles(devices, sharedProfiles)
+					_, err = PushSharedProfiles(devices, sharedProfiles)
+					if err != nil {
+						log.Error(err)
+					}
 				}
 			} else {
 				// Individual devices
@@ -149,9 +155,16 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					log.Error(err)
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
-				SaveSharedProfiles(sharedProfiles)
+				err = SaveSharedProfiles(sharedProfiles)
+				if err != nil {
+					log.Error(err)
+				}
+
 				if out.PushNow {
-					PushSharedProfiles(devices, sharedProfiles)
+					_, err = PushSharedProfiles(devices, sharedProfiles)
+					if err != nil {
+						log.Error(err)
+					}
 				}
 			} else {
 				for _, item := range out.SerialNumbers {
@@ -207,7 +220,10 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				SaveProfiles(devices, incomingProfiles)
 				status = "changed"
 				if pushNow {
-					PushProfiles(devices, profiles)
+					_, err = PushProfiles(devices, profiles)
+					if err != nil {
+						log.Error(err)
+					}
 					status = "pushed"
 				}
 			}
@@ -318,8 +334,8 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var devices []types.Device
 	var out types.DeleteProfilePayload
 	var metadata []types.MetadataItem
-	var err error
-	err = json.NewDecoder(r.Body).Decode(&out)
+
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}
@@ -432,9 +448,9 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 					log.Errorf("signing profile with the specified key: %v", err)
 				}
 
-				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
+				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
 			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
 			}
 
 			commandPayload.UDID = device.UDID
@@ -493,20 +509,27 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
-			SendCommand(commandPayload)
+			_, err := SendCommand(commandPayload)
+			if err != nil {
+				log.Error(err)
+			}
 		}
 	}
 }
 
 func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile) {
-	for _, device := range devices {
+	for i := range devices {
+		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
-			SendCommand(commandPayload)
+			_, err := SendCommand(commandPayload)
+			if err != nil {
+				log.Error(err)
+			}
 		}
 	}
 }
@@ -533,9 +556,9 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
 				}
 
-				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(signed))
+				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
 			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString([]byte(profileData.MobileconfigData))
+				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
 			}
 
 			command, err := SendCommand(commandPayload)
@@ -592,7 +615,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	devices = append(devices, device)
-	PushProfiles(devices, profilesToInstall)
+	_, err = PushProfiles(devices, profilesToInstall)
+	if err != nil {
+		log.Error(err)
+	}
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
@@ -601,7 +627,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	for _, savedSharedProfile := range sharedProfiles {
 		found := false
-		for _, incomingProfile := range profileListData.ProfileList {
+		for i := range profileListData.ProfileList {
+			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				found = true
 				continue
@@ -622,7 +649,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		}
 	}
 
-	PushSharedProfiles(devices, sharedProfilesToInstall)
+	_, err = PushSharedProfiles(devices, sharedProfilesToInstall)
+	if err != nil {
+		log.Error(err)
+	}
 
 	// Get the profiles that should be removed from the device
 	err = db.DB.Model(&profile).Where("device_ud_id = ? AND installed = false", device.UDID).Scan(&profiles).Error
@@ -786,7 +816,10 @@ func RequestProfileList(device types.Device) {
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
 
-	SendCommand(commandPayload)
+	_, err := SendCommand(commandPayload)
+	if err != nil {
+		log.Error(err)
+	}
 }
 
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {

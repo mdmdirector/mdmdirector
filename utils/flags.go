@@ -69,6 +69,10 @@ func DBSSLMode() string {
 	return flag.Lookup("db-sslmode").Value.(flag.Getter).Get().(string)
 }
 
+func EscrowURL() string {
+	return flag.Lookup("escrowurl").Value.(flag.Getter).Get().(string)
+}
+
 func LogLevel() string {
 	return flag.Lookup("loglevel").Value.(flag.Getter).Get().(string)
 }

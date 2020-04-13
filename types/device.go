@@ -76,6 +76,8 @@ type Device struct {
 	AuthenticateRecieved     bool `gorm:"default:false"`
 	TokenUpdateRecieved      bool `gorm:"default:false"`
 	InitialTasksRun          bool `gorm:"default:false"`
+	Erase                    bool `gorm:"default:false"`
+	Lock                     bool `gorm:"default:false"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
 	LastScheduledPush        time.Time
@@ -100,4 +102,12 @@ type OSUpdateSettings struct {
 
 type DeviceInformationQueryResponses struct {
 	QueryResponses Device `plist:"QueryResponses"`
+}
+
+type DeviceCommandPayload struct {
+	SerialNumbers []string `json:"serial_numbers,omitempty"`
+	DeviceUDIDs   []string `json:"udids,omitempty"`
+	Value         bool     `json:"value"`
+	PushNow       bool     `json:"push_now"`
+	Metadata      bool     `json:"metadata"`
 }

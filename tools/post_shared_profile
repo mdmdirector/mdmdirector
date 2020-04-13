@@ -4,6 +4,7 @@ endpoint="http://localhost:8000/profile"
 jq -n \
   --arg payload "$(cat "$1"|openssl base64 -A)" \
   '.udids = ["*"]
+  |.push_now = true
   |.profiles = [$payload]
   '|\
   curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-

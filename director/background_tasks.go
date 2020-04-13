@@ -44,7 +44,10 @@ func RetryCommands() {
 	ticker := time.NewTicker(delay * time.Second)
 	defer ticker.Stop()
 	fn := func() {
-		pushNotNow()
+		err := pushNotNow()
+		if err != nil {
+			log.Error(err)
+		}
 	}
 
 	fn()
@@ -63,9 +66,8 @@ func pushNotNow() error {
 	}
 
 	client := &http.Client{}
-
-	for _, queuedCommand := range commands {
-
+	for i := range commands {
+		queuedCommand := commands[i]
 		endpoint, err := url.Parse(utils.ServerURL())
 		if err != nil {
 			log.Error(err)
@@ -74,7 +76,7 @@ func pushNotNow() error {
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
 		log.Debug(endpoint.Path)
 		queryString := endpoint.Query()
-		queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+		queryString.Set("expiration", strconv.FormatInt(retry, 10))
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		if err != nil {
@@ -118,8 +120,8 @@ func pushAll() error {
 		return err
 	}
 
-	for _, dbDevice := range dbDevices {
-
+	for i := range dbDevices {
+		dbDevice := dbDevices[i]
 		// If it's been updated within the last three hours, try to push again as it might still be online
 		if dbDevice.LastCheckedIn.After(threeHoursAgo) {
 			log.Infof("%v checked in more than three hours ago", dbDevice.UDID)
@@ -287,7 +289,7 @@ func PushDevice(udid string) error {
 	}
 	endpoint.Path = path.Join(endpoint.Path, "push", udid)
 	queryString := endpoint.Query()
-	queryString.Set("expiration", string(strconv.FormatInt(retry, 10)))
+	queryString.Set("expiration", strconv.FormatInt(retry, 10))
 	endpoint.RawQuery = queryString.Encode()
 	req, err := http.NewRequest("GET", endpoint.String(), nil)
 	if err != nil {

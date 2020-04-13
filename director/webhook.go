@@ -18,8 +18,8 @@ import (
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
-	var err error
-	err = json.NewDecoder(r.Body).Decode(&out)
+
+	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		log.Error(err)
 	}
@@ -68,7 +68,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 				log.Error(err)
 			}
 			log.Error("Running initial tasks due to device update")
-			RunInitialTasks(device.UDID)
+			err = RunInitialTasks(device.UDID)
+			if err != nil {
+				log.Error(err)
+			}
 			return
 		}
 	}
@@ -85,7 +88,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
 		log.Error("Running initial tasks due to device update")
-		RunInitialTasks(device.UDID)
+		err = RunInitialTasks(device.UDID)
+		if err != nil {
+			log.Error(err)
+		}
 		return
 	}
 
@@ -99,10 +105,22 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.AcknowledgeEvent != nil {
 
 		if out.AcknowledgeEvent.CommandUUID != "" {
-			UpdateCommand(out.AcknowledgeEvent, device)
+			err = UpdateCommand(out.AcknowledgeEvent, device)
+			if err != nil {
+				log.Error(err)
+			}
 		}
 
 		if out.AcknowledgeEvent.Status == "Idle" {
+			if device.Erase || device.Lock {
+				// Got a device checking in that should be wiped or locked. Make it so.
+				err = EraseLockDevice(&device)
+				if err != nil {
+					log.Error(err)
+				}
+				return
+			}
+
 			RequestDeviceUpdate(device)
 			return
 		}
@@ -120,7 +138,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error(err)
 			}
-			VerifyMDMProfiles(profileListData, device)
+			err = VerifyMDMProfiles(profileListData, device)
+			if err != nil {
+				log.Error(err)
+			}
 		}
 
 		_, ok = payloadDict["SecurityInfo"]
@@ -165,7 +186,10 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error(err)
 			}
-			UpdateDevice(deviceInformationQueryResponses.QueryResponses)
+			_, err = UpdateDevice(deviceInformationQueryResponses.QueryResponses)
+			if err != nil {
+				log.Error(err)
+			}
 
 		}
 
@@ -197,7 +221,10 @@ func RequestDeviceUpdate(device types.Device) {
 	log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
 	RequestProfileList(device)
 	RequestSecurityInfo(device)
-	RequestDeviceInformation(device)
+	err = RequestDeviceInformation(device)
+	if err != nil {
+		log.Error(err)
+	}
 	RequestCertificateList(device)
 
 	// PushDevice(device.UDID)
@@ -227,7 +254,10 @@ func pushOnNewBuild(udid string, currentBuild string) error {
 			}
 
 			if oldVersion.LessThan(currentVersion) {
-				InstallAllProfiles(oldDevice)
+				_, err = InstallAllProfiles(oldDevice)
+				if err != nil {
+					log.Error(err)
+				}
 			}
 		}
 	}
