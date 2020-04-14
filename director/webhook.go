@@ -112,15 +112,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if out.AcknowledgeEvent.Status == "Idle" {
-			if device.Erase || device.Lock {
-				// Got a device checking in that should be wiped or locked. Make it so.
-				err = EraseLockDevice(&device)
-				if err != nil {
-					log.Error(err)
-				}
-				return
-			}
-
 			RequestDeviceUpdate(device)
 			return
 		}
@@ -199,6 +190,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
 	var err error
+	// Checking for device lock or wipe
+	if err = db.DB.Model(&deviceModel).Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
+		EraseLockDevice(&device)
+
+	}
 
 	// hourAgo := time.Now().Add(1 * time.Hour)
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)

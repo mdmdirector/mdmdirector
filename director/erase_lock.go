@@ -23,6 +23,11 @@ func EraseLockDevice(device *types.Device) error {
 		return errors.Wrap(err, "EraseLockDevice::generatePin")
 	}
 
+	if !device.AuthenticateRecieved || !device.TokenUpdateRecieved || !device.TokenUpdateRecieved {
+		errors.New(device.UDID + " is not ready to receive MDM commands")
+		return errors.Wrap(err, "EraseLockDevice")
+	}
+
 	var requestType string
 
 	if device.Lock {
