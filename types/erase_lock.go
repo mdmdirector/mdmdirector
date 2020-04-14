@@ -1,8 +1,21 @@
 package types
 
+import (
+	"time"
+
+	uuid "github.com/satori/go.uuid"
+)
+
 type EscrowPayload struct {
 	Serial     string `form:"serial"`
 	Pin        string `form:"recovery_password"`
 	Username   string `form:"username"`
 	SecretType string `form:"secret_type"`
+}
+
+type UnlockPin struct {
+	ID         uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	UnlockPin  string
+	PinSet     time.Time
+	DeviceUDID string
 }

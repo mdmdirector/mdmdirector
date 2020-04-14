@@ -154,6 +154,7 @@ func main() {
 		&types.Certificate{},
 		&types.ScheduledPush{},
 		&types.ProfileList{},
+		&types.UnlockPin{},
 	)
 
 	log.Info("mdmdirector is running, hold onto your butts...")

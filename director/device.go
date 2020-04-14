@@ -205,11 +205,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if pushNow {
-			dbDevice, err := GetDevice(device.UDID)
-			if err != nil {
-				log.Error(err)
-			}
-			err = EraseLockDevice(&dbDevice)
+			err = EraseLockDevice(device.UDID)
 			if err != nil {
 				log.Error(err)
 			}

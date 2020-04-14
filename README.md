@@ -14,7 +14,7 @@ MDMDirector is a compiled binary - it has no external dependencies other than a 
 * `-db-name string` - (Required) Name of the database to connect to.
 * `-db-host string` - (Required) Hostname or IP of the postgres instance
 * `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
-* `-escrowurl` = HTTP endpoint to escrow erase and unlock PINs to ([Crypt](https://github.com/grahamgilbert/crypt-server) and other compatible servers).
+* `-escrowurl` - HTTP endpoint to escrow erase and unlock PINs to ([Crypt](https://github.com/grahamgilbert/crypt-server) and other compatible servers).
 * `-key-password string` - Password to decrypt the signing key or p12 file.
 * `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
 * `-micromdmapikey string` - (Required) MicroMDM Server API Key

@@ -405,6 +405,13 @@ func processScheduledCheckin() error {
 		return errors.Wrap(err, "processScheduledCheckin::CleanupNullProfileLists")
 	}
 
+	var unlockPins []types.UnlockPin
+	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
+	err = db.DB.Unscoped().Model(&unlockPins).Where("unlock_pins.pin_set < ?", thirtyMinsAgo).Delete(&unlockPins).Error
+	if err != nil {
+		return errors.Wrap(err, "processScheduledCheckin::CleanupUnlockPins")
+	}
+
 	return nil
 }
 

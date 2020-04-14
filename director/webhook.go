@@ -67,7 +67,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Error(err)
 			}
-			log.Error("Running initial tasks due to device update")
+			log.Info("Running initial tasks due to device update")
 			err = RunInitialTasks(device.UDID)
 			if err != nil {
 				log.Error(err)
@@ -87,7 +87,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
-		log.Error("Running initial tasks due to device update")
+		log.Info("Running initial tasks due to device update")
 		err = RunInitialTasks(device.UDID)
 		if err != nil {
 			log.Error(err)
@@ -192,7 +192,10 @@ func RequestDeviceUpdate(device types.Device) {
 	var err error
 	// Checking for device lock or wipe
 	if err = db.DB.Model(&deviceModel).Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
-		EraseLockDevice(&device)
+		err = EraseLockDevice(device.UDID)
+		if err != nil {
+			log.Error(err)
+		}
 
 	}
 

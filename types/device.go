@@ -73,11 +73,12 @@ type Device struct {
 	SecurityInfo             SecurityInfo               `gorm:"ForeignKey:DeviceUDID"`
 	ProfileList              []ProfileList              `gorm:"ForeignKey:DeviceUDID"`
 	UpdatedAt                time.Time
-	AuthenticateRecieved     bool `gorm:"default:false"`
-	TokenUpdateRecieved      bool `gorm:"default:false"`
-	InitialTasksRun          bool `gorm:"default:false"`
-	Erase                    bool `gorm:"default:false"`
-	Lock                     bool `gorm:"default:false"`
+	AuthenticateRecieved     bool      `gorm:"default:false"`
+	TokenUpdateRecieved      bool      `gorm:"default:false"`
+	InitialTasksRun          bool      `gorm:"default:false"`
+	Erase                    bool      `gorm:"default:false"`
+	Lock                     bool      `gorm:"default:false"`
+	UnlockPin                UnlockPin `gorm:"ForeignKey:DeviceUDID"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
 	LastScheduledPush        time.Time
