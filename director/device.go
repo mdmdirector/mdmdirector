@@ -77,7 +77,8 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 func UpdateDeviceBools(newDevice *types.Device) error {
 	var deviceModel types.Device
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).Update(map[string]interface{}{
-		"is_supervised": newDevice.IsSupervised, "is_device_locator_service_enabled": newDevice.IsDeviceLocatorServiceEnabled,
+		"is_supervised":                       newDevice.IsSupervised,
+		"is_device_locator_service_enabled":   newDevice.IsDeviceLocatorServiceEnabled,
 		"is_activation_lock_enabled":          newDevice.IsActivationLockEnabled,
 		"is_do_not_disturb_in_effect":         newDevice.IsDoNotDisturbInEffect,
 		"is_cloud_backup_enabled":             newDevice.IsCloudBackupEnabled,
