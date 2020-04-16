@@ -32,7 +32,9 @@ type FirmwarePasswordStatus struct {
 }
 
 type ManagementStatus struct {
-	EnrolledViaDEP         bool   `plist:"EnrolledViaDEP"`
-	UserApprovedEnrollment bool   `plist:"UserApprovedEnrollment"`
-	DeviceUDID             string `gorm:"primary_key"`
+	EnrolledViaDEP             bool   `plist:"EnrolledViaDEP"`
+	UserApprovedEnrollment     bool   `plist:"UserApprovedEnrollment"`
+	IsUserEnrollment           bool   `plist:"IsUserEnrollment"`
+	IsActivationLockManageable bool   `plist:"IsActivationLockManageable"`
+	DeviceUDID                 string `gorm:"primary_key"`
 }
