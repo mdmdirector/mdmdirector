@@ -1,6 +1,6 @@
 package types
 
-import uuid "github.com/satori/go.uuid"
+import "github.com/google/uuid"
 
 type DeviceFromMDM struct {
 	SerialNumber     string `json:"serial_number"`

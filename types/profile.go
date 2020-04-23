@@ -1,6 +1,6 @@
 package types
 
-import uuid "github.com/satori/go.uuid"
+import "github.com/google/uuid"
 
 // DeviceProfile (s) are profiles that are individual to the device.
 type DeviceProfile struct {
