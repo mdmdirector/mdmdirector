@@ -6,6 +6,14 @@ MDMDirector is an opinionated orchestrator for MicroMDM. It enables profiles to 
 
 MDMDirector is a compiled binary - it has no external dependencies other than a Postgresql database and optionally a signing certificate for signing profiles. It is configured using flags.
 
+### MicroMDM Setup
+
+You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your MDMDirector instance is served on (with the additon of `/webhook`)
+
+```
+-command-webhook-url=https://mdmdirector.company.com/webhook
+```
+
 ### Flags
 
 * `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
