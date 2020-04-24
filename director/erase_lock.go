@@ -26,20 +26,20 @@ func EraseLockDevice(udid string) error {
 		log.Error(err)
 	}
 
-	if !device.AuthenticateRecieved {
-		err := errors.New(device.UDID + " is not ready to receive MDM commands")
-		return errors.Wrap(err, "EraseLockDevice:AuthenticateRecieved")
-	}
+	// if !device.AuthenticateRecieved {
+	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
+	// 	return errors.Wrap(err, "EraseLockDevice:AuthenticateRecieved")
+	// }
 
-	if !device.TokenUpdateRecieved {
-		err := errors.New(device.UDID + " is not ready to receive MDM commands")
-		return errors.Wrap(err, "EraseLockDevice:TokenUpdateRecieved")
-	}
+	// if !device.TokenUpdateRecieved {
+	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
+	// 	return errors.Wrap(err, "EraseLockDevice:TokenUpdateRecieved")
+	// }
 
-	if !device.InitialTasksRun {
-		err := errors.New(device.UDID + " is not ready to receive MDM commands")
-		return errors.Wrap(err, "EraseLockDevice:InitialTasksRun")
-	}
+	// if !device.InitialTasksRun {
+	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
+	// 	return errors.Wrap(err, "EraseLockDevice:InitialTasksRun")
+	// }
 
 	var requestType string
 
