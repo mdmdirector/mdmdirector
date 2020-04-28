@@ -162,6 +162,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 	command := vars["command"]
 	pushNow := out.PushNow
 	value := out.Value
+	pin := out.Pin
 	if out.DeviceUDIDs != nil {
 		for i := range out.DeviceUDIDs {
 			device, err := GetDevice(out.DeviceUDIDs[i])
@@ -188,20 +189,41 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		device := devices[i]
 		var deviceModel types.Device
 		if command == "device_lock" {
-			err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
-				"lock": value,
-			}).Error
-			if err != nil {
-				log.Error(err)
+			if pin != "" {
+				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+					"lock":       value,
+					"unlock_pin": pin,
+				}).Error
+				if err != nil {
+					log.Error(err)
+				}
+			} else {
+				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+					"lock": value,
+				}).Error
+				if err != nil {
+					log.Error(err)
+				}
 			}
+
 		}
 
 		if command == "erase_device" {
-			err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
-				"erase": value,
-			}).Error
-			if err != nil {
-				log.Error(err)
+			if pin != "" {
+				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+					"erase":      value,
+					"unlock_pin": pin,
+				}).Error
+				if err != nil {
+					log.Error(err)
+				}
+			} else {
+				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+					"erase": value,
+				}).Error
+				if err != nil {
+					log.Error(err)
+				}
 			}
 		}
 

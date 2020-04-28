@@ -6,5 +6,6 @@ jq -n \
   '.udids = [$udid]
   |.value = true
   |.push_now = true
+  |.pin = "123456"
   '|\
   curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-

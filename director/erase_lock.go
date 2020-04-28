@@ -26,21 +26,6 @@ func EraseLockDevice(udid string) error {
 		log.Error(err)
 	}
 
-	// if !device.AuthenticateRecieved {
-	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
-	// 	return errors.Wrap(err, "EraseLockDevice:AuthenticateRecieved")
-	// }
-
-	// if !device.TokenUpdateRecieved {
-	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
-	// 	return errors.Wrap(err, "EraseLockDevice:TokenUpdateRecieved")
-	// }
-
-	// if !device.InitialTasksRun {
-	// 	err := errors.New(device.UDID + " is not ready to receive MDM commands")
-	// 	return errors.Wrap(err, "EraseLockDevice:InitialTasksRun")
-	// }
-
 	var requestType string
 
 	pin, err := generatePin(device)
@@ -126,6 +111,10 @@ func generatePin(device types.Device) (string, error) {
 	// Look for an existing unlock pin generated within the last 30 mins
 	var unlockPinModel types.UnlockPin
 	var savedUnlockPin types.UnlockPin
+
+	if device.UnlockPin != "" {
+		return device.UnlockPin, nil
+	}
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 
 	if utils.DebugMode() {
