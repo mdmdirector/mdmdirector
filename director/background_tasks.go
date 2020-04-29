@@ -409,7 +409,13 @@ func processScheduledCheckin() error {
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 	err = db.DB.Unscoped().Model(&unlockPins).Where("unlock_pins.pin_set < ?", thirtyMinsAgo).Delete(&unlockPins).Error
 	if err != nil {
-		return errors.Wrap(err, "processScheduledCheckin::CleanupUnlockPins")
+		return errors.Wrap(err, "processScheduledCheckin::DeleteRandomUnlockPins")
+	}
+
+	var devices []types.Device
+	err = db.DB.Model(&devices).Not("unlock_pin = ?", "").Where("erase = ? AND lock = ?", false, false).Update("unlock_pin", "").Error
+	if err != nil {
+		return errors.Wrap(err, "processScheduledCheckin::ResetFixedPin")
 	}
 
 	return nil

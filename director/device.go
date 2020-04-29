@@ -199,7 +199,8 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
-					"lock": value,
+					"lock":       value,
+					"unlock_pin": "",
 				}).Error
 				if err != nil {
 					log.Error(err)
@@ -219,7 +220,8 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
-					"erase": value,
+					"erase":      value,
+					"unlock_pin": "",
 				}).Error
 				if err != nil {
 					log.Error(err)
