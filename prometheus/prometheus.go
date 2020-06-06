@@ -19,9 +19,9 @@ func Metrics() {
 		Name:      "count",
 		Help:      "Total number of devices in MDMDirector",
 	})
-	// register incValue
+	// register totalDevices
 	prometheus.MustRegister(totalDevices)
-	// loop over the ticker and call Inc function
+	// loop over the ticker and update the total devices every 10 seconds
 	go func() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&devices).Count(&count).Error
