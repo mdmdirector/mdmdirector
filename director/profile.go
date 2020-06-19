@@ -235,7 +235,10 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			}
 
 			if profilePresent {
-				err = db.DB.Model(&profiles).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+				log.Debugf("Setting %v to uninstalled on %v", profile.PayloadIdentifier, device.UDID)
+				err = db.DB.Model(&profiles).Where("payload_identifier = ? AND device_ud_id = ?", profile.PayloadIdentifier, device.UDID).Update(map[string]interface{}{
+					"installed": false,
+				}).Error
 				if err != nil {
 					return metadata, errors.Wrap(err, "Could not set profile to installed = false.")
 				}
@@ -291,6 +294,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 
 	// Hash doesn't match
 	if savedProfile.HashedPayloadUUID != profile.HashedPayloadUUID {
+		log.Infof("hashes do not match: saved profile %v incoming profile %v", savedProfile.HashedPayloadUUID, profile.HashedPayloadUUID)
 		return true, nil
 	}
 
@@ -303,10 +307,12 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		}
 	}
 
-	if strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
+	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
+		log.Infof("hashes do not match: saved profilelist %v incoming profile %v", profileList.PayloadUUID, profile.HashedPayloadUUID)
 		return true, nil
 	}
 
+	log.Error("Profile has not changed", profile.HashedPayloadUUID)
 	return false, nil
 }
 
@@ -379,7 +385,10 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := range devices {
-		device := devices[i]
+		device, err := FetchDeviceModelAndRelations(devices[i])
+		if err != nil {
+			log.Error(err)
+		}
 		for i := range out.Mobileconfigs {
 			var profile types.DeviceProfile
 			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier

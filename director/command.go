@@ -116,6 +116,24 @@ func ClearCommands(device *types.Device) error {
 		return errors.Wrapf(err, "Failed to clear Command Queue for %v", device.UDID)
 	}
 
+	clearDevice := utils.ClearDeviceOnEnroll()
+	if clearDevice {
+		var deviceProfile types.DeviceProfile
+		var deviceProfiles []types.DeviceProfile
+		err := db.DB.Model(&deviceProfile).Where("device_ud_id = ?", device.UDID).Delete(&deviceProfiles).Error
+		if err != nil {
+			return errors.Wrapf(err, "Failed to clear Device Profiles for %v", device.UDID)
+		}
+
+		var deviceInstallApplication types.DeviceInstallApplication
+		var deviceInstallApplications []types.DeviceInstallApplication
+		err = db.DB.Model(&deviceInstallApplication).Where("device_ud_id = ?", device.UDID).Delete(&deviceInstallApplications).Error
+		if err != nil {
+			return errors.Wrapf(err, "Failed to clear Device InstalApplications for %v", device.UDID)
+		}
+
+	}
+
 	return nil
 }
 
