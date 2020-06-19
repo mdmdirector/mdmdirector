@@ -294,7 +294,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 
 	// Hash doesn't match
 	if savedProfile.HashedPayloadUUID != profile.HashedPayloadUUID {
-		log.Infof("hashes do not match: saved profile %v incoming profile %v", savedProfile.HashedPayloadUUID, profile.HashedPayloadUUID)
+		log.Debugf("hashes do not match: saved profile %v incoming profile %v", savedProfile.HashedPayloadUUID, profile.HashedPayloadUUID)
 		return true, nil
 	}
 
@@ -308,7 +308,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	}
 
 	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-		log.Infof("hashes do not match: saved profilelist %v incoming profile %v", profileList.PayloadUUID, profile.HashedPayloadUUID)
+		log.Debugf("hashes do not match: saved profilelist %v incoming profile %v", profileList.PayloadUUID, profile.HashedPayloadUUID)
 		return true, nil
 	}
 
