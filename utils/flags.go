@@ -76,3 +76,7 @@ func EscrowURL() string {
 func LogLevel() string {
 	return flag.Lookup("loglevel").Value.(flag.Getter).Get().(string)
 }
+
+func ClearDeviceOnEnroll() bool {
+	return flag.Lookup("clear-device-on-enroll").Value.(flag.Getter).Get().(bool)
+}

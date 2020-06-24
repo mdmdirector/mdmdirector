@@ -30,7 +30,7 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		var certificate types.Certificate
 		cert, err := parseCertificate(certListItem)
 		if err != nil {
-			log.Errorf("processCertificateList:parseVertificate: %v", err)
+			log.Errorf("processCertificateList:parseCertificate: %v", err)
 		}
 
 		certificate.Data = certListItem.Data

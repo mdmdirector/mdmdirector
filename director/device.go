@@ -299,11 +299,20 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
+	if err != nil {
+		log.Error("Couldn't scan to Device model from FetchDeviceModelAndRelations", err)
+	}
+
+	return device, nil
+}
+
 func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
 	var empty []byte
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").First(&device).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
 	if err != nil {
-		log.Error("Couldn't scan to Device model from SingleDeviceSerialHandler", err)
+		log.Error("Couldn't scan to Device model from FetchDeviceAndRelations", err)
 	}
 	if err != nil {
 		return empty, errors.Wrap(err, "FetchDeviceAndRelations")

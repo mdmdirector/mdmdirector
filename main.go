@@ -65,6 +65,8 @@ var LogLevel string
 // EscrowURL = url to escrow erase and lock PINs to
 var EscrowURL string
 
+var ClearDeviceOnEnroll bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -87,6 +89,7 @@ func main() {
 	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to postgres")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
+	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
 	flag.Parse()
 
 	logLevel, err := logrus.ParseLevel(LogLevel)
