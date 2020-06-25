@@ -354,3 +354,14 @@ func SetTokenUpdate(device types.Device) (types.Device, error) {
 	}
 	return updatedDevice, nil
 }
+
+func RequestAllDeviceInfo(device types.Device) error {
+	RequestProfileList(device)
+	RequestSecurityInfo(device)
+	err := RequestDeviceInformation(device)
+	if err != nil {
+		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+	RequestCertificateList(device)
+	return nil
+}

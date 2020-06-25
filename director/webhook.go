@@ -218,13 +218,10 @@ func RequestDeviceUpdate(device types.Device) {
 		log.Error(err)
 	}
 	log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
-	RequestProfileList(device)
-	RequestSecurityInfo(device)
-	err = RequestDeviceInformation(device)
+	err = RequestAllDeviceInfo(device)
 	if err != nil {
 		log.Error(err)
 	}
-	RequestCertificateList(device)
 
 	// PushDevice(device.UDID)
 }
