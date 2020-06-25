@@ -1,4 +1,4 @@
-package prometheus
+package director
 
 import (
 	"time"
@@ -9,9 +9,40 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	TotalPushes = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "micromdm",
+		Subsystem: "apns_pushes",
+		Name:      "total",
+		Help:      "Total number of APNS Pushes completed.",
+	})
+
+	ProfilesPushed = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "micromdm",
+		Subsystem: "profiles",
+		Name:      "pushed_total",
+		Help:      "Number of profiles pushed.",
+	})
+
+	InstallApplicationsPushed = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "micromdm",
+		Subsystem: "install_applications",
+		Name:      "pushed_total",
+		Help:      "Number of InstallApplications pushed.",
+	})
+
+	TotalPushes60s               float64
+	ProfilesPushed60s            float64
+	InstallApplicationsPushed60s float64
+)
+
 func Metrics() {
 	totalDevices()
 	profiles()
+	resetCounters()
+	prometheus.MustRegister(TotalPushes)
+	prometheus.MustRegister(ProfilesPushed)
+	prometheus.MustRegister(InstallApplicationsPushed)
 }
 
 func totalDevices() {
@@ -77,6 +108,45 @@ func profiles() {
 				log.Error(err)
 			}
 			totalDeviceProfiles.Set(deviceprofilescount)
+		}
+	}()
+}
+
+func resetCounters() {
+	apnsPushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "apns_pushes",
+		Name:      "last60s",
+		Help:      "Number of APNS pushes in the last minute",
+	})
+	// register apnsPushesLast60s
+	prometheus.MustRegister(apnsPushesLast60s)
+
+	profilePushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "profiles",
+		Name:      "last60s",
+		Help:      "Number of Profiles Pushed in the last minute",
+	})
+	// register profilePushesLast60s
+	prometheus.MustRegister(profilePushesLast60s)
+
+	installApplicationPushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "install_applications",
+		Name:      "last60s",
+		Help:      "Number of InstallApplications Pushed in the last minute",
+	})
+	// register installApplicationPushesLast60s
+	prometheus.MustRegister(installApplicationPushesLast60s)
+	go func() {
+		for range time.Tick(time.Second * 60) {
+			apnsPushesLast60s.Set(TotalPushes60s)
+			TotalPushes60s = 0
+			profilePushesLast60s.Set(ProfilesPushed60s)
+			ProfilesPushed60s = 0
+			installApplicationPushesLast60s.Set(InstallApplicationsPushed60s)
+			InstallApplicationsPushed60s = 0
 		}
 	}()
 }

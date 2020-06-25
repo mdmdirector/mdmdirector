@@ -8,7 +8,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/director"
 	"github.com/mdmdirector/mdmdirector/log"
-	"github.com/mdmdirector/mdmdirector/prometheus"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -170,7 +169,7 @@ func main() {
 	go director.ProcessScheduledCheckinQueue()
 	// go director.UnconfiguredDevices()
 	// go director.RetryCommands()
-	prometheus.Metrics()
+	director.Metrics()
 
 	log.Info(http.ListenAndServe(":"+port, nil))
 }

@@ -43,6 +43,15 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.RequestType = commandPayload.RequestType
 
 	db.DB.Create(&command)
+	if commandPayload.RequestType == "InstallProfile" {
+		ProfilesPushed.Inc()
+		ProfilesPushed60s += 1
+	}
+
+	if commandPayload.RequestType == "InstallApplication" {
+		InstallApplicationsPushed.Inc()
+		InstallApplicationsPushed60s += 1
+	}
 	return command, nil
 }
 
