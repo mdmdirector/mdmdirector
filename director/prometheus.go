@@ -39,7 +39,6 @@ var (
 func Metrics() {
 	totalDevices()
 	profiles()
-	resetCounters()
 	prometheus.MustRegister(TotalPushes)
 	prometheus.MustRegister(ProfilesPushed)
 	prometheus.MustRegister(InstallApplicationsPushed)
@@ -74,7 +73,7 @@ func profiles() {
 	totalSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
-		Name:      "sharedprofilescount",
+		Name:      "sharedprofiles",
 		Help:      "Total number of shared profiles in MDMDirector",
 	})
 	// register totalSharedProfiles
@@ -87,6 +86,48 @@ func profiles() {
 				log.Error(err)
 			}
 			totalSharedProfiles.Set(count)
+		}
+	}()
+
+	var installedsharedprofiles []types.SharedProfile
+	var installedprofilescount float64
+	totalInstalledSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "profiles",
+		Name:      "installedsharedprofilescount",
+		Help:      "Total number of installed shared profiles in MDMDirector",
+	})
+	// register totalInstalledSharedProfiles
+	prometheus.MustRegister(totalInstalledSharedProfiles)
+	// loop over the ticker and update the total devices every 10 seconds
+	go func() {
+		for range time.Tick(time.Second * 10) {
+			err := db.DB.Find(&installedsharedprofiles).Where("installed = ?", true).Count(&installedprofilescount).Error
+			if err != nil {
+				log.Error(err)
+			}
+			totalInstalledSharedProfiles.Set(installedprofilescount)
+		}
+	}()
+
+	var uninstalledsharedprofiles []types.SharedProfile
+	var uninstalledprofilescount float64
+	totalUninstalledSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "profiles",
+		Name:      "uninstalledsharedprofilescount",
+		Help:      "Total number of uninstalled shared profiles in MDMDirector",
+	})
+	// register totalUninstalledSharedProfiles
+	prometheus.MustRegister(totalUninstalledSharedProfiles)
+	// loop over the ticker and update the total devices every 10 seconds
+	go func() {
+		for range time.Tick(time.Second * 10) {
+			err := db.DB.Find(&uninstalledsharedprofiles).Where("installed = ?", false).Count(&uninstalledprofilescount).Error
+			if err != nil {
+				log.Error(err)
+			}
+			totalUninstalledSharedProfiles.Set(uninstalledprofilescount)
 		}
 	}()
 
@@ -110,43 +151,46 @@ func profiles() {
 			totalDeviceProfiles.Set(deviceprofilescount)
 		}
 	}()
-}
 
-func resetCounters() {
-	apnsPushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "micromdm",
-		Subsystem: "apns_pushes",
-		Name:      "last60s",
-		Help:      "Number of APNS pushes in the last minute",
-	})
-	// register apnsPushesLast60s
-	prometheus.MustRegister(apnsPushesLast60s)
-
-	profilePushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
+	var installeddeviceprofiles []types.DeviceProfile
+	var installeddeviceprofilescount float64
+	totalInstalledDeviceProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
-		Name:      "last60s",
-		Help:      "Number of Profiles Pushed in the last minute",
+		Name:      "installeddeviceprofilescount",
+		Help:      "Total number of installed device profiles in MDMDirector",
 	})
-	// register profilePushesLast60s
-	prometheus.MustRegister(profilePushesLast60s)
-
-	installApplicationPushesLast60s := prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "micromdm",
-		Subsystem: "install_applications",
-		Name:      "last60s",
-		Help:      "Number of InstallApplications Pushed in the last minute",
-	})
-	// register installApplicationPushesLast60s
-	prometheus.MustRegister(installApplicationPushesLast60s)
+	// register totalInstalledDeviceProfiles
+	prometheus.MustRegister(totalInstalledDeviceProfiles)
+	// loop over the ticker and update the total devices every 10 seconds
 	go func() {
-		for range time.Tick(time.Second * 60) {
-			apnsPushesLast60s.Set(TotalPushes60s)
-			TotalPushes60s = 0
-			profilePushesLast60s.Set(ProfilesPushed60s)
-			ProfilesPushed60s = 0
-			installApplicationPushesLast60s.Set(InstallApplicationsPushed60s)
-			InstallApplicationsPushed60s = 0
+		for range time.Tick(time.Second * 10) {
+			err := db.DB.Find(&installeddeviceprofiles).Where("installed = ?", true).Count(&installeddeviceprofilescount).Error
+			if err != nil {
+				log.Error(err)
+			}
+			totalInstalledDeviceProfiles.Set(installeddeviceprofilescount)
+		}
+	}()
+
+	var uninstalleddeviceprofiles []types.DeviceProfile
+	var uninstalleddeviceprofilescount float64
+	totalUninstalledDeviceProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "micromdm",
+		Subsystem: "profiles",
+		Name:      "uninstalleddeviceprofilescount",
+		Help:      "Total number of uninstalled device profiles in MDMDirector",
+	})
+	// register totalUninstalledDeviceProfiles
+	prometheus.MustRegister(totalUninstalledDeviceProfiles)
+	// loop over the ticker and update the total devices every 10 seconds
+	go func() {
+		for range time.Tick(time.Second * 10) {
+			err := db.DB.Find(&uninstalleddeviceprofiles).Where("installed = ?", false).Count(&uninstalleddeviceprofilescount).Error
+			if err != nil {
+				log.Error(err)
+			}
+			totalUninstalledSharedProfiles.Set(uninstalleddeviceprofilescount)
 		}
 	}()
 }

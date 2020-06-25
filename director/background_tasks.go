@@ -92,7 +92,6 @@ func pushNotNow() error {
 
 		resp.Body.Close()
 		TotalPushes.Inc()
-		TotalPushes60s += 1
 	}
 	return nil
 }
@@ -273,7 +272,6 @@ func pushConcurrent(client *http.Client) error {
 
 		resp.Body.Close()
 		TotalPushes.Inc()
-		TotalPushes60s += 1
 	}
 	return nil
 }
