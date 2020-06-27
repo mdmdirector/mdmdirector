@@ -624,7 +624,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			}
 		}
 
-		if found == false {
+		if !found {
 			profilesToInstall = append(profilesToInstall, savedProfile)
 		}
 	}
