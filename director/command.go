@@ -16,10 +16,10 @@ import (
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	var command types.Command
 	var commandResponse types.CommandResponse
-	device, err := GetDevice(commandPayload.UDID)
-	if err != nil {
-		return command, err
-	}
+	// device, err := GetDevice(commandPayload.UDID)
+	// if err != nil {
+	// 	return command, err
+	// }
 
 	jsonStr, err := json.Marshal(commandPayload)
 	if err != nil {
@@ -56,11 +56,11 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		InstallApplicationsPushed.Inc()
 	}
 
-	skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-	_, found := utils.Find(skipCommands, commandPayload.RequestType)
-	if !found {
-		_ = RequestAllDeviceInfo(device)
-	}
+	// skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
+	// _, found := utils.Find(skipCommands, commandPayload.RequestType)
+	// if !found {
+	// 	_ = RequestAllDeviceInfo(device)
+	// }
 
 	return command, nil
 }
