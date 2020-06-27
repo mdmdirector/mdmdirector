@@ -616,7 +616,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		savedProfile := profiles[i]
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
-			if savedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID || savedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
+			if savedProfile.HashedPayloadUUID != incomingProfile.PayloadUUID && savedProfile.PayloadIdentifier != incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				profilesToInstall = append(profilesToInstall, savedProfile)
 			}
