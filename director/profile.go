@@ -312,7 +312,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		return true, nil
 	}
 
-	log.Debug("Profile has not changed", profile.HashedPayloadUUID)
+	log.Debug("Profile has not changed ", profile.HashedPayloadUUID)
 	return false, nil
 }
 

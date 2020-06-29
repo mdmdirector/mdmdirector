@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
@@ -16,10 +17,10 @@ import (
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	var command types.Command
 	var commandResponse types.CommandResponse
-	// device, err := GetDevice(commandPayload.UDID)
-	// if err != nil {
-	// 	return command, err
-	// }
+	device, err := GetDevice(commandPayload.UDID)
+	if err != nil {
+		return command, err
+	}
 
 	jsonStr, err := json.Marshal(commandPayload)
 	if err != nil {
@@ -56,11 +57,18 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		InstallApplicationsPushed.Inc()
 	}
 
-	// skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-	// _, found := utils.Find(skipCommands, commandPayload.RequestType)
-	// if !found {
-	// 	_ = RequestAllDeviceInfo(device)
-	// }
+	skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
+	_, found := utils.Find(skipCommands, commandPayload.RequestType)
+	if !found {
+		tenMinsAgo := time.Now().Add(-10 * time.Minute)
+		for _, item := range skipCommands {
+			inQueue := CommandInQueue(device, item, tenMinsAgo)
+			if !inQueue {
+				_ = RequestAllDeviceInfo(device)
+				break
+			}
+		}
+	}
 
 	return command, nil
 }
@@ -78,7 +86,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 		}
 	} else {
 		if ackEvent.Status == "Error" {
-			log.Infof("Error response receieved: %v", ackEvent)
+			log.Infof("Error response receieved: %v", string(ackEvent.RawPayload))
 			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),
@@ -99,10 +107,10 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 	return nil
 }
 
-func CommandInQueue(device types.Device, command string) bool {
+func CommandInQueue(device types.Device, command string, afterDate time.Time) bool {
 	var commandModel types.Command
 
-	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ?", device.UDID, command).Where("status = ? OR status = ?", "", "NotNow").First(&commandModel).Error
+	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ?", device.UDID, command).Where("status = ? OR status = ?", "", "NotNow").Where("updated_at > ?", afterDate).First(&commandModel).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			return false
