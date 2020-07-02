@@ -66,6 +66,8 @@ var EscrowURL string
 
 var ClearDeviceOnEnroll bool
 
+var RequestInfoWithCommand bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -89,6 +91,7 @@ func main() {
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
+	flag.BoolVar(&RequestInfoWithCommand, "request-info-with-command", env.Bool("REQUEST_INFO_WITH_COMMAND", false), "If a command that does not request device info is sent, follow it up with PorfileList, CertificateList, DeviceInfo, SecurityInfo")
 	flag.Parse()
 
 	logLevel, err := logrus.ParseLevel(LogLevel)

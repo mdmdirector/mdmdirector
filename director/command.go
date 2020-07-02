@@ -57,15 +57,17 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		InstallApplicationsPushed.Inc()
 	}
 
-	skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-	_, found := utils.Find(skipCommands, commandPayload.RequestType)
-	if !found {
-		tenMinsAgo := time.Now().Add(-10 * time.Minute)
-		for _, item := range skipCommands {
-			inQueue := CommandInQueue(device, item, tenMinsAgo)
-			if !inQueue {
-				_ = RequestAllDeviceInfo(device)
-				break
+	if utils.RequestInfoWithCommand() {
+		skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
+		_, found := utils.Find(skipCommands, commandPayload.RequestType)
+		if !found {
+			tenMinsAgo := time.Now().Add(-10 * time.Minute)
+			for _, item := range skipCommands {
+				inQueue := CommandInQueue(device, item, tenMinsAgo)
+				if !inQueue {
+					_ = RequestAllDeviceInfo(device)
+					break
+				}
 			}
 		}
 	}

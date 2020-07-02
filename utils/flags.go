@@ -80,3 +80,7 @@ func LogLevel() string {
 func ClearDeviceOnEnroll() bool {
 	return flag.Lookup("clear-device-on-enroll").Value.(flag.Getter).Get().(bool)
 }
+
+func RequestInfoWithCommand() bool {
+	return flag.Lookup("request-info-with-command").Value.(flag.Getter).Get().(bool)
+}
