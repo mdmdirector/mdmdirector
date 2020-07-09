@@ -21,7 +21,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	var device types.Device
@@ -29,12 +29,12 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.CheckinEvent != nil {
 		err = plist.Unmarshal(out.CheckinEvent.RawPayload, &device)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else if out.AcknowledgeEvent != nil {
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	}
 
@@ -45,7 +45,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.InitialTasksRun = false
 		err = ClearCommands(&device)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else {
 		device.Active = true
@@ -54,12 +54,12 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.Topic == "mdm.Authenticate" {
 		err = ResetDevice(device)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else if out.Topic == "mdm.TokenUpdate" {
 		tokenUpdateDevice, err := SetTokenUpdate(device)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
 		if !tokenUpdateDevice.InitialTasksRun {
@@ -70,7 +70,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			log.Info("Running initial tasks due to device update")
 			err = RunInitialTasks(device.UDID)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			return
 		}
@@ -83,14 +83,14 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	updatedDevice, err := UpdateDevice(device)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}
 
 	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
 		log.Info("Running initial tasks due to device update")
 		err = RunInitialTasks(device.UDID)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 		return
 	}
@@ -98,7 +98,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if utils.PushOnNewBuild() {
 		err = pushOnNewBuild(oldUDID, oldBuild)
 		if err != nil {
-			log.Info(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	}
 
@@ -107,7 +107,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if out.AcknowledgeEvent.CommandUUID != "" {
 			err = UpdateCommand(out.AcknowledgeEvent, device)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 		}
 
@@ -118,7 +118,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		var payloadDict map[string]interface{}
 		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
 		// Is this a ProfileList response?
@@ -127,11 +127,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			err = VerifyMDMProfiles(profileListData, device)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 		}
 
@@ -140,7 +140,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var securityInfoData types.SecurityInfoData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			SaveSecurityInfo(securityInfoData, device)
 		}
@@ -150,7 +150,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var securityInfoData types.SecurityInfoData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			SaveSecurityInfo(securityInfoData, device)
 		}
@@ -160,13 +160,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var certificateListData types.CertificateListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &certificateListData)
 			if err != nil {
-				log.Error(err)
-				return
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			err = processCertificateList(certificateListData, device)
 			if err != nil {
-				log.Error(err)
-				return
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 		}
 
@@ -175,11 +173,11 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &deviceInformationQueryResponses)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 			_, err = UpdateDevice(deviceInformationQueryResponses.QueryResponses)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 
 		}
@@ -194,7 +192,7 @@ func RequestDeviceUpdate(device types.Device) {
 	if err = db.DB.Model(&deviceModel).Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
 		err = EraseLockDevice(device.UDID)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
 	}
@@ -215,12 +213,12 @@ func RequestDeviceUpdate(device types.Device) {
 
 	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}
 	log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
 	err = RequestAllDeviceInfo(device)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}
 
 	// PushDevice(device.UDID)

@@ -3,7 +3,6 @@ package director
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -148,8 +147,7 @@ func pushAll() error {
 	counter := 0
 	total := 0
 	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
-	s := fmt.Sprintf("%f", devicesPerSecond)
-	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: s})
+	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: strconv.Itoa(int(devicesPerSecond))})
 	var shuffledDevices = shuffleDevices(devices)
 	for i := range shuffledDevices {
 		device := shuffledDevices[i]

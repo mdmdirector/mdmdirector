@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/pkcs12"
 
@@ -288,18 +289,20 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	// Profile isn't in the db
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, true).First(&savedProfile).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "PayloadIdentifier not found in database"})
 			return true, nil
 		}
 	}
 
 	// Hash doesn't match
 	if savedProfile.HashedPayloadUUID != profile.HashedPayloadUUID {
-		log.Debugf("hashes do not match: saved profile %v incoming profile %v", savedProfile.HashedPayloadUUID, profile.HashedPayloadUUID)
+		// log.Debugf("hashes do not match: saved profile %v incoming profile %v", savedProfile.HashedPayloadUUID, profile.HashedPayloadUUID)
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID doesn't match what's saved", Metric: savedProfile.HashedPayloadUUID})
 		return true, nil
 	}
 
 	// Profile isn't what we have saved in the profilelist
-	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
+	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Error
 	if err != nil {
 		if !gorm.IsRecordNotFoundError(err) {
 			// If it's not found, we'll catch in the false return at the end. Else raise an error
@@ -308,11 +311,39 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	}
 
 	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-		log.Debugf("hashes do not match: saved profilelist %v incoming profile %v", profileList.PayloadUUID, profile.HashedPayloadUUID)
-		return true, nil
+
+		if profileList.PayloadUUID == "" {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID is not present in ProfileList", Metric: profileList.PayloadUUID})
+		} else {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID doesn't match what's in ProfileList", Metric: profileList.PayloadUUID})
+		}
+		// May be waiting for a device to report in full - just bail if there profilelist count is 0
+		var profileCount int
+		err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Count(&profileCount).Error
+		if err != nil {
+			if !gorm.IsRecordNotFoundError(err) {
+				// If it's not found, we'll catch in the false return at the end. Else raise an error
+				return true, errors.Wrap(err, "Could not load ProfileList for device")
+			}
+		}
+		if profileCount == 0 {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Device has an empty ProfileList stored"})
+		}
+		skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
+		tenMinsAgo := time.Now().Add(-10 * time.Minute)
+		for _, item := range skipCommands {
+			inQueue := CommandInQueue(device, item, tenMinsAgo)
+			if !inQueue {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
+				_ = RequestAllDeviceInfo(device)
+				break
+			}
+		}
+
+		return false, nil
 	}
 
-	log.Debug("Profile has not changed ", profile.HashedPayloadUUID)
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Profile has not changed"})
 	return false, nil
 }
 
@@ -447,7 +478,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 			var commandPayload types.CommandPayload
 			commandPayload.RequestType = "InstallProfile"
 
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Pushing Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Pushing Device Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 
 			if utils.Sign() {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())

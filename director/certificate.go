@@ -24,7 +24,7 @@ func RequestCertificateList(device types.Device) {
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {
 	var certificates []types.Certificate
-	log.Infof("Saving Certificate List for %v", device.UDID)
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving CertificateList"})
 
 	for _, certListItem := range certificateListData.CertificateList {
 		var certificate types.Certificate
