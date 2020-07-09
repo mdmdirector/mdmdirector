@@ -184,7 +184,7 @@ func AddDeviceToScheduledPushQueue(device types.Device) error {
 		retry = time.Now().Unix() + int64(DelaySeconds)
 	}
 
-	err := db.DB.Model(&scheduledPush).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
+	err := db.DB.Model(&scheduledPush).Where(types.ScheduledPush{DeviceUDID: device.UDID}).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
 	if err != nil {
 		return errors.Wrap(err, "AddDeviceToScheduledPushQueue::ScheduledPushFirstOrCreate")
 	}
