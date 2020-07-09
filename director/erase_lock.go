@@ -52,7 +52,7 @@ func EraseLockDevice(udid string) error {
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:escrowPin")
 	}
-	log.Debugf("Sending %v to %v", requestType, device.UDID)
+	log.Infof("Sending %v to %v", requestType, device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType

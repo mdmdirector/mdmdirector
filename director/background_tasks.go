@@ -224,6 +224,11 @@ func pushConcurrent(client *http.Client) error {
 		return errors.Wrap(err, "pushConcurrent::retrievePendingPushes")
 	}
 
+	err = db.DB.Model(&scheduledPushes).Update("status", "in_progress").Error
+	if err != nil {
+		return errors.Wrap(err, "pushConcurrent::setPendingtoInProgress")
+	}
+
 	// Mark the devices we are woring on as "in_pogress" and then perform the push
 	for _, push := range scheduledPushes {
 		endpoint, err := url.Parse(utils.ServerURL())
@@ -351,6 +356,17 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
+	var scheduledPushes []types.ScheduledPush
+	err := db.DB.Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
+	if err != nil {
+		log.Error(err)
+	}
+	if !utils.DebugMode() {
+		rand.Seed(time.Now().UnixNano())
+		randomDelay := rand.Intn(120)
+		log.Infof("Waiting %v seconds before beginning to process scheduled checkins", randomDelay)
+		time.Sleep(time.Duration(randomDelay) * time.Second)
+	}
 	DelaySeconds, _ := getDelay()
 	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
