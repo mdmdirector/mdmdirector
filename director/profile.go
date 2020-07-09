@@ -21,10 +21,10 @@ import (
 	"github.com/groob/plist"
 	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +235,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			}
 
 			if profilePresent {
-				log.Debugf("Setting %v to uninstalled on %v", profile.PayloadIdentifier, device.UDID)
+				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier})
 				err = db.DB.Model(&profiles).Where("payload_identifier = ? AND device_ud_id = ?", profile.PayloadIdentifier, device.UDID).Update(map[string]interface{}{
 					"installed": false,
 				}).Error
@@ -445,8 +445,10 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 		for i := range profiles {
 			profileData := profiles[i]
 			var commandPayload types.CommandPayload
-			log.Infof("Pushing profile to %v", device.UDID)
 			commandPayload.RequestType = "InstallProfile"
+
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Pushing Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
+
 			if utils.Sign() {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
 				if err != nil {
@@ -550,10 +552,11 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 		for i := range profiles {
 			profileData := profiles[i]
 			var commandPayload types.CommandPayload
-			log.Infof("Pushing profile to %v", device.UDID)
 
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
+
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Pushing Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 
 			if utils.Sign() {
 				priv, pub, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
@@ -583,7 +586,7 @@ func PushSharedProfiles(devices []types.Device, profiles []types.SharedProfile) 
 }
 
 func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) error {
-	log.Infof("Verifying mdm profiles for %v", device.UDID)
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Verifying MDM Profiles"})
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
 	var sharedProfile types.SharedProfile

@@ -2,8 +2,8 @@ package director
 
 import (
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
+	log "github.com/sirupsen/logrus"
 )
 
 func RequestSecurityInfo(device types.Device) {

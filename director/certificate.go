@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func RequestCertificateList(device types.Device) {
 	requestType := "CertificateList"
-	log.Debugf("Requesting Certificate List for %v", device.UDID)
+	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType

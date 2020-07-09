@@ -8,9 +8,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/jinzhu/gorm"
 )
@@ -328,7 +328,7 @@ func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
 
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
-	log.Debugf("Requesting Device Info for %v", device.UDID)
+	InfoLogger(LogHolder{Message: "Requesting DeviceInfo", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -343,7 +343,7 @@ func RequestDeviceInformation(device types.Device) error {
 
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
-	log.Debugf("TokenUpdate received for %v", device.UDID)
+	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")

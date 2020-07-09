@@ -7,13 +7,12 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/director"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/micromdm/go4/env"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 // MicroMDMURL is the url for your MicroMDM server
@@ -68,10 +67,13 @@ var ClearDeviceOnEnroll bool
 
 var RequestInfoWithCommand bool
 
+var LogFormat string
+
+var Logger *log.Logger
+
 func main() {
 	var port string
 	var debugMode bool
-	logrus.SetLevel(logrus.DebugLevel)
 	flag.BoolVar(&debugMode, "debug", env.Bool("DEBUG", false), "Enable debug mode")
 	flag.BoolVar(&PushNewBuild, "push-new-build", env.Bool("PUSH_NEW_BUILD", true), "Re-push profiles if the device's build number changes.")
 	flag.StringVar(&port, "port", env.String("DIRECTOR_PORT", "8000"), "Port number to run mdmdirector on.")
@@ -92,13 +94,18 @@ func main() {
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
 	flag.BoolVar(&RequestInfoWithCommand, "request-info-with-command", env.Bool("REQUEST_INFO_WITH_COMMAND", false), "If a command that does not request device info is sent, follow it up with PorfileList, CertificateList, DeviceInfo, SecurityInfo")
+	flag.StringVar(&LogFormat, "log-format", env.String("LOG_FORMAT", "logfmt"), "Format to output logs. Defaults to logfmt. Can be set to logfmt or json.")
 	flag.Parse()
 
-	logLevel, err := logrus.ParseLevel(LogLevel)
+	logLevel, err := log.ParseLevel(LogLevel)
 	if err != nil {
 		log.Fatalf("Unable to parse the log level - %s \n", err)
 	}
-	logrus.SetLevel(logLevel)
+	log.SetLevel(logLevel)
+
+	if LogFormat == "json" {
+		log.SetFormatter(&log.JSONFormatter{})
+	}
 
 	if MicroMDMURL == "" {
 		log.Fatal("MicroMDM Server URL missing. Exiting.")
@@ -165,7 +172,7 @@ func main() {
 		&types.UnlockPin{},
 	)
 
-	log.Info("mdmdirector is running, hold onto your butts...")
+	director.InfoLogger(director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."})
 
 	go director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin()

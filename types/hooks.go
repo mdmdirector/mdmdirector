@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
+	log "github.com/sirupsen/logrus"
 )
 
 func BumpDeviceLastUpdated(udid string) {

@@ -10,10 +10,10 @@ import (
 	"github.com/hashicorp/go-version"
 	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {

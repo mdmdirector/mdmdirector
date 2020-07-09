@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func RunInitialTasks(udid string) error {
@@ -23,7 +23,7 @@ func RunInitialTasks(udid string) error {
 	// 	log.Infof("Initial tasks already run for %v", device.UDID)
 	// 	return nil
 	// }
-	log.Info("Running initial tasks")
+	InfoLogger(LogHolder{Message: "Running initial tasks", DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID})
 	err = ClearCommands(&device)
 	if err != nil {
 		return err
