@@ -408,6 +408,11 @@ func processScheduledCheckin() error {
 		return err
 	}
 
+	err = ExpireCommands()
+	if err != nil {
+		return err
+	}
+
 	var certificates []types.Certificate
 
 	err = db.DB.Unscoped().Model(&certificates).Where("device_ud_id is NULL").Delete(&types.Certificate{}).Error

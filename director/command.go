@@ -238,3 +238,14 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 		log.Error(err)
 	}
 }
+
+func ExpireCommands() error {
+	var commands []types.Command
+	thirtyDaysAgo := time.Now().Add(-720 * time.Hour)
+	err := db.DB.Unscoped().Find(&commands).Where("status = ? OR status = ?", "", "NotNow").Where("updated_at < ?", thirtyDaysAgo).Delete(&commands).Error
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
