@@ -69,7 +69,7 @@ type ProfileList struct {
 }
 
 type MetadataItem struct {
-	Device          Device            `json:"device"`
+	// Device          Device            `json:"device"`
 	ProfileMetadata []ProfileMetadata `json:"profile_metadata"`
 }
 
