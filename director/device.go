@@ -269,21 +269,31 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	var device types.Device
 	vars := mux.Vars(r)
 
-	device, err := GetDevice(vars["udid"])
+	var err error
+
+	device, err = GetDevice(vars["udid"])
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	output, err := FetchDeviceAndRelations(device)
+	info := r.URL.Query().Get("info")
+	if info != "limited" {
+		device, err = FetchDeviceAndRelations(device)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
 	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 }
@@ -292,21 +302,31 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 	var device types.Device
 	vars := mux.Vars(r)
 
-	device, err := GetDeviceSerial(vars["serial"])
+	var err error
+
+	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	output, err := FetchDeviceAndRelations(device)
+	info := r.URL.Query().Get("info")
+	if info != "limited" {
+		device, err = FetchDeviceAndRelations(device)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
 	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -319,8 +339,8 @@ func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
 	return device, nil
 }
 
-func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
-	var empty []byte
+func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
+	var empty types.Device
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from FetchDeviceAndRelations", err)
@@ -329,12 +349,7 @@ func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
 		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
 	}
 
-	output, err := json.MarshalIndent(&device, "", "    ")
-	if err != nil {
-		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
-	}
-
-	return output, nil
+	return device, nil
 }
 
 func RequestDeviceInformation(device types.Device) error {
