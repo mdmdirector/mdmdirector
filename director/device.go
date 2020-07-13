@@ -130,22 +130,22 @@ func GetAllDevices() ([]types.Device, error) {
 	// var device types.Device
 	var devices []types.Device
 
-	err := db.DB.Find(&devices).Scan(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Find(&devices).Error
 	if err != nil {
 		return devices, errors.Wrap(err, "Get All Devices")
 	}
 	return devices, nil
 }
 
-func GetAllDevicesAndAssociations() *[]types.Device {
+func GetAllDevicesAndAssociations() ([]types.Device, error) {
 	var devices []types.Device
 
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
 	if err != nil {
-		log.Error("Couldn't scan to Device model from GetAllDevicesAndAssociations", err)
+		return devices, errors.Wrap(err, "Couldn't scan to Device model from GetAllDevicesAndAssociations")
 	}
 
-	return &devices
+	return devices, nil
 }
 
 func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +240,18 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeviceHandler(w http.ResponseWriter, r *http.Request) {
-	devices := GetAllDevicesAndAssociations()
+	var devices []types.Device
+	var err error
+	info := r.URL.Query().Get("info")
+	if info == "limited" {
+		devices, err = GetAllDevices()
+	} else {
+		devices, err = GetAllDevicesAndAssociations()
+	}
+
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+	}
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
 	if err != nil {

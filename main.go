@@ -69,8 +69,6 @@ var RequestInfoWithCommand bool
 
 var LogFormat string
 
-var Logger *log.Logger
-
 func main() {
 	var port string
 	var debugMode bool
