@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 const MAX = 5
@@ -74,7 +74,7 @@ func pushNotNow() error {
 		}
 		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
-		log.Debug(endpoint.Path)
+
 		queryString := endpoint.Query()
 		queryString.Set("expiration", strconv.FormatInt(retry, 10))
 		endpoint.RawQuery = queryString.Encode()
@@ -125,35 +125,38 @@ func pushAll() error {
 		dbDevice := dbDevices[i]
 		// If it's been updated within the last three hours, try to push again as it might still be online
 		if dbDevice.LastCheckedIn.After(threeHoursAgo) {
-			log.Infof("%v checked in more than three hours ago", dbDevice.UDID)
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Checked in more than three hours ago"})
 			if now.Before(dbDevice.NextPush) {
-				log.Infof("Not pushing to %v, next push is %v", dbDevice.UDID, dbDevice.NextPush)
+				InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: dbDevice.NextPush.String()})
 				continue
 			}
 		}
 		// This contrived bit of logic is to handle devices that don't have a LastScheduledPush set yet
 		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
-			log.Infof("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, HalfDelaySeconds)
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Last push is within threshold", Metric: dbDevice.LastScheduledPush.String()})
 			continue
 		}
 
 		devices = append(devices, dbDevice)
 	}
 
-	log.Debug("Pushing to all in debug mode")
+	DebugLogger(LogHolder{
+		Message: "Pushing to all in debug mode",
+	})
 	sem := make(chan int, MAX)
 	counter := 0
 	total := 0
 	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
+	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: strconv.Itoa(int(devicesPerSecond))})
 	var shuffledDevices = shuffleDevices(devices)
 	for i := range shuffledDevices {
 		device := shuffledDevices[i]
 		if float64(counter) >= devicesPerSecond {
-			log.Infof("Sleeping due to having processed %v devices out of %v. Processing %v per 0.5 seconds.", total, len(devices), devicesPerSecond)
+			InfoLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
 			time.Sleep(500 * time.Millisecond)
 			counter = 0
 		}
-		log.Debug("Processed ", counter)
+		DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
 		sem <- 1 // will block if there is MAX ints in sem
 		go func() {
 			// pushConcurrent(device, client)
@@ -166,7 +169,7 @@ func pushAll() error {
 		counter++
 		total++
 	}
-	log.Infof("Completed scheduling pushes to %v devices", len(devices))
+	InfoLogger(LogHolder{Message: "Completed scheduling pushes", Metric: strconv.Itoa(len(devices))})
 	return nil
 }
 
@@ -175,16 +178,15 @@ func AddDeviceToScheduledPushQueue(device types.Device) error {
 	DelaySeconds, _ := getDelay()
 	now := time.Now()
 	var retry int64
-	log.Infof("Adding scheduled push for %v", device.UDID)
-
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Adding scheduled push"})
 	if now.After(device.NextPush) {
-		log.Infof("After scheduled push of %v for %v. Pushing with an expiry of 24 hours", device.NextPush, device.UDID)
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "After scheduled push. Pushing with an expiry of 24 hours.", Metric: device.NextPush.String()})
 		retry = time.Now().Unix() + 86400
 	} else {
 		retry = time.Now().Unix() + int64(DelaySeconds)
 	}
 
-	err := db.DB.Model(&scheduledPush).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
+	err := db.DB.Model(&scheduledPush).Where(types.ScheduledPush{DeviceUDID: device.UDID}).FirstOrCreate(&scheduledPush, types.ScheduledPush{DeviceUDID: device.UDID, Expiration: retry}).Error
 	if err != nil {
 		return errors.Wrap(err, "AddDeviceToScheduledPushQueue::ScheduledPushFirstOrCreate")
 	}
@@ -224,6 +226,11 @@ func pushConcurrent(client *http.Client) error {
 		return errors.Wrap(err, "pushConcurrent::retrievePendingPushes")
 	}
 
+	err = db.DB.Model(&scheduledPushes).Update("status", "in_progress").Error
+	if err != nil {
+		return errors.Wrap(err, "pushConcurrent::setPendingtoInProgress")
+	}
+
 	// Mark the devices we are woring on as "in_pogress" and then perform the push
 	for _, push := range scheduledPushes {
 		endpoint, err := url.Parse(utils.ServerURL())
@@ -236,7 +243,7 @@ func pushConcurrent(client *http.Client) error {
 			continue
 		}
 
-		log.Infof("Pushing to %v", push.DeviceUDID)
+		InfoLogger(LogHolder{DeviceUDID: push.DeviceUDID, Message: "Sending Push"})
 
 		endpoint.Path = path.Join(endpoint.Path, "push", push.DeviceUDID)
 		queryString := endpoint.Query()
@@ -339,7 +346,7 @@ func processUnconfiguredDevices() error {
 
 	for i := range awaitingConfigDevices {
 		unconfiguredDevice := awaitingConfigDevices[i]
-		log.Debugf("Running initial tasks due to schedule %v", unconfiguredDevice.UDID)
+		DebugLogger(LogHolder{Message: "Running initial tasks due to schedule", DeviceUDID: unconfiguredDevice.UDID, DeviceSerial: unconfiguredDevice.SerialNumber})
 		err := RunInitialTasks(unconfiguredDevice.UDID)
 		if err != nil {
 			log.Error(err)
@@ -351,6 +358,17 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	// var delay time.Duration
+	var scheduledPushes []types.ScheduledPush
+	err := db.DB.Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
+	if err != nil {
+		log.Error(err)
+	}
+	if !utils.DebugMode() {
+		rand.Seed(time.Now().UnixNano())
+		randomDelay := rand.Intn(120)
+		InfoLogger(LogHolder{Metric: strconv.Itoa(randomDelay), Message: "Waiting before beginning to process scheduled checkins"})
+		time.Sleep(time.Duration(randomDelay) * time.Second)
+	}
 	DelaySeconds, _ := getDelay()
 	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
@@ -384,10 +402,15 @@ func ScheduledCheckin() {
 
 func processScheduledCheckin() error {
 	if utils.DebugMode() {
-		log.Debug("Processing scheduledCheckin in debug mode")
+		DebugLogger(LogHolder{Message: "Processing scheduledCheckin in debug mode"})
 	}
 
 	err := pushAll()
+	if err != nil {
+		return err
+	}
+
+	err = ExpireCommands()
 	if err != nil {
 		return err
 	}

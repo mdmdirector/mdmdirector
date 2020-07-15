@@ -8,10 +8,10 @@ import (
 
 	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
@@ -21,6 +21,8 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	if err != nil {
 		return command, err
 	}
+
+	InfoLogger(LogHolder{Message: "Sending Command", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: commandPayload.RequestType})
 
 	jsonStr, err := json.Marshal(commandPayload)
 	if err != nil {
@@ -47,6 +49,8 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
 	command.RequestType = commandPayload.RequestType
+
+	InfoLogger(LogHolder{Message: "Sent Command", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: commandPayload.RequestType, CommandUUID: command.CommandUUID})
 
 	db.DB.Create(&command)
 	if commandPayload.RequestType == "InstallProfile" {
@@ -88,7 +92,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 		}
 	} else {
 		if ackEvent.Status == "Error" {
-			log.Infof("Error response receieved: %v", string(ackEvent.RawPayload))
+			InfoLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
 			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),
@@ -139,7 +143,7 @@ func InstallAppInQueue(device types.Device, data string) (bool, error) {
 func ClearCommands(device *types.Device) error {
 	var command types.Command
 	var commands []types.Command
-	log.Infof("Clearing command queue for %v", device.UDID)
+	InfoLogger(LogHolder{Message: "Clearing command queue", DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID})
 	err := db.DB.Model(&command).Where("device_ud_id = ?", device.UDID).Not("status = ? OR status = ?", "Error", "Acknowledged").Delete(&commands).Error
 	if err != nil {
 		return errors.Wrapf(err, "Failed to clear Command Queue for %v", device.UDID)
@@ -237,4 +241,15 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error(err)
 	}
+}
+
+func ExpireCommands() error {
+	var commands []types.Command
+	thirtyDaysAgo := time.Now().Add(-720 * time.Hour)
+	err := db.DB.Unscoped().Find(&commands).Where("status = ? OR status = ?", "", "NotNow").Where("updated_at < ?", thirtyDaysAgo).Delete(&commands).Error
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

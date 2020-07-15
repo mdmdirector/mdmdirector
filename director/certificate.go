@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func RequestCertificateList(device types.Device) {
 	requestType := "CertificateList"
-	log.Debugf("Requesting Certificate List for %v", device.UDID)
+	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -24,7 +24,7 @@ func RequestCertificateList(device types.Device) {
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {
 	var certificates []types.Certificate
-	log.Infof("Saving Certificate List for %v", device.UDID)
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving CertificateList"})
 
 	for _, certListItem := range certificateListData.CertificateList {
 		var certificate types.Certificate

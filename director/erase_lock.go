@@ -13,10 +13,10 @@ import (
 
 	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 func EraseLockDevice(udid string) error {
@@ -52,17 +52,15 @@ func EraseLockDevice(udid string) error {
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:escrowPin")
 	}
-	log.Debugf("Sending %v to %v", requestType, device.UDID)
+	log.Infof("Sending %v to %v", requestType, device.UDID)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
 	payload.Pin = pin
-	command, err := SendCommand(payload)
+	_, err = SendCommand(payload)
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:SendCommand")
 	}
-
-	log.Debugf("Sent %v", command.CommandUUID)
 
 	return nil
 }
@@ -145,6 +143,5 @@ func generatePin(device types.Device) (string, error) {
 		}
 	}
 	// Found a saved one
-	log.Debugf("Using saved Pin for %v", device.UnlockPin)
 	return savedUnlockPin.UnlockPin, nil
 }

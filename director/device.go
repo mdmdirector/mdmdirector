@@ -8,9 +8,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
-	"github.com/mdmdirector/mdmdirector/log"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/jinzhu/gorm"
 )
@@ -130,22 +130,22 @@ func GetAllDevices() ([]types.Device, error) {
 	// var device types.Device
 	var devices []types.Device
 
-	err := db.DB.Find(&devices).Scan(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Find(&devices).Error
 	if err != nil {
 		return devices, errors.Wrap(err, "Get All Devices")
 	}
 	return devices, nil
 }
 
-func GetAllDevicesAndAssociations() *[]types.Device {
+func GetAllDevicesAndAssociations() ([]types.Device, error) {
 	var devices []types.Device
 
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
 	if err != nil {
-		log.Error("Couldn't scan to Device model from GetAllDevicesAndAssociations", err)
+		return devices, errors.Wrap(err, "Couldn't scan to Device model from GetAllDevicesAndAssociations")
 	}
 
-	return &devices
+	return devices, nil
 }
 
 func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +240,18 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeviceHandler(w http.ResponseWriter, r *http.Request) {
-	devices := GetAllDevicesAndAssociations()
+	var devices []types.Device
+	var err error
+	info := r.URL.Query().Get("info")
+	if info == "limited" {
+		devices, err = GetAllDevices()
+	} else {
+		devices, err = GetAllDevicesAndAssociations()
+	}
+
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+	}
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
 	if err != nil {
@@ -258,21 +269,31 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	var device types.Device
 	vars := mux.Vars(r)
 
-	device, err := GetDevice(vars["udid"])
+	var err error
+
+	device, err = GetDevice(vars["udid"])
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	output, err := FetchDeviceAndRelations(device)
+	info := r.URL.Query().Get("info")
+	if info != "limited" {
+		device, err = FetchDeviceAndRelations(device)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
 	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 }
@@ -281,21 +302,31 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 	var device types.Device
 	vars := mux.Vars(r)
 
-	device, err := GetDeviceSerial(vars["serial"])
+	var err error
+
+	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	output, err := FetchDeviceAndRelations(device)
+	info := r.URL.Query().Get("info")
+	if info != "limited" {
+		device, err = FetchDeviceAndRelations(device)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
 	if err != nil {
-		log.Error(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -308,8 +339,8 @@ func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
 	return device, nil
 }
 
-func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
-	var empty []byte
+func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
+	var empty types.Device
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from FetchDeviceAndRelations", err)
@@ -318,17 +349,12 @@ func FetchDeviceAndRelations(device types.Device) ([]byte, error) {
 		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
 	}
 
-	output, err := json.MarshalIndent(&device, "", "    ")
-	if err != nil {
-		return empty, errors.Wrap(err, "FetchDeviceAndRelations")
-	}
-
-	return output, nil
+	return device, nil
 }
 
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
-	log.Debugf("Requesting Device Info for %v", device.UDID)
+	InfoLogger(LogHolder{Message: "Requesting DeviceInfo", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -343,7 +369,7 @@ func RequestDeviceInformation(device types.Device) error {
 
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
-	log.Debugf("TokenUpdate received for %v", device.UDID)
+	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
 	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")

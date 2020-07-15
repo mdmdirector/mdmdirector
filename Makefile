@@ -42,7 +42,7 @@ build: clean .pre-build
 
 xp-build:  clean .pre-build
 	GOOS=darwin go build -o build/darwin/mdmdirector
-	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector-v0.0.6
+	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector-v0.0.7
 
 postgres-clean:
 	rm -rf postgres
@@ -56,4 +56,4 @@ mdmdirector_nosign: build
 	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug
 
 mdmdirector: build
-	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll
+	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll -log-format=json
