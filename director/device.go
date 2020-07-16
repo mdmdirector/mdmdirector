@@ -265,6 +265,30 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func SingleDeviceOutput(device types.Device, w http.ResponseWriter, r *http.Request) error {
+	var err error
+	info := r.URL.Query().Get("info")
+	if info != "limited" {
+		device, err = FetchDeviceAndRelations(device)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+
+	output, err := json.MarshalIndent(&device, "", "    ")
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write(output)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	var device types.Device
 	vars := mux.Vars(r)
@@ -277,23 +301,10 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	info := r.URL.Query().Get("info")
-	if info != "limited" {
-		device, err = FetchDeviceAndRelations(device)
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}
-
-	output, err := json.MarshalIndent(&device, "", "    ")
+	err = SingleDeviceOutput(device, w, r)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
-	}
-
-	_, err = w.Write(output)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 }
@@ -310,23 +321,10 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	info := r.URL.Query().Get("info")
-	if info != "limited" {
-		device, err = FetchDeviceAndRelations(device)
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}
-
-	output, err := json.MarshalIndent(&device, "", "    ")
+	err = SingleDeviceOutput(device, w, r)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
-	}
-
-	_, err = w.Write(output)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
