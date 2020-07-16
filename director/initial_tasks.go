@@ -103,7 +103,8 @@ func SendDeviceConfigured(device types.Device) error {
 func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
 	// err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"awaiting_configuration": false, "token_update_received": true, "authenticate_received": true, "initial_tasks_run": true}).Error
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true, "initial_tasks_run": true}).Error
+	now := time.Now()
+	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true, "initial_tasks_run": true, "last_checked_in": now, "next_push": now}).Error
 	if err != nil {
 		return err
 	}

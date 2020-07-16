@@ -270,7 +270,7 @@ func pushConcurrent(client *http.Client) error {
 
 		err = db.DB.Model(&device).Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
 			LastScheduledPush: now,
-			NextPush:          time.Now().Add(6 * time.Hour),
+			NextPush:          time.Now().Add(3 * time.Hour),
 		}).Error
 		if err != nil {
 			log.Error(err)

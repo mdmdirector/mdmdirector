@@ -658,6 +658,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		}
 
 		if !found {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is installed"})
 			profilesToInstall = append(profilesToInstall, savedProfile)
 		}
 	}
@@ -678,6 +679,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedSharedProfile.HashedPayloadUUID, ProfileIdentifier: savedSharedProfile.PayloadIdentifier, Message: "Shared Profile is installed"})
 				found = true
 				continue
 			}
@@ -686,7 +688,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		// Make sure we aren't managing this at a device level
 		for i := range profilesToInstall {
 			deviceProfile := profilesToInstall[i]
-			if savedSharedProfile.HashedPayloadUUID == deviceProfile.PayloadUUID && savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
+			if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedSharedProfile.HashedPayloadUUID, ProfileIdentifier: savedSharedProfile.PayloadIdentifier, Message: "Shared Profile is a device profile, skipping"})
 				found = true
 				continue
 			}
