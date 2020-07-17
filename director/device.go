@@ -119,7 +119,7 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
 
-	err := db.DB.Model(device).Where("serial_number = ?", serial).First(&device).Scan(&device).Error
+	err := db.DB.Model(device).Where("serial_number = ?", serial).Order("last_checked_in desc").First(&device).Scan(&device).Error
 	if err != nil {
 		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
