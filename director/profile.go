@@ -235,13 +235,14 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			}
 
 			if profilePresent {
-				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier})
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, Message: "Setting Device Profile to installed = false"})
 				err = db.DB.Model(&profiles).Where("payload_identifier = ? AND device_ud_id = ?", profile.PayloadIdentifier, device.UDID).Update(map[string]interface{}{
 					"installed": false,
 				}).Error
 				if err != nil {
 					return metadata, errors.Wrap(err, "Could not set profile to installed = false.")
 				}
+				status = "deleted"
 			}
 			if pushNow {
 				DeleteDeviceProfiles(devices, incomingProfiles)
@@ -275,8 +276,10 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			// If it's not found, we'll catch in the false return at the end. Else raise an error
-			return true, errors.Wrap(err, "Could not load ProfileList for device")
+			return true, nil
 		}
+
+		return false, errors.Wrap(err, "Could not load ProfileList for device")
 	}
 
 	return false, nil
@@ -382,14 +385,14 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.DeviceUDIDs[0] == "*" {
 				err = DisableSharedProfiles(out)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				return
 			}
 			err := db.DB.Model(&devices).Where("ud_id IN (?)", out.DeviceUDIDs).Scan(&devices).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 
@@ -424,7 +427,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier
 			err = db.DB.Model(&profilesModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&profiles).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 
@@ -433,7 +436,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "delete")
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 		metadata = append(metadata, metadataItem)
@@ -442,7 +445,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if out.Metadata {
 		output, err := json.MarshalIndent(&metadata, "", "    ")
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
@@ -550,6 +553,7 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 			_, err := SendCommand(commandPayload)
 			if err != nil {
 				log.Error(err)
@@ -567,6 +571,7 @@ func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Device Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 			_, err := SendCommand(commandPayload)
 			if err != nil {
 				log.Error(err)
@@ -702,7 +707,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	_, err = PushSharedProfiles(devices, sharedProfilesToInstall)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	// Get the profiles that should be removed from the device
@@ -715,9 +720,11 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		savedProfile := profiles[i]
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
+			// DebugLogger(LogHolder{Message: incomingProfile.PayloadIdentifier})
 			if savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				profilesToRemove = append(profilesToRemove, savedProfile)
+				DebugLogger(LogHolder{Message: string(len(profilesToRemove))})
 			}
 		}
 	}

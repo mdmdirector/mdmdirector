@@ -7,5 +7,6 @@ jq -n \
   '.udids = [$udid]
   |.profiles = [$payload]
   |.metadata = true
+  |.push_now = true
   '|\
   curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
