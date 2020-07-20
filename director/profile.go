@@ -424,14 +424,17 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		for i := range out.Mobileconfigs {
 			var profile types.DeviceProfile
-			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier
-			err = db.DB.Model(&profilesModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Scan(&profiles).Error
+			identifier := out.Mobileconfigs[i].PayloadIdentifier
+			err = db.DB.Model(&profilesModel).Where("payload_identifier = ? and device_ud_id = ?", identifier, device.UDID).Update("installed", false).Scan(&profiles).Error
+
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 
-			profiles = append(profiles, profile)
+			if profile.DeviceUDID != "" && profile.PayloadIdentifier != "" {
+				profiles = append(profiles, profile)
+			}
 		}
 
 		metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "delete")
@@ -725,6 +728,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 				// If missing, queue up to be installed
 				profilesToRemove = append(profilesToRemove, savedProfile)
 				DebugLogger(LogHolder{Message: string(len(profilesToRemove))})
+				continue
 			}
 		}
 	}
