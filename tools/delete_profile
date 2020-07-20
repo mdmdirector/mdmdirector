@@ -6,7 +6,10 @@ jq -n \
   --arg payload_identifier "$2" \
   --arg identifier "$3" \
   '.udids = [$udid]
-  |.profiles[0].uuid = $identifier
   |.profiles[0].payload_identifier = $payload_identifier
+  |.metadata = true
+  |.push_now = true
   '|\
   curl -u "mdmdirector:secret" -X DELETE "$endpoint" -d@-
+
+  # |.profiles[0].payload_identifier = $payload_identifier
