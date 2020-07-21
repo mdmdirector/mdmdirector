@@ -205,12 +205,9 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 	// metadata.Device = device
 	for i := range profiles {
-		var incomingProfiles []types.DeviceProfile
 		var profileMetadata types.ProfileMetadata
 		status := "unchanged"
 		profile := profiles[i]
-
-		incomingProfiles = append(incomingProfiles, profile)
 
 		devices = append(devices, device)
 		if requestType == "post" {
@@ -272,7 +269,7 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
 		if gorm.IsRecordNotFoundError(err) {
-			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile present and maked as installed = true"})
+			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile present and marked as installed = true"})
 			return true, nil
 		}
 	}
