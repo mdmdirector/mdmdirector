@@ -82,7 +82,7 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 		return errors.Wrap(err, "failed to parse certificate")
 	}
 	if cert.Issuer.CommonName == utils.ScepCertIssuer() {
-		days := int(cert.NotAfter.Sub(time.Now()).Hours() / 24)
+		days := int(time.Until(cert.NotAfter).Hours() / 24)
 		errMsg := fmt.Sprintf("Certificate issued by %v.", utils.ScepCertIssuer())
 		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg, Metric: strconv.Itoa(days)})
 		if days <= utils.ScepCertMinValidity() {
