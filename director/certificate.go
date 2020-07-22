@@ -2,10 +2,14 @@ package director
 
 import (
 	"crypto/x509"
+	"fmt"
+	"io/ioutil"
 	"time"
 
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -38,7 +42,7 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificate.NotAfter = cert.NotAfter
 		certificate.Subject = cert.Subject.String()
 		certificates = append(certificates, certificate)
-		err = validateScepCert(certListItem)
+		err = validateScepCert(certListItem, device)
 		if err != nil {
 			return errors.Wrap(err, "processCertificateList:validateScepCert")
 		}
@@ -60,18 +64,45 @@ func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, er
 	return cert, nil
 }
 
-func validateScepCert(certListItem types.CertificateList) error {
+func validateScepCert(certListItem types.CertificateList, device types.Device) error {
+	enrollmentProfile := utils.EnrollmentProfile()
+	if enrollmentProfile == "" {
+		// No enrollment profile set
+		return nil
+	}
+
+	if !utils.FileExists(enrollmentProfile) {
+		err := errors.New("Enrollment profile isn't present at path")
+		return err
+	}
 	cert, err := parseCertificate(certListItem)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse certificate")
 	}
-	if cert.Issuer.CommonName == "MicroMDM" {
-		log.Info(cert.NotAfter)
-		end := time.Now().AddDate(0, 0, 30)
-		if cert.NotAfter.Before(end) {
-			log.Infof("Time is after %v for %v", end, cert.Issuer)
-		} else {
-			log.Info("We would do some pushing on the enrollment profile here")
+	if cert.Issuer.CommonName == utils.ScepCertIssuer() {
+		end := time.Now().AddDate(0, 0, -utils.ScepCertMinValidity())
+		if cert.NotAfter.After(end) {
+			errMsg := fmt.Sprintf("Certificate issued by %v is expiring before %v.", utils.ScepCertIssuer(), end)
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg})
+
+			data, err := ioutil.ReadFile(enrollmentProfile)
+			if err != nil {
+				return errors.Wrap(err, "failed to read enrollment profile")
+			}
+
+			var profile types.DeviceProfile
+
+			err = plist.Unmarshal(data, &profile)
+			if err != nil {
+				return errors.Wrap(err, "Failed to unmarshal enrollment profile to struct")
+			}
+
+			profile.MobileconfigData = data
+
+			_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
+			if err != nil {
+				return errors.Wrap(err, "Failed to push enrollment profile")
+			}
 		}
 	}
 	return nil

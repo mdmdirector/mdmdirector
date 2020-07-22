@@ -55,5 +55,9 @@ postgres:
 mdmdirector_nosign: build
 	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug
 
-mdmdirector: build
-	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll #-log-format=json
+curlprofile:
+	rm -f EnrollmentProfile.mobileconfig
+	curl -o EnrollmentProfile.mobileconfig ${SERVER_URL}/mdm/enroll
+
+mdmdirector: build curlprofile
+	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll -enrollment-profile=EnrollmentProfile.mobileconfig #-log-format=json
