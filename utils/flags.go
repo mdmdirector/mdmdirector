@@ -96,3 +96,7 @@ func ScepCertMinValidity() int {
 func EnrollmentProfile() string {
 	return flag.Lookup("enrollment-profile").Value.(flag.Getter).Get().(string)
 }
+
+func SignEnrollmentProfile() bool {
+	return flag.Lookup("enrollment-profile-signed").Value.(flag.Getter).Get().(bool)
+}

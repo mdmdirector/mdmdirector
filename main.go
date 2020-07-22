@@ -73,6 +73,8 @@ var ScepCertMinValidity int
 
 var EnrollmentProfile string
 
+var SignEnrollmentProfile bool
+
 var LogFormat string
 
 func main() {
@@ -102,6 +104,7 @@ func main() {
 	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "MicroMDM"), "The issuer of your SCEP certificate")
 	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
+	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("SIGN_ENROLLMENT_PROFILE", true), "Should MDMDirector sign the enrollment profile for you (i.e. are you providing a profile that is already signed)")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
