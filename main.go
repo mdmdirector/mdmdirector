@@ -101,10 +101,10 @@ func main() {
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
 	flag.BoolVar(&RequestInfoWithCommand, "request-info-with-command", env.Bool("REQUEST_INFO_WITH_COMMAND", false), "If a command that does not request device info is sent, follow it up with PorfileList, CertificateList, DeviceInfo, SecurityInfo")
 	flag.StringVar(&LogFormat, "log-format", env.String("LOG_FORMAT", "logfmt"), "Format to output logs. Defaults to logfmt. Can be set to logfmt or json.")
-	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "MicroMDM"), "The issuer of your SCEP certificate")
+	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "CN=MicroMDM,OU=MICROMDM SCEP CA,O=MicroMDM,C=US"), "The issuer of your SCEP certificate")
 	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
-	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("SIGN_ENROLLMENT_PROFILE", true), "Should MDMDirector sign the enrollment profile for you (i.e. are you providing a profile that is already signed)")
+	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)

@@ -13,6 +13,7 @@ type Certificate struct {
 	Subject    string
 	NotAfter   time.Time
 	Data       []byte
+	Issuer     string
 	DeviceUDID string
 }
 

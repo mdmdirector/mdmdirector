@@ -124,5 +124,15 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "reset device")
 	}
 
+	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.Certificate{}).Error
+	// if err != nil {
+	// 	log.Error(err)
+	// }
+
+	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.ProfileList{}).Error
+	// if err != nil {
+	// 	log.Error(err)
+	// }
+
 	return nil
 }
