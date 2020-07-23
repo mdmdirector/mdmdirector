@@ -42,6 +42,7 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificate.Data = certListItem.Data
 		certificate.CommonName = cert.Issuer.CommonName
 		certificate.NotAfter = cert.NotAfter
+		certificate.NotBefore = cert.NotBefore
 		certificate.Subject = cert.Subject.String()
 		certificate.Issuer = cert.Issuer.String()
 		certificates = append(certificates, certificate)
@@ -65,7 +66,7 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, error) {
 	cert, err := x509.ParseCertificate(certListItem.Data)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse certificate")
+		return nil, errors.Wrap(err, "parseCertificate:failed to parse certificate")
 	}
 	return cert, nil
 }
@@ -95,7 +96,7 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 
 			data, err := ioutil.ReadFile(enrollmentProfile)
 			if err != nil {
-				return errors.Wrap(err, "failed to read enrollment profile")
+				return errors.Wrap(err, "Failed to read enrollment profile")
 			}
 
 			var profile types.DeviceProfile
