@@ -45,17 +45,18 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificate.Subject = cert.Subject.String()
 		certificate.Issuer = cert.Issuer.String()
 		certificates = append(certificates, certificate)
-		err = validateScepCert(certListItem, device)
-		if err != nil {
-			// return errors.Wrap(err, "processCertificateList:validateScepCert")
-			log.Error(err)
-		}
-
 	}
 
 	err := db.DB.Unscoped().Model(&device).Association("Certificates").Replace(certificates).Error
 	if err != nil {
-		log.Error(err)
+		return errors.Wrap(err, "processCertificateList:SaveCerts")
+	}
+
+	for _, certListItem := range certificateListData.CertificateList {
+		err = validateScepCert(certListItem, device)
+		if err != nil {
+			return errors.Wrap(err, "processCertificateList:validateScepCert")
+		}
 	}
 
 	return nil
@@ -106,18 +107,20 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 
 			profile.MobileconfigData = data
 
-			if utils.SignEnrollmentProfile() {
-				_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
-				if err != nil {
-					return errors.Wrap(err, "Failed to push enrollment profile")
-				}
-			} else {
+			if utils.SignedEnrollmentProfile() {
+				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Enrollment Profile pre-signed"})
 				var commandPayload types.CommandPayload
 				commandPayload.RequestType = "InstallProfile"
 				commandPayload.Payload = base64.StdEncoding.EncodeToString(profile.MobileconfigData)
 				commandPayload.UDID = device.UDID
 
 				_, err := SendCommand(commandPayload)
+				if err != nil {
+					return errors.Wrap(err, "Failed to push enrollment profile")
+				}
+			} else {
+				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Signing Enrollment Profile"})
+				_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
 				if err != nil {
 					return errors.Wrap(err, "Failed to push enrollment profile")
 				}
