@@ -25,6 +25,7 @@ You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your
 - `-escrowurl` - HTTP endpoint to escrow erase and unlock PINs to ([Crypt](https://github.com/grahamgilbert/crypt-server) and other compatible servers).
 - `-key-password string` - Password to decrypt the signing key or p12 file.
 - `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
+- `-logformat-format` - Log format. Either `logfmt` (the default) or `json`
 - `-micromdmapikey string` - (Required) MicroMDM Server API Key
 - `-micromdmurl string` - (Required) MicroMDM Server URL
 - `-password string` - (Required) Password used for basic authentication
