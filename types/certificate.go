@@ -12,7 +12,9 @@ type Certificate struct {
 	CommonName string
 	Subject    string
 	NotAfter   time.Time
+	NotBefore  time.Time
 	Data       []byte
+	Issuer     string
 	DeviceUDID string
 }
 
