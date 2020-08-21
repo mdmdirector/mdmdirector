@@ -1,6 +1,10 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/profile"
+# The following applies a MDM profile to a given device registered on micromdm by UDID 
+# Example:
+#          ./tools/post_profile $path_to_profile_on_disk
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="profile"
 jq -n \
   --arg udid "$1" \
   --arg payload "$(cat "$2"|openssl base64 -A)" \
@@ -9,4 +13,4 @@ jq -n \
   |.metadata = true
   |.push_now = true
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-

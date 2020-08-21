@@ -1,10 +1,14 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/profile"
+# The following applies an MDM profile across all devices registered on micromdm 
+# Example:
+#          ./tools/post_shared_profile $path_to_profile_on_disk
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="profile"
 jq -n \
   --arg payload "$(cat "$1"|openssl base64 -A)" \
   '.udids = ["*"]
   |.push_now = true
   |.profiles = [$payload]
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-

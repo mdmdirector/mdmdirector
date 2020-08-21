@@ -1,10 +1,15 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/device/command/device_lock"
+# The following removes the re-application of a Lock Mode by MDM Director
+# Where a 'device_lock' was applied by a given device by UDID 
+# Example:
+#          ./tools/device_unlock $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/command/device_lock"
 jq -n \
   --arg udid "$1" \
   '.udids = [$udid]
   |.value = false
   |.push_now = true
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-

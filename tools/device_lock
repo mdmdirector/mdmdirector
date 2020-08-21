@@ -1,11 +1,16 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/device/command/device_lock"
+# Configure Device lock on a device registered in micromdm by a given device by UDID with a supplied locking pincode
+# Example:
+#          ./tools/device_lock $udid $pincode
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device_lock"
 jq -n \
   --arg udid "$1" \
+  --arg pincode "$2"
   '.udids = [$udid]
   |.value = true
   |.push_now = true
-  |.pin = "123456"
+  |.pin = "[$pincode]"
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-

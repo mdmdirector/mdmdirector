@@ -1,10 +1,15 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/device/command/erase_device"
+# The following removes the erase-device command from MDM Director
+# Where a 'erase_device' was applied by a given device by UDID 
+# Example:
+#          ./tools/unerase_device $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/command/erase_device"
 jq -n \
   --arg udid "$1" \
   '.udids = [$udid]
   |.value = false
   |.push_now = true
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X DELETE "$SERVER_URL/$endpoint" -d@-

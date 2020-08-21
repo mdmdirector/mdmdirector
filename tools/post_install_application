@@ -1,6 +1,10 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/installapplication"
+# The following installs an application based on an install manifest to a device registered on micromdm by UDID 
+# Example:
+#          ./tools/post_profile $UDID $manifest_url
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="installapplication"
 jq -n \
   --arg udid "$1" \
   --arg manifesturl "$2" \
@@ -8,4 +12,4 @@ jq -n \
   |.manifest_urls[0].url = $manifesturl
   |.manifest_urls[0].bootstrap_only = false
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-
