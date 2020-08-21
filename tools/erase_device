@@ -1,10 +1,14 @@
 #!/bin/bash
-
-endpoint="http://localhost:8000/device/command/erase_device"
+# Erase a device registered in micromdm by a given device by UDID
+# Example:
+#          ./tools/erase_device $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/command/erase_device"
 jq -n \
   --arg udid "$1" \
   '.udids = [$udid]
   |.value = true
   |.push_now = true
   '|\
-  curl -u "mdmdirector:secret" -X POST "$endpoint" -d@-
+  curl -u "mdmdirector:$API_TOKEN" -X DELETE "$SERVER_URL/$endpoint" -d@-
