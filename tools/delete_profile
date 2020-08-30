@@ -1,14 +1,13 @@
 #!/bin/bash
 # delete profile from a given device by UDID
 # Example:
-#          ./tools/delete_profile $udid $payload_identifier $identifier
+#          ./tools/delete_profile $udid $payload_identifier
 #
 source $MDMDIRECTOR_ENV_PATH
 endpoint="profile"
 jq -n \
   --arg udid "$1" \
   --arg payload_identifier "$2" \
-  --arg identifier "$3" \
   '.udids = [$udid]
   |.profiles[0].payload_identifier = $payload_identifier
   |.metadata = true

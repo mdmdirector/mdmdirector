@@ -410,10 +410,10 @@ func processScheduledCheckin() error {
 		return err
 	}
 
-	err = ExpireCommands()
-	if err != nil {
-		return err
-	}
+	// err = ExpireCommands()
+	// if err != nil {
+	// 	return err
+	// }
 
 	var certificates []types.Certificate
 

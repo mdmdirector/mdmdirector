@@ -42,9 +42,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	useMetadata := out.Metadata
 
-	for _, payload := range out.Mobileconfigs {
+	for payloadi := range out.Mobileconfigs {
 		var profile types.DeviceProfile
 		var sharedProfile types.SharedProfile
+		payload := out.Mobileconfigs[payloadi]
 		mobileconfig, err := base64.StdEncoding.DecodeString(payload)
 		if err != nil {
 			log.Error(err)
@@ -316,7 +317,6 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	}
 
 	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-
 		if profileList.PayloadUUID == "" {
 			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID is not present in ProfileList", Metric: profileList.PayloadUUID})
 		} else {
