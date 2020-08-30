@@ -421,10 +421,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := range devices {
-		device, err := FetchDeviceModelAndRelations(devices[i])
-		if err != nil {
-			log.Error(err)
-		}
+		device := devices[i]
 		for i := range out.Mobileconfigs {
 			var profile types.DeviceProfile
 			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier
