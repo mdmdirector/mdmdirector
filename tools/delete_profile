@@ -14,5 +14,3 @@ jq -n \
   |.push_now = true
   '|\
   curl -u "mdmdirector:$API_TOKEN" -X DELETE "$SERVER_URL/$endpoint" -d@-
-
-  # |.profiles[0].payload_identifier = $payload_identifier
