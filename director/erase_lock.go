@@ -68,7 +68,7 @@ func EraseLockDevice(udid string) error {
 func escrowPin(device types.Device, pin string) error {
 	escrowURL := utils.EscrowURL()
 	if escrowURL == "" {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "No Escrow URL set, returning early"})
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "No Escrow URL set, returning early"})
 		return nil
 	}
 	endpoint, err := url.Parse(escrowURL)
