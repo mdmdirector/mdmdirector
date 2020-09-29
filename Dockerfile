@@ -16,7 +16,7 @@ FROM alpine:latest
 
 RUN apk --update add ca-certificates
 
-COPY --from=builder /go/src/github.com/mdmdirector/mdmdirector/build/linux/mdmdirector-v0.0.1 /usr/bin/mdmdirector
+COPY --from=builder /go/src/github.com/mdmdirector/mdmdirector/build/linux/mdmdirector /usr/bin/mdmdirector
 
 EXPOSE 8000
 CMD ["/usr/bin/mdmdirector"]
