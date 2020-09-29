@@ -42,7 +42,7 @@ build: clean .pre-build
 
 xp-build:  clean .pre-build
 	GOOS=darwin go build -o build/darwin/mdmdirector
-	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector-v0.0.7
+	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector
 
 postgres-clean:
 	rm -rf postgres
