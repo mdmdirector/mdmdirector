@@ -756,18 +756,17 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
-				// FIX THIS
-				// found := false
-				// // Make sure the profile isn't being managed at a device level
-				// for i := range profilesToInstall {
-				// 	deviceProfile := profilesToInstall[i]
-				// 	if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
-				// 		found = true
-				// 	}
-				// }
-				// if !found {
-				sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
-				// }
+				found := false
+				// Make sure the profile isn't being managed at a device level
+				for i := range profilesToInstall {
+					deviceProfile := profilesToInstall[i]
+					if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
+						found = true
+					}
+				}
+				if !found {
+					sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
+				}
 
 			}
 		}
