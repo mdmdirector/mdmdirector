@@ -361,7 +361,9 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	}
 
 	for _, profile := range payload.Mobileconfigs {
-		err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+		err := db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update(map[string]interface{}{
+			"installed": false,
+		}).Error
 		if err != nil {
 			return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not set installed = false")
 		}
@@ -754,17 +756,18 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
-				found := false
-				// Make sure the profile isn't being managed at a device level
-				for i := range profilesToInstall {
-					deviceProfile := profilesToInstall[i]
-					if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
-						found = true
-					}
-				}
-				if !found {
-					sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
-				}
+				// FIX THIS
+				// found := false
+				// // Make sure the profile isn't being managed at a device level
+				// for i := range profilesToInstall {
+				// 	deviceProfile := profilesToInstall[i]
+				// 	if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
+				// 		found = true
+				// 	}
+				// }
+				// if !found {
+				sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
+				// }
 
 			}
 		}
