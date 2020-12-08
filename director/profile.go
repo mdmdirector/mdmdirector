@@ -361,7 +361,9 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	}
 
 	for _, profile := range payload.Mobileconfigs {
-		err = db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update("installed = ?", false).Update("installed", false).Error
+		err := db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update(map[string]interface{}{
+			"installed": false,
+		}).Error
 		if err != nil {
 			return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not set installed = false")
 		}
