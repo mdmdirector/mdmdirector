@@ -20,12 +20,12 @@ type SecurityInfo struct {
 	FDEHasInstitutionalRecoveryKey                   bool                   `plist:"FDE_HasInstitutionalRecoveryKey"`
 	FDEPersonalRecoveryKeyCMS                        []byte                 `plist:"FDE_PersonalRecoveryKeyCMS"`
 	FDEPersonalRecoveryKeyDeviceKey                  string                 `plist:"FDE_PersonalRecoveryKeyDeviceKey" gorm:"-"`
-	FirewallSettings                                 FirewallSettings       `plist:"FirewallSettings"gorm:"ForeignKey:DeviceUDID"`
+	FirewallSettings                                 FirewallSettings       `plist:"FirewallSettings" gorm:"ForeignKey:DeviceUDID"`
 	SystemIntegrityProtectionEnabled                 bool                   `plist:"SystemIntegrityProtectionEnabled"`
 	FirmwarePasswordStatus                           FirmwarePasswordStatus `plist:"FirmwarePasswordStatus" gorm:"ForeignKey:DeviceUDID"`
 	ManagementStatus                                 ManagementStatus       `plist:"ManagementStatus" gorm:"ForeignKey:DeviceUDID"`
 	RemoteDesktopEnabled                             bool                   `plist:"RemoteDesktopEnabled"`
-	SecureBoot                                       SecureBoot             `plist:"SecureBoot"gorm:"ForeignKey:DeviceUDID"`
+	SecureBoot                                       SecureBoot             `plist:"SecureBoot" gorm:"ForeignKey:DeviceUDID"`
 	DeviceUDID                                       string                 `gorm:"primary_key"`
 }
 
@@ -63,7 +63,7 @@ type FirewallSettings struct {
 type SecureBoot struct {
 	ExternalBootLevel         string                    `plist:"ExternalBootLevel"`
 	SecureBootLevel           string                    `plist:"SecureBootLevel"`
-	SecureBootReducedSecurity SecureBootReducedSecurity `plist:"ReducedSecurity"gorm:"ForeignKey:DeviceUDID"`
+	SecureBootReducedSecurity SecureBootReducedSecurity `plist:"ReducedSecurity" gorm:"ForeignKey:DeviceUDID"`
 	DeviceUDID                string                    `gorm:"primary_key"`
 }
 
