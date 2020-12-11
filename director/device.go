@@ -130,7 +130,7 @@ func GetAllDevices() ([]types.Device, error) {
 	// var device types.Device
 	var devices []types.Device
 
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Find(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Find(&devices).Error
 	if err != nil {
 		return devices, errors.Wrap(err, "Get All Devices")
 	}
@@ -140,7 +140,7 @@ func GetAllDevices() ([]types.Device, error) {
 func GetAllDevicesAndAssociations() ([]types.Device, error) {
 	var devices []types.Device
 
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
 	if err != nil {
 		return devices, errors.Wrap(err, "Couldn't scan to Device model from GetAllDevicesAndAssociations")
 	}
@@ -339,7 +339,7 @@ func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
 
 func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 	var empty types.Device
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
+	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from FetchDeviceAndRelations", err)
 	}

@@ -5,23 +5,28 @@ type SecurityInfoData struct {
 }
 
 type SecurityInfo struct {
-	HardwareEncryptionCaps          int    `plist:"HardwareEncryptionCaps"`
-	PasscodePresent                 bool   `plist:"PasscodePresent"`
-	PasscodeCompliant               bool   `plist:"PasscodeCompliant"`
-	PasscodeCompliantWithProfiles   bool   `plist:"PasscodeCompliantWithProfiles"`
-	PasscodeLockGracePeriod         int    `plist:"PasscodeLockGracePeriod"`
-	PasscodeLockGracePeriodEnforced int    `plist:"PasscodeLockGracePeriodEnforced"`
-	FDEEnabled                      bool   `plist:"FDE_Enabled"`
-	FDEHasPersonalRecoveryKey       bool   `plist:"FDE_HasPersonalRecoveryKey"`
-	FDEHasInstitutionalRecoveryKey  bool   `plist:"FDE_HasInstitutionalRecoveryKey"`
-	FDEPersonalRecoveryKeyCMS       []byte `plist:"FDE_PersonalRecoveryKeyCMS"`
-	FDEPersonalRecoveryKeyDeviceKey string `plist:"FDE_PersonalRecoveryKeyDeviceKey" gorm:"-"`
-	// Split this out into it's own struct
-	// FirewallSettings                 interface{}     `plist:"FirewallSettings"`
-	SystemIntegrityProtectionEnabled bool                   `plist:"SystemIntegrityProtectionEnabled"`
-	FirmwarePasswordStatus           FirmwarePasswordStatus `plist:"FirmwarePasswordStatus" gorm:"ForeignKey:DeviceUDID"`
-	ManagementStatus                 ManagementStatus       `plist:"ManagementStatus" gorm:"ForeignKey:DeviceUDID"`
-	DeviceUDID                       string                 `gorm:"primary_key"`
+	AuthenticatedRootVolumeEnabled                   bool                   `plist:"AuthenticatedRootVolumeEnabled"`
+	BootstrapTokenAllowedForAuthentication           string                 `plist:"BootstrapTokenAllowedForAuthentication"`
+	BootstrapTokenRequiredForKernelExtensionApproval bool                   `plist:"BootstrapTokenRequiredForKernelExtensionApproval"`
+	BootstrapTokenRequiredForSoftwareUpdate          bool                   `plist:"BootstrapTokenRequiredForSoftwareUpdate"`
+	HardwareEncryptionCaps                           int                    `plist:"HardwareEncryptionCaps"`
+	PasscodePresent                                  bool                   `plist:"PasscodePresent"`
+	PasscodeCompliant                                bool                   `plist:"PasscodeCompliant"`
+	PasscodeCompliantWithProfiles                    bool                   `plist:"PasscodeCompliantWithProfiles"`
+	PasscodeLockGracePeriod                          int                    `plist:"PasscodeLockGracePeriod"`
+	PasscodeLockGracePeriodEnforced                  int                    `plist:"PasscodeLockGracePeriodEnforced"`
+	FDEEnabled                                       bool                   `plist:"FDE_Enabled"`
+	FDEHasPersonalRecoveryKey                        bool                   `plist:"FDE_HasPersonalRecoveryKey"`
+	FDEHasInstitutionalRecoveryKey                   bool                   `plist:"FDE_HasInstitutionalRecoveryKey"`
+	FDEPersonalRecoveryKeyCMS                        []byte                 `plist:"FDE_PersonalRecoveryKeyCMS"`
+	FDEPersonalRecoveryKeyDeviceKey                  string                 `plist:"FDE_PersonalRecoveryKeyDeviceKey" gorm:"-"`
+	FirewallSettings                                 FirewallSettings       `plist:"FirewallSettings"gorm:"ForeignKey:DeviceUDID"`
+	SystemIntegrityProtectionEnabled                 bool                   `plist:"SystemIntegrityProtectionEnabled"`
+	FirmwarePasswordStatus                           FirmwarePasswordStatus `plist:"FirmwarePasswordStatus" gorm:"ForeignKey:DeviceUDID"`
+	ManagementStatus                                 ManagementStatus       `plist:"ManagementStatus" gorm:"ForeignKey:DeviceUDID"`
+	RemoteDesktopEnabled                             bool                   `plist:"RemoteDesktopEnabled"`
+	SecureBoot                                       SecureBoot             `plist:"SecureBoot"gorm:"ForeignKey:DeviceUDID"`
+	DeviceUDID                                       string                 `gorm:"primary_key"`
 }
 
 type FirmwarePasswordStatus struct {
@@ -37,4 +42,34 @@ type ManagementStatus struct {
 	IsUserEnrollment           bool   `plist:"IsUserEnrollment"`
 	IsActivationLockManageable bool   `plist:"IsActivationLockManageable"`
 	DeviceUDID                 string `gorm:"primary_key"`
+}
+
+type FirewallSettings struct {
+	// FirewallSettingsApplications []FirewallSettingsApplication `plist:"Applications"gorm"foreignKey:DeviceUDID"`
+	BlockAllIncoming bool   `plist:"BlockAllIncoming"`
+	FirewallEnabled  bool   `plist:"FirewallEnabled"`
+	StealthMode      bool   `plist:"StealthMode"`
+	DeviceUDID       string `gorm:"primary_key"`
+}
+
+// type FirewallSettingsApplication struct {
+// 	Allowed           bool      `plist:"Allowed"`
+// 	BundleID          string    `plist:"BundleID"`
+// 	Name              string    `plist:"Name"`
+// 	FirewallAppItemID uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+// 	DeviceUDID        string
+// }
+
+type SecureBoot struct {
+	ExternalBootLevel         string                    `plist:"ExternalBootLevel"`
+	SecureBootLevel           string                    `plist:"SecureBootLevel"`
+	SecureBootReducedSecurity SecureBootReducedSecurity `plist:"ReducedSecurity"gorm:"ForeignKey:DeviceUDID"`
+	DeviceUDID                string                    `gorm:"primary_key"`
+}
+
+type SecureBootReducedSecurity struct {
+	AllowsAnyAppleSignedOS bool   `plist:"AllowsAnyAppleSignedOS"`
+	AllowsMDM              bool   `plist:"AllowsMDM"`
+	AllowsUserKextApproval bool   `plist:"AllowsUserKextApproval"`
+	DeviceUDID             string `gorm:"primary_key"`
 }
