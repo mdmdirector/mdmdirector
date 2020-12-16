@@ -18,7 +18,7 @@ func RequestSecurityInfo(device types.Device) {
 	}
 }
 
-func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) {
+func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) error {
 	var securityInfo types.SecurityInfo
 	var managementStatus types.ManagementStatus
 	var firmwarePasswordStatus types.FirmwarePasswordStatus
@@ -39,17 +39,17 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
 	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
 	if err != nil {
-		log.Error(err)
+		return err
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus).Error
 	if err != nil {
-		log.Error(err)
+		return err
 	}
 
 	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus).Error
 	if err != nil {
-		log.Error(err)
+		return err
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings).Error
@@ -72,4 +72,5 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 		log.Error(err)
 	}
 
+	return nil
 }

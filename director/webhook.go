@@ -133,6 +133,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
+
+			if err == nil {
+				plErr := device.UpdateLastProfileList()
+				if plErr != nil {
+					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: plErr.Error()})
+				}
+			}
 		}
 
 		_, ok = payloadDict["SecurityInfo"]
@@ -142,17 +149,17 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
-			SaveSecurityInfo(securityInfoData, device)
-		}
-
-		_, ok = payloadDict["DeviceInformation"]
-		if ok {
-			var securityInfoData types.SecurityInfoData
-			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
+			err = SaveSecurityInfo(securityInfoData, device)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
-			SaveSecurityInfo(securityInfoData, device)
+
+			if err == nil {
+				siErr := device.UpdateLastSecurityInfo()
+				if siErr != nil {
+					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: siErr.Error()})
+				}
+			}
 		}
 
 		_, ok = payloadDict["CertificateList"]
@@ -166,9 +173,16 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
+
+			if err == nil {
+				clErr := device.UpdateLastCertificateList()
+				if clErr != nil {
+					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: clErr.Error()})
+				}
+			}
 		}
 
-		_, ok = payloadDict["QueryResponses"]
+		_, ok = payloadDict["DeviceInformation"]
 		if ok {
 			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &deviceInformationQueryResponses)
@@ -180,8 +194,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
 
+			if err == nil {
+				diErr := device.UpdateLastDeviceInfo()
+				if diErr != nil {
+					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: diErr.Error()})
+				}
+			}
 		}
-
 	}
 }
 
