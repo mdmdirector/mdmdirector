@@ -124,6 +124,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]
 		if ok {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Recieved ProfileList payload"})
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
@@ -144,6 +145,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 		_, ok = payloadDict["SecurityInfo"]
 		if ok {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Recieved SecurityInfo payload"})
 			var securityInfoData types.SecurityInfoData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
 			if err != nil {
@@ -165,6 +167,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		_, ok = payloadDict["CertificateList"]
 		if ok {
 			var certificateListData types.CertificateListData
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Recieved CertificateList payload"})
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &certificateListData)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -182,8 +185,9 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		_, ok = payloadDict["DeviceInformation"]
+		_, ok = payloadDict["QueryResponses"]
 		if ok {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Recieved DeviceInformation.QueryResponses payload"})
 			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &deviceInformationQueryResponses)
 			if err != nil {
