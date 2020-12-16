@@ -110,12 +110,8 @@ func pushAll() error {
 	var dbDevices []types.Device
 	now := time.Now()
 
-<<<<<<< HEAD
-	DelaySeconds, _ := getDelay()
-=======
 	DelaySeconds := getDelay()
 	HalfDelaySeconds := DelaySeconds / 2
->>>>>>> fix_profile_list_comparison
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	sixHoursAgo := time.Now().Add(-6 * time.Hour)
