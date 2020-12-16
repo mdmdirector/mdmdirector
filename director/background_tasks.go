@@ -111,7 +111,6 @@ func pushAll() error {
 	now := time.Now()
 
 	DelaySeconds := getDelay()
-	HalfDelaySeconds := DelaySeconds / 2
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	sixHoursAgo := time.Now().Add(-6 * time.Hour)
