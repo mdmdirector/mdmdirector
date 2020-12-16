@@ -22,16 +22,15 @@ const MAX = 5
 
 var DevicesFetchedFromMDM bool
 
-func getDelay() (time.Duration, time.Duration) {
+// The delay between looping over the background goroutines (sending push notifications etc)
+func getDelay() time.Duration {
 	DelaySeconds := 7200
 
 	if utils.DebugMode() {
 		DelaySeconds = 20
 	}
 
-	HalfDelaySeconds := DelaySeconds / 2
-
-	return time.Duration(DelaySeconds), time.Duration(HalfDelaySeconds)
+	return time.Duration(DelaySeconds)
 }
 
 func RetryCommands() {
@@ -111,11 +110,10 @@ func pushAll() error {
 	var dbDevices []types.Device
 	now := time.Now()
 
-	DelaySeconds, HalfDelaySeconds := getDelay()
+	DelaySeconds := getDelay()
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	sixHoursAgo := time.Now().Add(-6 * time.Hour)
-	lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
@@ -129,6 +127,7 @@ func pushAll() error {
 		if dbDevice.LastCertificateList.Before(sixHoursAgo) || dbDevice.LastProfileList.Before(sixHoursAgo) || dbDevice.LastSecurityInfo.Before(sixHoursAgo) || dbDevice.LastDeviceInfo.Before(sixHoursAgo) {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received one of the information commands within the last six hours, adding to push list."})
 			devices = append(devices, dbDevice)
+			continue
 		}
 
 		// If it's been updated within the last three hours, try to push again as it might still be online
@@ -140,7 +139,7 @@ func pushAll() error {
 			}
 		}
 		// This contrived bit of logic is to handle devices that don't have a LastScheduledPush set yet
-		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
+		if !dbDevice.LastScheduledPush.IsZero() || dbDevice.LastCertificateList.IsZero() || dbDevice.LastProfileList.IsZero() || dbDevice.LastSecurityInfo.IsZero() || dbDevice.LastDeviceInfo.IsZero() {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Last push is within threshold", Metric: dbDevice.LastScheduledPush.String()})
 			continue
 		}
@@ -183,7 +182,7 @@ func pushAll() error {
 
 func AddDeviceToScheduledPushQueue(device types.Device) error {
 	var scheduledPush types.ScheduledPush
-	DelaySeconds, _ := getDelay()
+	DelaySeconds := getDelay()
 	now := time.Now()
 	var retry int64
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Adding scheduled push"})
@@ -377,7 +376,7 @@ func ScheduledCheckin() {
 		InfoLogger(LogHolder{Metric: strconv.Itoa(randomDelay), Message: "Waiting before beginning to process scheduled checkins"})
 		time.Sleep(time.Duration(randomDelay) * time.Second)
 	}
-	DelaySeconds, _ := getDelay()
+	DelaySeconds := getDelay()
 	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
