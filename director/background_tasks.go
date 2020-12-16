@@ -114,6 +114,7 @@ func pushAll() error {
 	DelaySeconds, HalfDelaySeconds := getDelay()
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
+	sixHoursAgo := time.Now().Add(-6 * time.Hour)
 	lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
@@ -123,6 +124,13 @@ func pushAll() error {
 
 	for i := range dbDevices {
 		dbDevice := dbDevices[i]
+
+		// If we havent had any of the info payloads back recently, add to list
+		if dbDevice.LastCertificateList.Before(sixHoursAgo) || dbDevice.LastProfileList.Before(sixHoursAgo) || dbDevice.LastSecurityInfo.Before(sixHoursAgo) || dbDevice.LastDeviceInfo.Before(sixHoursAgo) {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received one of the information commands within the last six hours, adding to push list."})
+			devices = append(devices, dbDevice)
+		}
+
 		// If it's been updated within the last three hours, try to push again as it might still be online
 		if dbDevice.LastCheckedIn.After(threeHoursAgo) {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Checked in more than three hours ago"})
