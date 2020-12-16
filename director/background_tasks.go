@@ -127,7 +127,7 @@ func pushAll() error {
 
 		// If we havent had any of the info payloads back recently, add to list
 		if dbDevice.LastCertificateList.Before(sixHoursAgo) || dbDevice.LastProfileList.Before(sixHoursAgo) || dbDevice.LastSecurityInfo.Before(sixHoursAgo) || dbDevice.LastDeviceInfo.Before(sixHoursAgo) {
-			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not recieved one of the information commands within the last six hours, adding to push list."})
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received one of the information commands within the last six hours, adding to push list."})
 			devices = append(devices, dbDevice)
 		}
 
