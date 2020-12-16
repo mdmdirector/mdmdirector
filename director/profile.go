@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/pkcs12"
 
@@ -323,27 +324,30 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID doesn't match what's in ProfileList", Metric: profileList.PayloadUUID})
 		}
 		// May be waiting for a device to report in full - just bail if there profilelist count is 0
-		// var profileCount int
-		// err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Count(&profileCount).Error
-		// if err != nil {
-		// 	if !gorm.IsRecordNotFoundError(err) {
-		// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
-		// 		return true, errors.Wrap(err, "Could not load ProfileList for device")
-		// 	}
-		// }
-		// if profileCount == 0 {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Device has an empty ProfileList stored"})
-		// }
-		// skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-		// tenMinsAgo := time.Now().Add(-10 * time.Minute)
-		// for _, item := range skipCommands {
-		// 	inQueue := CommandInQueue(device, item, tenMinsAgo)
-		// 	if !inQueue {
-		// 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
-		// 		_ = RequestAllDeviceInfo(device)
-		// 		break
-		// 	}
-		// }
+		var profileCount int
+		err := db.DB.Model(&profileList).Where("device_ud_id = ?", device.UDID).Count(&profileCount).Error
+		if err != nil {
+			if !gorm.IsRecordNotFoundError(err) {
+				// If it's not found, we'll catch in the false return at the end. Else raise an error
+				return true, errors.Wrap(err, "Could not load ProfileList for device")
+			}
+		}
+		if profileCount == 0 {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Device has an empty ProfileList stored"})
+		}
+		skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
+		tenMinsAgo := time.Now().Add(-10 * time.Minute)
+		for _, item := range skipCommands {
+			inQueue := CommandInQueue(device, item, tenMinsAgo)
+			if inQueue {
+				msg := fmt.Sprintf("%v is in queue", item)
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: msg, Metric: profileList.PayloadUUID})
+				return false, nil
+			}
+		}
+
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
+		_ = RequestAllDeviceInfo(device)
 
 		return false, nil
 	}
@@ -677,7 +681,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		}
 
 		if !found {
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is installed"})
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is not installed"})
 			profilesToInstall = append(profilesToInstall, savedProfile)
 		}
 	}

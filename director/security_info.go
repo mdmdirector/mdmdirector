@@ -22,9 +22,20 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	var securityInfo types.SecurityInfo
 	var managementStatus types.ManagementStatus
 	var firmwarePasswordStatus types.FirmwarePasswordStatus
+	var firewallSettings types.FirewallSettings
+	// var firewallSettingsApplications []types.FirewallSettingsApplication
+	var secureBoot types.SecureBoot
+	var secureBootReducedSecurity types.SecureBootReducedSecurity
 	securityInfo = securityInfoData.SecurityInfo
 	managementStatus = securityInfo.ManagementStatus
 	firmwarePasswordStatus = securityInfo.FirmwarePasswordStatus
+	firewallSettings = securityInfo.FirewallSettings
+	// firewallSettingsApplications = firewallSettings.FirewallSettingsApplications
+	secureBoot = securityInfo.SecureBoot
+	// secureBoot.DeviceUDID = device.UDID
+	secureBootReducedSecurity = securityInfo.SecureBoot.SecureBootReducedSecurity
+	secureBootReducedSecurity.DeviceUDID = device.UDID
+
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
 	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
 	if err != nil {
@@ -39,6 +50,26 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus).Error
 	if err != nil {
 		return err
+	}
+
+	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings).Error
+	if err != nil {
+		log.Error(err)
+	}
+
+	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications).Error
+	// if err != nil {
+	// 	log.Error(err)
+	// }
+
+	err = db.DB.Model(&securityInfo).Association("SecureBoot").Append(&secureBoot).Error
+	if err != nil {
+		log.Error(err)
+	}
+
+	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity).Error
+	if err != nil {
+		log.Error(err)
 	}
 
 	return nil

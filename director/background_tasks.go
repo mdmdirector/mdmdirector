@@ -22,16 +22,15 @@ const MAX = 5
 
 var DevicesFetchedFromMDM bool
 
-func getDelay() (time.Duration, time.Duration) {
+// The delay between looping over the background goroutines (sending push notifications etc)
+func getDelay() time.Duration {
 	DelaySeconds := 7200
 
 	if utils.DebugMode() {
 		DelaySeconds = 20
 	}
 
-	HalfDelaySeconds := DelaySeconds / 2
-
-	return time.Duration(DelaySeconds), time.Duration(HalfDelaySeconds)
+	return time.Duration(DelaySeconds)
 }
 
 func RetryCommands() {
@@ -111,7 +110,12 @@ func pushAll() error {
 	var dbDevices []types.Device
 	now := time.Now()
 
+<<<<<<< HEAD
 	DelaySeconds, _ := getDelay()
+=======
+	DelaySeconds := getDelay()
+	HalfDelaySeconds := DelaySeconds / 2
+>>>>>>> fix_profile_list_comparison
 
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	sixHoursAgo := time.Now().Add(-6 * time.Hour)
@@ -183,7 +187,7 @@ func pushAll() error {
 
 func AddDeviceToScheduledPushQueue(device types.Device) error {
 	var scheduledPush types.ScheduledPush
-	DelaySeconds, _ := getDelay()
+	DelaySeconds := getDelay()
 	now := time.Now()
 	var retry int64
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Adding scheduled push"})
@@ -377,7 +381,7 @@ func ScheduledCheckin() {
 		InfoLogger(LogHolder{Metric: strconv.Itoa(randomDelay), Message: "Waiting before beginning to process scheduled checkins"})
 		time.Sleep(time.Duration(randomDelay) * time.Second)
 	}
-	DelaySeconds, _ := getDelay()
+	DelaySeconds := getDelay()
 	ticker := time.NewTicker(DelaySeconds * time.Second)
 	if utils.DebugMode() {
 		ticker = time.NewTicker(20 * time.Second)
@@ -436,6 +440,13 @@ func processScheduledCheckin() error {
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::CleanupNullProfileLists")
 	}
+
+	// var appItems []types.FirewallSettingsApplication
+
+	// err = db.DB.Unscoped().Model(&appItems).Where("firewall_settings_applications_items is NULL").Delete(&types.FirewallSettingsApplication{}).Error
+	// if err != nil {
+	// 	return errors.Wrap(err, "processScheduledCheckin::CleanupNullFirewallSettingsApplicationsItem")
+	// }
 
 	var unlockPins []types.UnlockPin
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
