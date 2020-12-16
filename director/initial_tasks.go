@@ -77,9 +77,6 @@ func processDeviceConfigured(device types.Device) error {
 		return err
 	}
 
-	// RequestSecurityInfo(device)
-	// RequestDeviceInformation(device)
-	// RequestProfileList(device)
 	return nil
 }
 
