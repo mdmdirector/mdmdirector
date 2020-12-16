@@ -71,6 +71,6 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	if err != nil {
 		log.Error(err)
 	}
-  
-  return nil
+
+	return nil
 }
