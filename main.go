@@ -156,7 +156,7 @@ func main() {
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
 	http.Handle("/metrics", promhttp.Handler())
 	http.Handle("/", r)
-
+	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
 		log.Error(err)
 		log.Fatal("Failed to open database")
@@ -164,6 +164,7 @@ func main() {
 	defer db.Close()
 
 	// db.DB.LogMode(true)
+	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 	db.DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
 	db.DB.AutoMigrate(
 		&types.Device{},
