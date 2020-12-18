@@ -61,21 +61,6 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		InstallApplicationsPushed.Inc()
 	}
 
-	if utils.RequestInfoWithCommand() {
-		skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-		_, found := utils.Find(skipCommands, commandPayload.RequestType)
-		if !found {
-			tenMinsAgo := time.Now().Add(-10 * time.Minute)
-			for _, item := range skipCommands {
-				inQueue := CommandInQueue(device, item, tenMinsAgo)
-				if !inQueue {
-					_ = RequestAllDeviceInfo(device)
-					break
-				}
-			}
-		}
-	}
-
 	return command, nil
 }
 
@@ -179,13 +164,13 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -198,13 +183,13 @@ func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -217,7 +202,7 @@ func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	// output, err := json.MarshalIndent(&commands, "", "    ")
 	// if err != nil {
-	// 	log.Error(err)
+	// 	ErrorLogger(LogHolder{Message: err.Error()})
 	// 	w.WriteHeader(http.StatusInternalServerError)
 	// }
 
@@ -233,13 +218,13 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 

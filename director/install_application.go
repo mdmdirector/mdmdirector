@@ -18,7 +18,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -29,12 +29,12 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 			if out.DeviceUDIDs[0] == "*" {
 				devices, err = GetAllDevices()
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 				for _, ManifestURL := range out.ManifestURLs {
 					// Push these out to existing devices right now now now
@@ -43,7 +43,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if !ManifestURL.BootstrapOnly {
 						_, err = PushSharedInstallApplication(devices, sharedInstallApplication)
 						if err != nil {
-							log.Error(err)
+							ErrorLogger(LogHolder{Message: err.Error()})
 						}
 					}
 				}
@@ -51,18 +51,18 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.DeviceUDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
 					devices = append(devices, device)
 					err = SaveInstallApplications(devices, out)
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 					}
 				}
 				err = SaveInstallApplications(devices, out)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 				for _, ManifestURL := range out.ManifestURLs {
 					var installApplication types.DeviceInstallApplication
@@ -70,7 +70,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if !ManifestURL.BootstrapOnly {
 						_, err = PushInstallApplication(devices, installApplication)
 						if err != nil {
-							log.Error(err)
+							ErrorLogger(LogHolder{Message: err.Error()})
 						}
 					}
 				}
@@ -82,12 +82,12 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 			if out.SerialNumbers[0] == "*" {
 				devices, err = GetAllDevices()
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 				for _, ManifestURL := range out.ManifestURLs {
 					// Push these out to existing devices right now now now
@@ -96,7 +96,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if !ManifestURL.BootstrapOnly {
 						_, err = PushSharedInstallApplication(devices, sharedInstallApplication)
 						if err != nil {
-							log.Error(err)
+							ErrorLogger(LogHolder{Message: err.Error()})
 						}
 					}
 				}
@@ -114,7 +114,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if !ManifestURL.BootstrapOnly {
 						_, err = PushInstallApplication(devices, installApplication)
 						if err != nil {
-							log.Error(err)
+							ErrorLogger(LogHolder{Message: err.Error()})
 						}
 					}
 				}
@@ -148,7 +148,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
 		if err != nil {
 			// Shit went wrong for this device, but logging here feels wrong
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
 		}
 		if inQueue {
@@ -164,7 +164,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		command, err := SendCommand(commandPayload)
 		if err != nil {
 			// We should return an error or something here
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
 		} else {
 			sentCommands = append(sentCommands, command)
@@ -271,12 +271,12 @@ func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&installApplications, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }

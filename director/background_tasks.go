@@ -3,6 +3,7 @@ package director
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -45,7 +46,7 @@ func RetryCommands() {
 	fn := func() {
 		err := pushNotNow()
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -69,7 +70,7 @@ func pushNotNow() error {
 		queuedCommand := commands[i]
 		endpoint, err := url.Parse(utils.ServerURL())
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 		retry := time.Now().Unix() + 3600
 		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
@@ -79,13 +80,13 @@ func pushNotNow() error {
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 		req.SetBasicAuth("micromdm", utils.APIKey())
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
 		}
 
@@ -108,12 +109,8 @@ func shuffleDevices(vals []types.Device) []types.Device {
 func pushAll() error {
 	var devices []types.Device
 	var dbDevices []types.Device
-	now := time.Now()
 
 	DelaySeconds := getDelay()
-
-	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	sixHoursAgo := time.Now().Add(-6 * time.Hour)
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
@@ -122,10 +119,24 @@ func pushAll() error {
 
 	for i := range dbDevices {
 		dbDevice := dbDevices[i]
+		now := time.Now()
+		threeHoursAgo := time.Now().Add(-3 * time.Hour)
+		// sixHoursAgo := time.Now().Add(-6 * time.Hour)
+		oneDayAgo := time.Now().Add(-24 * time.Hour)
+		thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
+		if now.Before(dbDevice.NextPush) && !dbDevice.NextPush.IsZero() {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: dbDevice.NextPush.String()})
+			continue
+		}
 
-		// If we havent had any of the info payloads back recently, add to list
-		if dbDevice.LastCertificateList.Before(sixHoursAgo) || dbDevice.LastProfileList.Before(sixHoursAgo) || dbDevice.LastSecurityInfo.Before(sixHoursAgo) || dbDevice.LastDeviceInfo.Before(sixHoursAgo) {
-			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received one of the information commands within the last six hours, adding to push list."})
+		if dbDevice.LastScheduledPush.After(thirtyMinsAgo) {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have pushed within the last 30 mins, not pushing again"})
+			continue
+		}
+
+		// We've not had all of the info payloads within the last day
+		if (dbDevice.LastCertificateList.Before(oneDayAgo) || dbDevice.LastProfileList.Before(oneDayAgo) || dbDevice.LastSecurityInfo.Before(oneDayAgo) || dbDevice.LastDeviceInfo.Before(oneDayAgo)) && !dbDevice.LastCertificateList.IsZero() && !dbDevice.LastProfileList.IsZero() && !dbDevice.LastSecurityInfo.IsZero() && !dbDevice.LastDeviceInfo.IsZero() {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not recieved all of the info commands within the last six hours."})
 			devices = append(devices, dbDevice)
 			continue
 		}
@@ -138,12 +149,17 @@ func pushAll() error {
 				continue
 			}
 		}
+
+		HalfDelaySeconds := DelaySeconds / 2
+		lastCheckinDelay := time.Now().Add(-HalfDelaySeconds * time.Second)
 		// This contrived bit of logic is to handle devices that don't have a LastScheduledPush set yet
-		if !dbDevice.LastScheduledPush.IsZero() || dbDevice.LastCertificateList.IsZero() || dbDevice.LastProfileList.IsZero() || dbDevice.LastSecurityInfo.IsZero() || dbDevice.LastDeviceInfo.IsZero() {
-			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Last push is within threshold", Metric: dbDevice.LastScheduledPush.String()})
+		if !dbDevice.LastScheduledPush.Before(lastCheckinDelay) {
+			msg := fmt.Sprintf("%v last pushed in %v which is within %v seconds", dbDevice.UDID, dbDevice.LastScheduledPush, HalfDelaySeconds)
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: msg, Metric: dbDevice.NextPush.String()})
 			continue
 		}
 
+		InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Adding Device to push list"})
 		devices = append(devices, dbDevice)
 	}
 
@@ -169,7 +185,7 @@ func pushAll() error {
 			// pushConcurrent(device, client)
 			err := AddDeviceToScheduledPushQueue(device)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			<-sem // removes an int from sem, allowing another to proceed
 		}()
@@ -210,7 +226,7 @@ func ProcessScheduledCheckinQueue() {
 	fn := func() {
 		err := pushConcurrent(client)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -238,7 +254,7 @@ func pushConcurrent(client *http.Client) error {
 		return errors.Wrap(err, "pushConcurrent::setPendingtoInProgress")
 	}
 
-	// Mark the devices we are woring on as "in_pogress" and then perform the push
+	// Mark the devices we are working on as "in_progress" and then perform the push
 	for _, push := range scheduledPushes {
 		endpoint, err := url.Parse(utils.ServerURL())
 		if err != nil {
@@ -246,7 +262,7 @@ func pushConcurrent(client *http.Client) error {
 		}
 		err = db.DB.Model(&scheduledPush).Where("id = ?", push.ID).Update("status", "in_progress").Error
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
 		}
 
@@ -258,21 +274,19 @@ func pushConcurrent(client *http.Client) error {
 		endpoint.RawQuery = queryString.Encode()
 		req, err := http.NewRequest("GET", endpoint.String(), nil)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
 		}
 		req.SetBasicAuth("micromdm", utils.APIKey())
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Error(err)
-			continue
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
-		err = db.DB.Delete(push).Error
+		err = db.DB.Model(&scheduledPush).Where("id = ?", push.ID).Delete(&types.ScheduledPush{}).Error
 		if err != nil {
-			log.Error(err)
-			continue
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
 		err = db.DB.Model(&device).Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
@@ -280,8 +294,7 @@ func pushConcurrent(client *http.Client) error {
 			NextPush:          time.Now().Add(3 * time.Hour),
 		}).Error
 		if err != nil {
-			log.Error(err)
-			continue
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
 		resp.Body.Close()
@@ -332,7 +345,7 @@ func UnconfiguredDevices() {
 	fn := func() {
 		err := processUnconfiguredDevices()
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -356,7 +369,7 @@ func processUnconfiguredDevices() error {
 		DebugLogger(LogHolder{Message: "Running initial tasks due to schedule", DeviceUDID: unconfiguredDevice.UDID, DeviceSerial: unconfiguredDevice.SerialNumber})
 		err := RunInitialTasks(unconfiguredDevice.UDID)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -368,11 +381,11 @@ func ScheduledCheckin() {
 	var scheduledPushes []types.ScheduledPush
 	err := db.DB.Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	if !utils.DebugMode() {
 		rand.Seed(time.Now().UnixNano())
-		randomDelay := rand.Intn(120)
+		randomDelay := rand.Intn(600)
 		InfoLogger(LogHolder{Metric: strconv.Itoa(randomDelay), Message: "Waiting before beginning to process scheduled checkins"})
 		time.Sleep(time.Duration(randomDelay) * time.Second)
 	}
@@ -396,7 +409,7 @@ func ScheduledCheckin() {
 		log.Infof("Running scheduled checkin (%v second) delay", DelaySeconds)
 		err := processScheduledCheckin()
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -456,6 +469,12 @@ func processScheduledCheckin() error {
 		return errors.Wrap(err, "processScheduledCheckin::ResetFixedPin")
 	}
 
+	var scheduledPushes []types.ScheduledPush
+	err = db.DB.Unscoped().Model(&scheduledPushes).Where("device_ud_id is NULL").Delete(&types.ScheduledPush{}).Error
+	if err != nil {
+		return errors.Wrap(err, "processScheduledCheckin::CleanupNullScheduledPushes")
+	}
+
 	return nil
 }
 
@@ -471,7 +490,7 @@ func FetchDevicesFromMDM() {
 
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	endpoint.Path = path.Join(endpoint.Path, "v1", "devices")
 
@@ -479,7 +498,7 @@ func FetchDevicesFromMDM() {
 	req.SetBasicAuth("micromdm", utils.APIKey())
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	if resp.StatusCode != 200 {
@@ -490,12 +509,12 @@ func FetchDevicesFromMDM() {
 
 	responseData, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	err = json.Unmarshal(responseData, &devices)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	for _, newDevice := range devices.Devices {
@@ -513,7 +532,7 @@ func FetchDevicesFromMDM() {
 		}
 		err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).FirstOrCreate(&device).Error
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
 	}

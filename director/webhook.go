@@ -65,9 +65,9 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if !tokenUpdateDevice.InitialTasksRun {
 			_, err := UpdateDevice(device)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			log.Info("Running initial tasks due to device update")
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks due to device update"})
 			err = RunInitialTasks(device.UDID)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -87,7 +87,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
-		log.Info("Running initial tasks due to device update")
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks due to device update"})
 		err = RunInitialTasks(device.UDID)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -273,7 +273,7 @@ func pushOnNewBuild(udid string, currentBuild string) error {
 			if oldVersion.LessThan(currentVersion) {
 				_, err = InstallAllProfiles(oldDevice)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			}
 		}

@@ -14,7 +14,7 @@ func RequestSecurityInfo(device types.Device) {
 	payload.RequestType = requestType
 	_, err := SendCommand(payload)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -54,22 +54,22 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 
 	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications).Error
 	// if err != nil {
-	// 	log.Error(err)
+	// 	ErrorLogger(LogHolder{Message: err.Error()})
 	// }
 
 	err = db.DB.Model(&securityInfo).Association("SecureBoot").Append(&secureBoot).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	return nil

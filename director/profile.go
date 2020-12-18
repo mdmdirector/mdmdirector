@@ -36,7 +36,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -48,19 +48,19 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		payload := out.Mobileconfigs[payloadi]
 		mobileconfig, err := base64.StdEncoding.DecodeString(payload)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 		err = plist.Unmarshal(mobileconfig, &profile)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
 		var tempProfileDict map[string]interface{}
 		err = plist.Unmarshal(mobileconfig, &tempProfileDict)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
@@ -70,7 +70,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		mobileconfig, err = plist.MarshalIndent(&tempProfileDict, "\t")
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
@@ -83,7 +83,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = plist.Unmarshal(mobileconfig, &sharedProfile)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
@@ -92,7 +92,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		var sharedTempProfileDict map[string]interface{}
 		err = plist.Unmarshal(mobileconfig, &sharedTempProfileDict)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
@@ -100,7 +100,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		mobileconfig, err = plist.MarshalIndent(&sharedTempProfileDict, "\t")
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
 
@@ -116,18 +116,18 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.DeviceUDIDs[0] == "*" {
 				devices, err = GetAllDevices()
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				err = SaveSharedProfiles(sharedProfiles)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 
 				if out.PushNow {
 					_, err = PushSharedProfiles(devices, sharedProfiles)
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 					}
 				}
 			} else {
@@ -135,12 +135,12 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.DeviceUDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
 					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
 					metadata = append(metadata, metadataItem)
@@ -153,18 +153,18 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.SerialNumbers[0] == "*" {
 				devices, err = GetAllDevices()
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				err = SaveSharedProfiles(sharedProfiles)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 
 				if out.PushNow {
 					_, err = PushSharedProfiles(devices, sharedProfiles)
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 					}
 				}
 			} else {
@@ -175,7 +175,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
 					metadata = append(metadata, metadataItem)
@@ -187,13 +187,13 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	if useMetadata {
 		output, err := json.MarshalIndent(&metadata, "", "    ")
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
 		_, err = w.Write(output)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 }
@@ -223,7 +223,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				if pushNow {
 					_, err = PushProfiles(devices, []types.DeviceProfile{profile})
 					if err != nil {
-						log.Error(err)
+						ErrorLogger(LogHolder{Message: err.Error()})
 					}
 					status = "pushed"
 				} else {
@@ -345,8 +345,8 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		// 	}
 		// }
 
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
-		_ = RequestAllDeviceInfo(device)
+		// InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
+		// _ = RequestAllDeviceInfo(device)
 
 		return false, nil
 	}
@@ -384,7 +384,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	if out.DeviceUDIDs != nil {
 		// Not empty list
@@ -411,14 +411,14 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 			if out.SerialNumbers[0] == "*" {
 				err = DisableSharedProfiles(out)
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 				return
 			}
 			err := db.DB.Model(&devices).Where("serial_number IN (?)", out.SerialNumbers).Scan(&devices).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 
@@ -450,7 +450,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		_, err = w.Write(output)
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -518,7 +518,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			pushedCommands = append(pushedCommands, command)
 
@@ -538,7 +538,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 		if profileData.PayloadIdentifier != "" {
 			err := db.DB.Model(&profile).Where("payload_identifier = ?", profileData.PayloadIdentifier).Delete(&profile).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				return errors.Wrap(err, "Deleting shared profiles")
 			}
 		}
@@ -549,7 +549,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 		// utils.PrintStruct(profileData)
 		err := tx2.Create(&profileData).Error
 		if err != nil {
-			log.Error(err)
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
@@ -573,7 +573,7 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 			_, err := SendCommand(commandPayload)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 		}
 	}
@@ -591,7 +591,7 @@ func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile
 			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Device Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
 			_, err := SendCommand(commandPayload)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 		}
 	}
@@ -674,6 +674,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			incomingProfile := profileListData.ProfileList[i]
 			if savedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is installed"})
 				found = true
 				continue
 			}
@@ -688,7 +689,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	devices = append(devices, device)
 	_, err = PushProfiles(devices, profilesToInstall)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
@@ -790,13 +791,13 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&profiles, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -809,13 +810,13 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 	output, err := json.MarshalIndent(&profiles, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -894,7 +895,7 @@ func RequestProfileList(device types.Device) {
 
 	_, err := SendCommand(commandPayload)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
@@ -912,25 +913,25 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	log.Debugf("Pushing Profiles %v", device.UDID)
 	commands, err := PushProfiles(devices, profiles)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	log.Debugf("Pushing Shared Profiles %v", device.UDID)
 	commands, err = PushSharedProfiles(devices, sharedProfiles)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
 		pushedCommands = append(pushedCommands, commands...)
 	}

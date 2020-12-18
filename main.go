@@ -65,8 +65,6 @@ var EscrowURL string
 
 var ClearDeviceOnEnroll bool
 
-var RequestInfoWithCommand bool
-
 var ScepCertIssuer string
 
 var ScepCertMinValidity int
@@ -99,7 +97,6 @@ func main() {
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
-	flag.BoolVar(&RequestInfoWithCommand, "request-info-with-command", env.Bool("REQUEST_INFO_WITH_COMMAND", false), "If a command that does not request device info is sent, follow it up with PorfileList, CertificateList, DeviceInfo, SecurityInfo")
 	flag.StringVar(&LogFormat, "log-format", env.String("LOG_FORMAT", "logfmt"), "Format to output logs. Defaults to logfmt. Can be set to logfmt or json.")
 	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "CN=MicroMDM,OU=MICROMDM SCEP CA,O=MicroMDM,C=US"), "The issuer of your SCEP certificate")
 	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
@@ -158,7 +155,7 @@ func main() {
 	http.Handle("/", r)
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
-		log.Error(err)
+		director.ErrorLogger(director.LogHolder{Message: err.Error()})
 		log.Fatal("Failed to open database")
 	}
 	defer db.Close()
