@@ -6,7 +6,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/prometheus/client_golang/prometheus"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -60,7 +59,7 @@ func totalDevices() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&devices).Count(&count).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalDevices.Set(count)
 		}
@@ -83,7 +82,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&sharedprofiles).Count(&count).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalSharedProfiles.Set(count)
 		}
@@ -104,7 +103,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&installedsharedprofiles).Where("installed = ?", true).Count(&installedprofilescount).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalInstalledSharedProfiles.Set(installedprofilescount)
 		}
@@ -125,7 +124,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&uninstalledsharedprofiles).Where("installed = ?", false).Count(&uninstalledprofilescount).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalUninstalledSharedProfiles.Set(uninstalledprofilescount)
 		}
@@ -146,7 +145,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&deviceprofiles).Count(&deviceprofilescount).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalDeviceProfiles.Set(deviceprofilescount)
 		}
@@ -167,7 +166,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&installeddeviceprofiles).Where("installed = ?", true).Count(&installeddeviceprofilescount).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalInstalledDeviceProfiles.Set(installeddeviceprofilescount)
 		}
@@ -188,7 +187,7 @@ func profiles() {
 		for range time.Tick(time.Second * 10) {
 			err := db.DB.Find(&uninstalleddeviceprofiles).Where("installed = ?", false).Count(&uninstalleddeviceprofilescount).Error
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 			totalUninstalledSharedProfiles.Set(uninstalleddeviceprofilescount)
 		}

@@ -123,12 +123,12 @@ func ResetDevice(device types.Device) error {
 
 	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.Certificate{}).Error
 	// if err != nil {
-	// 	log.Error(err)
+	// 	ErrorLogger(LogHolder{Message: err.Error()})
 	// }
 
 	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.ProfileList{}).Error
 	// if err != nil {
-	// 	log.Error(err)
+	// 	ErrorLogger(LogHolder{Message: err.Error()})
 	// }
 
 	return nil

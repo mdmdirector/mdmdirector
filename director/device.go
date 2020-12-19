@@ -155,7 +155,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -167,7 +167,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		for i := range out.DeviceUDIDs {
 			device, err := GetDevice(out.DeviceUDIDs[i])
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 			devices = append(devices, device)
@@ -178,7 +178,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		for i := range out.SerialNumbers {
 			device, err := GetDeviceSerial(out.SerialNumbers[i])
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 			devices = append(devices, device)
@@ -195,7 +195,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					"unlock_pin": pin,
 				}).Error
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			} else {
 				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
@@ -203,7 +203,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					"unlock_pin": "",
 				}).Error
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			}
 
@@ -216,7 +216,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					"unlock_pin": pin,
 				}).Error
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			} else {
 				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
@@ -224,7 +224,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					"unlock_pin": "",
 				}).Error
 				if err != nil {
-					log.Error(err)
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			}
 		}
@@ -232,7 +232,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		if pushNow {
 			err = EraseLockDevice(device.UDID)
 			if err != nil {
-				log.Error(err)
+				ErrorLogger(LogHolder{Message: err.Error()})
 			}
 		}
 
@@ -255,13 +255,13 @@ func DeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	output, err := json.MarshalIndent(&devices, "", "    ")
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	_, err = w.Write(output)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 

@@ -81,10 +81,6 @@ func ClearDeviceOnEnroll() bool {
 	return flag.Lookup("clear-device-on-enroll").Value.(flag.Getter).Get().(bool)
 }
 
-func RequestInfoWithCommand() bool {
-	return flag.Lookup("request-info-with-command").Value.(flag.Getter).Get().(bool)
-}
-
 func ScepCertIssuer() string {
 	return flag.Lookup("scep-cert-issuer").Value.(flag.Getter).Get().(string)
 }

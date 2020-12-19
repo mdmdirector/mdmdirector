@@ -23,7 +23,7 @@ func EraseLockDevice(udid string) error {
 
 	device, err := GetDevice(udid)
 	if err != nil {
-		log.Error(err)
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	var requestType string
