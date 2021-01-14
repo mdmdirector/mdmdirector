@@ -13,7 +13,9 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.6.0
 	github.com/sirupsen/logrus v1.4.2
-	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	github.com/stretchr/testify v1.4.0
+	golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad
+	google.golang.org/appengine v1.6.4 // indirect
 	gopkg.in/ajg/form.v1 v1.5.1
 	gorm.io/driver/postgres v1.0.6
 	gorm.io/gorm v1.20.11
