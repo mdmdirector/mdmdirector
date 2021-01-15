@@ -3,6 +3,8 @@ module github.com/mdmdirector/mdmdirector
 go 1.12
 
 require (
+	cloud.google.com/go v0.46.3 // indirect
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.2

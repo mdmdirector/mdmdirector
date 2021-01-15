@@ -96,3 +96,27 @@ func EnrollmentProfile() string {
 func SignedEnrollmentProfile() bool {
 	return flag.Lookup("enrollment-profile-signed").Value.(flag.Getter).Get().(bool)
 }
+
+// Code for testing goes down here
+// flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
+// So, instead we inject an interface layer between the calling code that is swapped out during unit tests.
+
+// IFlagProvider is the public interface for all flag.Lookup calls
+type IFlagProvider interface {
+	ClearDeviceOnEnroll() bool
+}
+
+// DefaultProvider is the "production" implementation of IFlagProvider. It is simply a skeleton wrapper for all of
+// the other legacy public methods in this package.
+type DefaultProvider struct{}
+
+// ClearDeviceOnEnroll returns whether to delete device profiles and install applications when a device enrolls
+func (provider DefaultProvider) ClearDeviceOnEnroll() bool {
+	return ClearDeviceOnEnroll()
+}
+
+// FlagProvider is the variable that should be used to access public methods in this file. It intentionally has
+// an identical public interface to the legacy public methods in this class to make migration easier.
+// During unit tests, simply swap out this public variable for a unit-test-specific implementation of IFlagProvider.
+// Swap back the original FlagProvider by simply instantiating a new DefaultProvider.
+var FlagProvider IFlagProvider = DefaultProvider{}
