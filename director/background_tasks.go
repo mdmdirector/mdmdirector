@@ -17,6 +17,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
 	"gorm.io/gorm"
 )
 
