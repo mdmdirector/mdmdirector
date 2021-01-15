@@ -2,18 +2,19 @@ package director
 
 import (
 	"encoding/json"
+	intErrors "errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/groob/plist"
 	"github.com/hashicorp/go-version"
-	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +213,7 @@ func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
 	var err error
 	// Checking for device lock or wipe
-	if err = db.DB.Model(&deviceModel).Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
+	if err = db.DB.Model(&deviceModel).Select("ud_id", "erase", "lock", "serial_number").Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
 		err = EraseLockDevice(device.UDID)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -228,13 +229,13 @@ func RequestDeviceUpdate(device types.Device) {
 	}
 
 	if err = db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("Last updated was under 30 minutes ago")
 			return
 		}
 	}
 
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}

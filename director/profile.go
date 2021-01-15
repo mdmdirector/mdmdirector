@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	intErrors "errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -19,12 +20,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/groob/plist"
-	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +270,7 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	var profileList types.ProfileList
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile present and marked as installed = true"})
 			return true, nil
 		}
@@ -277,7 +278,7 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	// Make sure the profile isn't in the device's profilelist
 	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			// If it's not found, we'll catch in the false return at the end. Else raise an error
 			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile not found in device's ProfileList"})
 			return false, nil
@@ -294,7 +295,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	var profileList types.ProfileList
 	// Profile isn't in the db
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, true).First(&savedProfile).Error; err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "PayloadIdentifier not found in database"})
 			return true, nil
 		}
@@ -310,7 +311,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	// Profile isn't what we have saved in the profilelist
 	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Error
 	if err != nil {
-		if !gorm.IsRecordNotFoundError(err) {
+		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
 			// If it's not found, we'll catch in the false return at the end. Else raise an error
 			return true, errors.Wrap(err, "Could not load ProfileList for device")
 		}
@@ -326,7 +327,7 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		// var profileCount int
 		// err := db.DB.Model(&profileList).Where("device_ud_id = ?", device.UDID).Count(&profileCount).Error
 		// if err != nil {
-		// 	if !gorm.IsRecordNotFoundError(err) {
+		// 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
 		// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
 		// 		return true, errors.Wrap(err, "Could not load ProfileList for device")
 		// 	}
@@ -364,7 +365,7 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	}
 
 	for _, profile := range payload.Mobileconfigs {
-		err := db.DB.Model(&sharedProfileModel).Where("payload_identifier = ?", profile.PayloadIdentifier).Update(map[string]interface{}{
+		err := db.DB.Model(&sharedProfileModel).Select("installed").Where("payload_identifier = ?", profile.PayloadIdentifier).Updates(map[string]interface{}{
 			"installed": false,
 		}).Error
 		if err != nil {
@@ -377,7 +378,6 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 
 func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
-	// var profilesModel types.DeviceProfile
 	var devices []types.Device
 	var out types.DeleteProfilePayload
 	var metadata []types.MetadataItem
@@ -466,7 +466,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
 			if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).First(&profileModel).Scan(&oldProfile).Error; err != nil {
-				if gorm.IsRecordNotFoundError(err) {
+				if intErrors.Is(err, gorm.ErrRecordNotFound) {
 					db.DB.Create(&profileData)
 				}
 			} else {
@@ -477,7 +477,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 			}
 
 			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: "Updating profile installed bool"})
-			err := db.DB.Model(&boolModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Update(map[string]interface{}{
+			err := db.DB.Model(&boolModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Updates(map[string]interface{}{
 				"installed": profiles[profilei].Installed,
 			}).Error
 			if err != nil {
@@ -661,9 +661,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profileLists = append(profileLists, incomingProfile)
 	}
 
-	err = db.DB.Model(&device).Association("ProfileList").Replace(profileLists).Error
-	if err != nil {
-		return errors.Wrap(err, "VerifyMDMProfiles: Cannot replace Profile List")
+	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists).Error
+	if dberr != nil {
+		return errors.Wrap(errors.New(dberr()), "VerifyMDMProfiles: Cannot replace Profile List")
 	}
 
 	// For each, loop over the present profiles

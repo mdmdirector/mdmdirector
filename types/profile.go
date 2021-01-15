@@ -1,10 +1,13 @@
 package types
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
 
 // DeviceProfile (s) are profiles that are individual to the device.
 type DeviceProfile struct {
-	ID                uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID                uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	PayloadUUID       string
 	PayloadIdentifier string
 	HashedPayloadUUID string
@@ -16,7 +19,7 @@ type DeviceProfile struct {
 
 // SharedProfile (s) are profiles that go on every device.
 type SharedProfile struct {
-	ID                uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID                uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	PayloadUUID       string
 	HashedPayloadUUID string
 	PayloadIdentifier string
@@ -52,7 +55,7 @@ type ProfileListData struct {
 }
 
 type ProfileList struct {
-	ID                       uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID                       uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	DeviceUDID               string
 	HasRemovalPasscode       bool          `plist:"HasRemovalPasscode"`
 	IsEncrypted              bool          `plist:"IsEncrypted"`
@@ -80,12 +83,12 @@ type ProfileMetadata struct {
 	HashedPayloadUUID string `json:"hashed_payload_uuid"`
 }
 
-func (profile *DeviceProfile) AfterCreate() (err error) {
+func (profile *DeviceProfile) AfterCreate(tx *gorm.DB) (err error) {
 	BumpDeviceLastUpdated(profile.DeviceUDID)
 	return nil
 }
 
-func (profile *DeviceProfile) AfterUpdate() (err error) {
+func (profile *DeviceProfile) AfterUpdate(tx *gorm.DB) (err error) {
 	BumpDeviceLastUpdated(profile.DeviceUDID)
 	return nil
 }

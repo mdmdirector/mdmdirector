@@ -3,15 +3,16 @@ package director
 import (
 	"bytes"
 	"encoding/json"
+	intErrors "errors"
 	"net/http"
 	"time"
 
-	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
@@ -72,13 +73,13 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 	}
 
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("Command not found in the queue")
 		}
 	} else {
 		if ackEvent.Status == "Error" {
 			InfoLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
+			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),
 			}).Error
@@ -86,7 +87,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error 
 				return err
 			}
 		} else {
-			err := db.DB.Model(&command).Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
+			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: "",
 			}).Error
@@ -103,7 +104,7 @@ func CommandInQueue(device types.Device, command string, afterDate time.Time) bo
 
 	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ?", device.UDID, command).Where("status = ? OR status = ?", "", "NotNow").Where("updated_at > ?", afterDate).First(&commandModel).Error
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			return false
 		}
 	}
@@ -116,7 +117,7 @@ func InstallAppInQueue(device types.Device, data string) (bool, error) {
 
 	err := db.DB.Model(&commandModel).Where("device_ud_id = ? AND request_type = ? AND data = ?", device.UDID, "InstallApplication", data).Where("status = ? OR status = ?", "", "NotNow").First(&commandModel).Error
 	if err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
 		return false, errors.Wrap(err, "Install App in queue")
