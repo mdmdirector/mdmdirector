@@ -20,8 +20,6 @@ func TestExampleHowToUseSqlmock(t *testing.T) {
 	gorm.Open("postgres", db)
 	assert.Equal(t, nil, err)
 
-	// mock.ExpectBegin()
-
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("Unfulfilled expectations: %s", err)
 	}
