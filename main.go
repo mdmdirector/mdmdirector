@@ -158,12 +158,16 @@ func main() {
 		director.ErrorLogger(director.LogHolder{Message: err.Error()})
 		log.Fatal("Failed to open database")
 	}
-	defer db.Close()
+	director.InfoLogger(director.LogHolder{Message: "Connected to database"})
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer sqlDB.Close()
 
-	// db.DB.LogMode(true)
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
-	db.DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";")
-	db.DB.AutoMigrate(
+
+	err = db.DB.AutoMigrate(
 		&types.Device{},
 		&types.DeviceProfile{},
 		&types.Command{},
@@ -183,6 +187,10 @@ func main() {
 		&types.ProfileList{},
 		&types.UnlockPin{},
 	)
+	if err != nil {
+		director.ErrorLogger(director.LogHolder{Message: err.Error()})
+		log.Fatal(err)
+	}
 
 	director.InfoLogger(director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."})
 

@@ -50,13 +50,13 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 
 	err := db.DB.Unscoped().Model(&device).Association("Certificates").Replace(certificates).Error
 	if err != nil {
-		return errors.Wrap(err, "processCertificateList:SaveCerts")
+		return errors.Wrap(errors.New(err()), "processCertificateList:SaveCerts")
 	}
 
 	for _, certListItem := range certificateListData.CertificateList {
-		err = validateScepCert(certListItem, device)
-		if err != nil {
-			return errors.Wrap(err, "processCertificateList:validateScepCert")
+		scepErr := validateScepCert(certListItem, device)
+		if scepErr != nil {
+			return errors.Wrap(scepErr, "processCertificateList:validateScepCert")
 		}
 	}
 

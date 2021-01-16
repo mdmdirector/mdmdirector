@@ -24,7 +24,7 @@ type Device struct {
 	DeviceID                         string
 	EASDeviceIdentifier              string
 	IsCloudBackupEnabled             bool
-	OSUpdateSettings                 OSUpdateSettings `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
+	OSUpdateSettings                 OSUpdateSettings `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
 	LocalHostName                    string
 	HostName                         string
 	SystemIntegrityProtectionEnabled bool
@@ -64,14 +64,14 @@ type Device struct {
 	VoiceRoamingEnabled      bool
 	WiFiMAC                  string
 	EthernetMAC              string
-	UDID                     string `gorm:"primary_key"`
+	UDID                     string `gorm:"primaryKey"`
 	Active                   bool
-	Profiles                 []DeviceProfile            `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
-	Commands                 []Command                  `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
-	Certificates             []Certificate              `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
-	InstallApplications      []DeviceInstallApplication `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
-	SecurityInfo             SecurityInfo               `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
-	ProfileList              []ProfileList              `gorm:"ForeignKey:DeviceUDID" json:",omitempty"`
+	Profiles                 []DeviceProfile            `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
+	Commands                 []Command                  `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
+	Certificates             []Certificate              `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
+	InstallApplications      []DeviceInstallApplication `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
+	SecurityInfo             SecurityInfo               `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
+	ProfileList              []ProfileList              `gorm:"foreignKey:DeviceUDID" json:",omitempty"`
 	UpdatedAt                time.Time
 	AuthenticateRecieved     bool `gorm:"default:false"`
 	TokenUpdateRecieved      bool `gorm:"default:false"`
@@ -79,7 +79,7 @@ type Device struct {
 	Erase                    bool `gorm:"default:false"`
 	Lock                     bool `gorm:"default:false"`
 	UnlockPin                string
-	TempUnlockPin            UnlockPin `gorm:"ForeignKey:DeviceUDID"`
+	TempUnlockPin            UnlockPin `gorm:"foreignKey:DeviceUDID"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
 	LastScheduledPush        time.Time
@@ -93,7 +93,7 @@ type Device struct {
 var DeviceInformationQueries = []string{"ActiveManagedUsers", "AppAnalyticsEnabled", "AutoSetupAdminAccounts", "AvailableDeviceCapacity", "AwaitingConfiguration", "BatteryLevel", "BluetoothMAC", "BuildVersion", "CarrierSettingsVersion", "CellularTechnology", "CurrentMCC", "CurrentMNC", "DataRoamingEnabled", "DeviceCapacity", "DeviceID", "DeviceName", "DiagnosticSubmissionEnabled", "EASDeviceIdentifier", "ICCID", "IMEI", "IsActivationLockEnabled", "IsCloudBackupEnabled", "IsDeviceLocatorServiceEnabled", "IsDoNotDisturbInEffect", "IsMDMLostModeEnabled", "IsMultiUser", "IsNetworkTethered", "IsRoaming", "IsSupervised", "iTunesStoreAccountHash", "iTunesStoreAccountIsActive", "LastCloudBackupDate", "MaximumResidentUsers", "MDMOptions", "MEID", "Model", "ModelName", "ModemFirmwareVersion", "OrganizationInfo", "OSUpdateSettings", "OSVersion", "PersonalHotspotEnabled", "PhoneNumber", "ProductName", "PushToken", "SerialNumber", "ServiceSubscriptions", "SIMCarrierNetwork", "SIMMCC", "SIMMNC", "SubscriberCarrierNetwork", "SubscriberMCC", "SubscriberMNC", "SystemIntegrityProtectionEnabled", "UDID", "VoiceRoamingEnabled", "WiFiMAC", "EthernetMAC"}
 
 type OSUpdateSettings struct {
-	DeviceUDID                      string `gorm:"primary_key"`
+	DeviceUDID                      string `gorm:"primaryKey"`
 	CatalogURL                      string
 	IsDefaultCatalog                bool
 	PreviousScanDate                time.Time

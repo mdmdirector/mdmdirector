@@ -17,6 +17,8 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
+	"gorm.io/gorm"
 )
 
 const MAX = 5
@@ -249,11 +251,6 @@ func pushConcurrent(client *http.Client) error {
 		return errors.Wrap(err, "pushConcurrent::retrievePendingPushes")
 	}
 
-	err = db.DB.Model(&scheduledPushes).Update("status", "in_progress").Error
-	if err != nil {
-		return errors.Wrap(err, "pushConcurrent::setPendingtoInProgress")
-	}
-
 	// Mark the devices we are working on as "in_progress" and then perform the push
 	for _, push := range scheduledPushes {
 		endpoint, err := url.Parse(utils.ServerURL())
@@ -289,7 +286,7 @@ func pushConcurrent(client *http.Client) error {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
-		err = db.DB.Model(&device).Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
+		err = db.DB.Model(&device).Select("last_scheduled_push", "next_push").Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
 			LastScheduledPush: now,
 			NextPush:          time.Now().Add(3 * time.Hour),
 		}).Error
@@ -377,9 +374,8 @@ func processUnconfiguredDevices() error {
 }
 
 func ScheduledCheckin() {
-	// var delay time.Duration
 	var scheduledPushes []types.ScheduledPush
-	err := db.DB.Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
+	err := db.DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
@@ -456,21 +452,19 @@ func processScheduledCheckin() error {
 	// 	return errors.Wrap(err, "processScheduledCheckin::CleanupNullFirewallSettingsApplicationsItem")
 	// }
 
-	var unlockPins []types.UnlockPin
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
-	err = db.DB.Unscoped().Model(&unlockPins).Where("unlock_pins.pin_set < ?", thirtyMinsAgo).Delete(&unlockPins).Error
+	err = db.DB.Where("unlock_pins.pin_set < ?", thirtyMinsAgo).Delete(&types.UnlockPin{}).Error
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::DeleteRandomUnlockPins")
 	}
 
-	var devices []types.Device
-	err = db.DB.Model(&devices).Not("unlock_pin = ?", "").Where("erase = ? AND lock = ?", false, false).Update("unlock_pin", "").Error
+	var device types.Device
+	err = db.DB.Model(&device).Not("unlock_pin = ?", "").Where("erase = ? AND lock = ?", false, false).Update("unlock_pin", "").Error
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::ResetFixedPin")
 	}
 
-	var scheduledPushes []types.ScheduledPush
-	err = db.DB.Unscoped().Model(&scheduledPushes).Where("device_ud_id is NULL").Delete(&types.ScheduledPush{}).Error
+	err = db.DB.Unscoped().Where("device_ud_id is NULL").Delete(&types.ScheduledPush{}).Error
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::CleanupNullScheduledPushes")
 	}
