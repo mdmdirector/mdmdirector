@@ -48,9 +48,11 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificates = append(certificates, certificate)
 	}
 
-	err := db.DB.Unscoped().Model(&device).Association("Certificates").Replace(certificates).Error
+	// DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: certificates})
+
+	err := db.DB.Model(&device).Association("Certificates").Replace(certificates)
 	if err != nil {
-		return errors.Wrap(errors.New(err()), "processCertificateList:SaveCerts")
+		return errors.Wrap(err, "processCertificateList:SaveCerts")
 	}
 
 	for _, certListItem := range certificateListData.CertificateList {

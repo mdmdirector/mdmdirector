@@ -3,7 +3,6 @@ package director
 import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -38,39 +37,39 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	secureBootReducedSecurity.DeviceUDID = device.UDID
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
-	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
+	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo)
 	if err != nil {
-		return errors.New(err())
+		return err
 	}
 
-	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus).Error
+	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus)
 	if err != nil {
-		return errors.New(err())
+		return err
 	}
 
-	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus).Error
+	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus)
 	if err != nil {
-		return errors.New(err())
+		return err
 	}
 
-	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings).Error
+	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err()})
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications).Error
+	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications)
 	// if err != nil {
 	// 	ErrorLogger(LogHolder{Message: err.Error()})
 	// }
 
-	err = db.DB.Model(&securityInfo).Association("SecureBoot").Append(&secureBoot).Error
+	err = db.DB.Model(&securityInfo).Association("SecureBoot").Append(&secureBoot)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err()})
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity).Error
+	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err()})
+		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	return nil

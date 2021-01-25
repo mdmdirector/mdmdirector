@@ -368,7 +368,7 @@ func RequestDeviceInformation(device types.Device) error {
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
 	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-	err := db.DB.Model(&deviceModel).Select("token_update_received", "authenticate_received").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_received", "authenticate_recieved").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": true, "authenticate_recieved": true}).Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")
 	}

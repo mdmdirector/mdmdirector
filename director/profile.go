@@ -652,7 +652,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	var profileLists []types.ProfileList
 
 	// Get the profiles that should be installed on the device
-	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
+	err := db.DB.Where("device_ud_id = ? AND installed = true", device.UDID).Find(&profiles).Error
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to install")
 	}
@@ -662,9 +662,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profileLists = append(profileLists, incomingProfile)
 	}
 
-	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists).Error
+	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists)
 	if dberr != nil {
-		return errors.Wrap(errors.New(dberr()), "VerifyMDMProfiles: Cannot replace Profile List")
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot replace Profile List")
 	}
 
 	// For each, loop over the present profiles
