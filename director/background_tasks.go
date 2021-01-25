@@ -124,6 +124,12 @@ func pushAll() error {
 		// sixHoursAgo := time.Now().Add(-6 * time.Hour)
 		oneDayAgo := time.Now().Add(-24 * time.Hour)
 		thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
+
+		err := sendCommandToLazyMachines(dbDevice)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: err.Error()})
+		}
+
 		if now.Before(dbDevice.NextPush) && !dbDevice.NextPush.IsZero() {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: dbDevice.NextPush.String()})
 			continue
@@ -430,11 +436,6 @@ func processScheduledCheckin() error {
 		return err
 	}
 
-	// err = ExpireCommands()
-	// if err != nil {
-	// 	return err
-	// }
-
 	var certificates []types.Certificate
 
 	err = db.DB.Unscoped().Model(&certificates).Where("device_ud_id is NULL").Delete(&types.Certificate{}).Error
@@ -538,4 +539,38 @@ func FetchDevicesFromMDM() {
 	}
 	DevicesFetchedFromMDM = true
 	log.Info("Finished fetching devices from MicroMDM...")
+}
+
+func sendCommandToLazyMachines(device types.Device) error {
+	weekAgo := time.Now().Add(-168 * time.Hour)
+
+	if device.LastCertificateList.Before(weekAgo) && !device.LastCertificateList.IsZero() {
+		err := RequestCertificateList(device)
+		if err != nil {
+			return errors.Wrap(err, "Request CertificateList after not receiving it for a week")
+		}
+	}
+
+	if device.LastProfileList.Before(weekAgo) && !device.LastProfileList.IsZero() {
+		err := RequestProfileList(device)
+		if err != nil {
+			return errors.Wrap(err, "Request ProfileList after not receiving it for a week")
+		}
+	}
+
+	if device.LastDeviceInfo.Before(weekAgo) && !device.LastDeviceInfo.IsZero() {
+		err := RequestDeviceInformation(device)
+		if err != nil {
+			return errors.Wrap(err, "Request DeviceInformation after not receiving it for a week")
+		}
+	}
+
+	if device.LastSecurityInfo.Before(weekAgo) && !device.LastSecurityInfo.IsZero() {
+		err := RequestSecurityInfo(device)
+		if err != nil {
+			return errors.Wrap(err, "RequestAllDeviceInfo")
+		}
+	}
+
+	return nil
 }

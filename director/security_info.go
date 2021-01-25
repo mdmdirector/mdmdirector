@@ -3,10 +3,11 @@ package director
 import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
-func RequestSecurityInfo(device types.Device) {
+func RequestSecurityInfo(device types.Device) error {
 	requestType := "SecurityInfo"
 	log.Debugf("Requesting Security Info for %v", device.UDID)
 	var payload types.CommandPayload
@@ -14,8 +15,10 @@ func RequestSecurityInfo(device types.Device) {
 	payload.RequestType = requestType
 	_, err := SendCommand(payload)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		return errors.Wrap(err, "RequestSecurityInfo: SendCommand")
 	}
+
+	return nil
 }
 
 func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) error {

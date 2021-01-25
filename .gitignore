@@ -1,7 +1,7 @@
 settings.json
 build/*
 *.db
-postgres/*
+postgres*/*
 *.p12
 EnrollmentProfile.mobileconfig
 env

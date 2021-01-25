@@ -386,6 +386,11 @@ func RequestAllDeviceInfo(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "RequestAllDeviceInfo")
 	}
-	RequestCertificateList(device)
+
+	err = RequestCertificateList(device)
+	if err != nil {
+		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+
 	return nil
 }

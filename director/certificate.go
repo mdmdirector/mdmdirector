@@ -16,7 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func RequestCertificateList(device types.Device) {
+func RequestCertificateList(device types.Device) error {
 	requestType := "CertificateList"
 	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
@@ -24,8 +24,10 @@ func RequestCertificateList(device types.Device) {
 	payload.RequestType = requestType
 	_, err := SendCommand(payload)
 	if err != nil {
-		log.Error(errors.Wrap(err, "RequestCertificateList: SendCommand"))
+		return errors.Wrap(err, "RequestCertificateList: SendCommand")
 	}
+
+	return nil
 }
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {
