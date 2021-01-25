@@ -45,7 +45,7 @@ func Metrics() {
 
 func totalDevices() {
 	var devices []types.Device
-	var count float64
+	var count int64
 	totalDevices := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "devices",
@@ -61,14 +61,14 @@ func totalDevices() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalDevices.Set(count)
+			totalDevices.Set(float64(count))
 		}
 	}()
 }
 
 func profiles() {
 	var sharedprofiles []types.SharedProfile
-	var count float64
+	var count int64
 	totalSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -84,12 +84,12 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalSharedProfiles.Set(count)
+			totalSharedProfiles.Set(float64(count))
 		}
 	}()
 
 	var installedsharedprofiles []types.SharedProfile
-	var installedprofilescount float64
+	var installedprofilescount int64
 	totalInstalledSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -105,12 +105,12 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalInstalledSharedProfiles.Set(installedprofilescount)
+			totalInstalledSharedProfiles.Set(float64(installedprofilescount))
 		}
 	}()
 
 	var uninstalledsharedprofiles []types.SharedProfile
-	var uninstalledprofilescount float64
+	var uninstalledprofilescount int64
 	totalUninstalledSharedProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -126,12 +126,12 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalUninstalledSharedProfiles.Set(uninstalledprofilescount)
+			totalUninstalledSharedProfiles.Set(float64(uninstalledprofilescount))
 		}
 	}()
 
 	var deviceprofiles []types.DeviceProfile
-	var deviceprofilescount float64
+	var deviceprofilescount int64
 	totalDeviceProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -147,12 +147,12 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalDeviceProfiles.Set(deviceprofilescount)
+			totalDeviceProfiles.Set(float64(deviceprofilescount))
 		}
 	}()
 
 	var installeddeviceprofiles []types.DeviceProfile
-	var installeddeviceprofilescount float64
+	var installeddeviceprofilescount int64
 	totalInstalledDeviceProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -168,12 +168,12 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalInstalledDeviceProfiles.Set(installeddeviceprofilescount)
+			totalInstalledDeviceProfiles.Set(float64(installeddeviceprofilescount))
 		}
 	}()
 
 	var uninstalleddeviceprofiles []types.DeviceProfile
-	var uninstalleddeviceprofilescount float64
+	var uninstalleddeviceprofilescount int64
 	totalUninstalledDeviceProfiles := prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "micromdm",
 		Subsystem: "profiles",
@@ -189,7 +189,7 @@ func profiles() {
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
-			totalUninstalledSharedProfiles.Set(uninstalleddeviceprofilescount)
+			totalUninstalledSharedProfiles.Set(float64(uninstalleddeviceprofilescount))
 		}
 	}()
 }

@@ -47,13 +47,6 @@ func RunInitialTasks(udid string) error {
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:InstallBootstrapPackages")
 	}
-
-	// commandsList := append(profileCommands, packageCommands...)
-	// var uuidList []string
-	// for _, command := range commandsList {
-	// 	uuidList = append(uuidList, command.CommandUUID)
-	// }
-
 	err = processDeviceConfigured(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:processDeviceConfigured")
@@ -72,7 +65,7 @@ func processDeviceConfigured(device types.Device) error {
 	if err != nil {
 		return err
 	}
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"last_info_requested": time.Now()}).Error
 	if err != nil {
 		return err
 	}
@@ -99,9 +92,8 @@ func SendDeviceConfigured(device types.Device) error {
 
 func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
-	// err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"awaiting_configuration": false, "token_update_received": true, "authenticate_received": true, "initial_tasks_run": true}).Error
 	now := time.Now()
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true, "initial_tasks_run": true, "last_checked_in": now, "next_push": now}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_received", "authenticate_received", "initial_tasks_run", "last_checked_in", "next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": true, "authenticate_received": true, "initial_tasks_run": true, "last_checked_in": now, "next_push": now}).Error
 	if err != nil {
 		return err
 	}
@@ -116,7 +108,7 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
 	log.Infof("Resetting %v", device.UDID)
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": false, "authenticate_received": false, "initial_tasks_run": false}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": false, "authenticate_received": false, "initial_tasks_run": false}).Error
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}

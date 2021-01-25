@@ -8,7 +8,7 @@ import (
 
 type Command struct {
 	UpdatedAt    time.Time
-	CommandUUID  string `gorm:"primary_key"`
+	CommandUUID  string `gorm:"primaryKey"`
 	Status       string
 	DeviceUDID   string         `json:"udid"`
 	RequestType  string         `json:"request_type"`

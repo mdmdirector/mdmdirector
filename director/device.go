@@ -2,6 +2,7 @@ package director
 
 import (
 	"encoding/json"
+	intErrors "errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func UpdateDevice(newDevice types.Device) (*types.Device, error) {
@@ -28,7 +29,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
-			if gorm.IsRecordNotFoundError(err) {
+			if intErrors.Is(err, gorm.ErrRecordNotFound) {
 				db.DB.Create(&newDevice)
 			}
 		} else {
@@ -41,7 +42,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 	if newDevice.SerialNumber != "" {
 		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Scan(&oldDevice).Error; err != nil {
-			if gorm.IsRecordNotFoundError(err) {
+			if intErrors.Is(err, gorm.ErrRecordNotFound) {
 				db.DB.Create(&newDevice)
 			}
 		} else {
@@ -76,7 +77,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 func UpdateDeviceBools(newDevice *types.Device) error {
 	var deviceModel types.Device
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).Update(map[string]interface{}{
+	err := db.DB.Model(&deviceModel).Select("is_supervised", "is_device_locator_service_enabled", "is_activation_lock_enabled", "is_do_not_disturb_in_effect", "is_cloud_backup_enabled", "system_integrity_protection_enabled", "app_analytics_enabled", "is_mdm_lost_mode_enabled", "awaiting_configuration", "diagnostic_submission_enabled", "is_multi_user").Where("ud_id = ?", newDevice.UDID).Updates(map[string]interface{}{
 		"is_supervised":                       newDevice.IsSupervised,
 		"is_device_locator_service_enabled":   newDevice.IsDeviceLocatorServiceEnabled,
 		"is_activation_lock_enabled":          newDevice.IsActivationLockEnabled,
@@ -127,7 +128,6 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 }
 
 func GetAllDevices() ([]types.Device, error) {
-	// var device types.Device
 	var devices []types.Device
 
 	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Find(&devices).Error
@@ -190,7 +190,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		var deviceModel types.Device
 		if command == "device_lock" {
 			if pin != "" {
-				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				err := db.DB.Model(&deviceModel).Select("lock", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 					"lock":       value,
 					"unlock_pin": pin,
 				}).Error
@@ -198,7 +198,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			} else {
-				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				err := db.DB.Model(&deviceModel).Select("lock", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 					"lock":       value,
 					"unlock_pin": "",
 				}).Error
@@ -211,7 +211,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 		if command == "erase_device" {
 			if pin != "" {
-				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				err := db.DB.Model(&deviceModel).Select("erase", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 					"erase":      value,
 					"unlock_pin": pin,
 				}).Error
@@ -219,7 +219,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			} else {
-				err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{
+				err := db.DB.Model(&deviceModel).Select("erase", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 					"erase":      value,
 					"unlock_pin": "",
 				}).Error
@@ -368,7 +368,7 @@ func RequestDeviceInformation(device types.Device) error {
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
 	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-	err := db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Update(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_received", "authenticate_received").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")
 	}

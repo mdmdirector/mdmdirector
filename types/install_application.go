@@ -3,13 +3,13 @@ package types
 import "github.com/google/uuid"
 
 type DeviceInstallApplication struct {
-	ID          uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID          uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	ManifestURL string
 	DeviceUDID  string
 }
 
 type SharedInstallApplication struct {
-	ID          uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID          uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	ManifestURL string
 }
 
