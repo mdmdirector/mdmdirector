@@ -42,22 +42,22 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
 	err := db.DB.Model(&device).Association("SecurityInfo").Append(&securityInfo).Error
 	if err != nil {
-		return err
+		return errors.New(err())
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus).Error
 	if err != nil {
-		return err
+		return errors.New(err())
 	}
 
 	err = db.DB.Model(&securityInfo).Association("ManagementStatus").Append(&managementStatus).Error
 	if err != nil {
-		return err
+		return errors.New(err())
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirewallSettings").Append(&firewallSettings).Error
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		ErrorLogger(LogHolder{Message: err()})
 	}
 
 	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications).Error
@@ -67,12 +67,12 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 
 	err = db.DB.Model(&securityInfo).Association("SecureBoot").Append(&secureBoot).Error
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		ErrorLogger(LogHolder{Message: err()})
 	}
 
 	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity).Error
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		ErrorLogger(LogHolder{Message: err()})
 	}
 
 	return nil

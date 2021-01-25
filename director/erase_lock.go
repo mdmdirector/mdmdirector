@@ -2,6 +2,7 @@ package director
 
 import (
 	"crypto/rand"
+	intErrors "errors"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -11,12 +12,13 @@ import (
 
 	"gopkg.in/ajg/form.v1"
 
-	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
+	"gorm.io/gorm"
 )
 
 func EraseLockDevice(udid string) error {
@@ -125,7 +127,7 @@ func generatePin(device types.Device) (string, error) {
 	}
 
 	if err := db.DB.Model(&unlockPinModel).Where("unlock_pins.pin_set > ? AND unlock_pins.device_ud_id = ?", thirtyMinsAgo, device.UDID).Order("pin_set DESC").First(&unlockPinModel).Scan(&savedUnlockPin).Error; err != nil {
-		if gorm.IsRecordNotFoundError(err) {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("Pin was created more than 30 mins ago")
 			out := ""
 			for i := 0; i < 6; i++ {

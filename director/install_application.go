@@ -11,8 +11,6 @@ import (
 )
 
 func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
-	// var deviceApplications []types.DeviceInstallApplication
-	// var sharedApplications []types.SharedInstallApplication
 	var devices []types.Device
 	var out types.InstallApplicationPayload
 

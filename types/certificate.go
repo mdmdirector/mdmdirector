@@ -8,7 +8,7 @@ import (
 
 // Certificate represents a certificate.
 type Certificate struct {
-	ID         uuid.UUID `gorm:"primary_key;type:uuid;default:uuid_generate_v4()"`
+	ID         uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	CommonName string
 	Subject    string
 	NotAfter   time.Time
