@@ -50,6 +50,8 @@ postgres-clean:
 postgres:
 	docker rm -f mdmdirector-postgres || true
 	docker run --name mdmdirector-postgres -p 5432:5432 -e POSTGRES_PASSWORD=password -v ${current_dir}/postgres:/var/lib/postgresql/data -d postgres:11
+	docker rm -f mdmdirector-redis || true
+	docker run --name mdmdirector-redis -d -p 6379:6379 redis
 	sleep 5
 
 mdmdirector_nosign: build
