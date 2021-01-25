@@ -10,7 +10,6 @@ require (
 	github.com/gorilla/mux v1.7.2
 	github.com/groob/plist v0.0.0-20190114192801-a99fbe489d03
 	github.com/hashicorp/go-version v1.2.0
-	github.com/jinzhu/gorm v1.9.16
 	github.com/lib/pq v1.3.0
 	github.com/micromdm/go4 v0.0.0-20190530145745-54e7af012bbc
 	github.com/pkg/errors v0.8.1
