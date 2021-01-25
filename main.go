@@ -159,11 +159,12 @@ func main() {
 		log.Fatal("Failed to open database")
 	}
 	director.InfoLogger(director.LogHolder{Message: "Connected to database"})
-	sqlDB, err := db.DB.DB()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer sqlDB.Close()
+	// sqlDB, err := db.DB.DB()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// defer sqlDB.Close()
 
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 
