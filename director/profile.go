@@ -887,7 +887,7 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 	return priv, cert, nil
 }
 
-func RequestProfileList(device types.Device) {
+func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
 	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
@@ -896,8 +896,10 @@ func RequestProfileList(device types.Device) {
 
 	_, err := SendCommand(commandPayload)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		return errors.Wrap(err, "RequestProfileList: SendCommand")
 	}
+
+	return nil
 }
 
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {
@@ -937,7 +939,10 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
-	RequestProfileList(device)
+	err = RequestProfileList(device)
+	if err != nil {
+		return pushedCommands, errors.Wrap(err, "RequestProfileList")
+	}
 
 	return pushedCommands, nil
 }
