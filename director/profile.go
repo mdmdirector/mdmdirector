@@ -938,7 +938,10 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
-	RequestProfileList(device)
+	err = RequestProfileList(device)
+	if err != nil {
+		return pushedCommands, errors.Wrap(err, "RequestProfileList")
+	}
 
 	return pushedCommands, nil
 }
