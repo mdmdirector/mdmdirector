@@ -3,21 +3,26 @@ package director
 import (
 	"testing"
 
-	"github.com/mdmdirector/mdmdirector/utils"
-
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/jinzhu/gorm"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestExampleHowToUseSqlmock(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	defer db.Close()
 
-	gorm.Open("postgres", db)
+	postgresMock, _, err := sqlmock.New()
+	if err != nil {
+		t.Errorf("Fail to get postgres mock")
+	}
+
+	_, err = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	assert.Equal(t, nil, err)
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -36,14 +41,17 @@ func TestClearCommands(t *testing.T) {
 	// New way of overriding flags:
 	utils.FlagProvider = mockFlagBuilder{false}
 
-	mockDb, mockSpy, err := sqlmock.New()
-	defer mockDb.Close()
+	postgresMock, mockSpy, err := sqlmock.New()
+	defer postgresMock.Close()
+	if err != nil {
+		t.Errorf("Fail to get postgres mock")
+	}
 
-	DB, err := gorm.Open("postgres", mockDb)
+	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE \(device_ud_id = \$1\) AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
 		"1234-5678-123456",
 		"Error",
 		"Acknowledged",
@@ -63,15 +71,15 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 	utils.FlagProvider = mockFlagBuilder{true}
 
 	// Set up Database Mocks
-	mockDb, mockSpy, err := sqlmock.New()
-	defer mockDb.Close()
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
 
-	DB, err := gorm.Open("postgres", mockDb)
+	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	// Set up Database expectations
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE \(device_ud_id = \$1\) AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
 		"1234-5678-123456",
 		"Error",
 		"Acknowledged",
@@ -79,13 +87,13 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 	mockSpy.ExpectCommit()
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "device_profiles" WHERE \(device_ud_id = \$1\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "device_profiles" WHERE device_ud_id = \$1`).WithArgs(
 		"1234-5678-123456",
 	).WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "device_install_applications" WHERE \(device_ud_id = \$1\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "device_install_applications" WHERE device_ud_id = \$1`).WithArgs(
 		"1234-5678-123456",
 	).WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
@@ -100,19 +108,17 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 }
 
 func TestClearCommands_OnDeleteError(t *testing.T) {
-	mockDb, mockSpy, err := sqlmock.New()
-	defer mockDb.Close()
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
 
-	DB, err := gorm.Open("postgres", mockDb)
+	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE.*`).WithArgs(
-		"1234-5678-123456",
-		"Error",
-		"Acknowledged",
-	).WillReturnResult(sqlmock.NewErrorResult(errors.New("database has gone away")))
-	mockSpy.ExpectCommit()
+	mockSpy.ExpectExec(`.*`).WithArgs(
+		sqlmock.AnyArg(),
+		sqlmock.AnyArg(),
+		sqlmock.AnyArg(),
+	).WillReturnError(errors.New("database has gone away"))
 
 	device := types.Device{
 		SerialNumber: "C02ABCDEFGH",
@@ -124,7 +130,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 	assert.Equal(t, "Failed to clear Command Queue for 1234-5678-123456: database has gone away", err.Error())
 }
 
-// Test classes
+// // Test classes
 type mockFlagBuilder struct {
 	doClear bool
 }
