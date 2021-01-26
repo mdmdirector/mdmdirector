@@ -78,7 +78,7 @@ func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, er
 func validateScepCert(certListItem types.CertificateList, device types.Device) error {
 	enrollmentProfile := utils.EnrollmentProfile()
 	if enrollmentProfile == "" {
-		// No enrollment profile set
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No emrollment profile set, not continuing with SCEP Cert Validation"})
 		return nil
 	}
 
@@ -112,6 +112,8 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 
 			profile.MobileconfigData = data
 
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Pushing new enrollment profile"})
+
 			if utils.SignedEnrollmentProfile() {
 				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Enrollment Profile pre-signed"})
 				var commandPayload types.CommandPayload
@@ -131,7 +133,12 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 				}
 			}
 
+		} else {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Days remaining is greater or equal than the minimum SCEP validity", Metric: strconv.Itoa(days)})
 		}
+	} else {
+		msg := fmt.Sprintf("Incoming cert issuer %v does not match our SCEP issuer %v", cert.Issuer.String(), utils.ScepCertIssuer())
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg})
 	}
 	return nil
 }

@@ -143,8 +143,14 @@ func pushAll() error {
 			ErrorLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: err.Error()})
 		}
 
+		if dbDevice.LastCertificateList.IsZero() || dbDevice.LastProfileList.IsZero() || dbDevice.LastSecurityInfo.IsZero() || dbDevice.LastDeviceInfo.IsZero() {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
+			devices = append(devices, dbDevice)
+			continue
+		}
+
 		// We've not had all of the info payloads within the last day
-		if (dbDevice.LastCertificateList.Before(oneDayAgo) || dbDevice.LastProfileList.Before(oneDayAgo) || dbDevice.LastSecurityInfo.Before(oneDayAgo) || dbDevice.LastDeviceInfo.Before(oneDayAgo)) && !dbDevice.LastCertificateList.IsZero() && !dbDevice.LastProfileList.IsZero() && !dbDevice.LastSecurityInfo.IsZero() && !dbDevice.LastDeviceInfo.IsZero() {
+		if (dbDevice.LastCertificateList.Before(oneDayAgo) || dbDevice.LastProfileList.Before(oneDayAgo) || dbDevice.LastSecurityInfo.Before(oneDayAgo) || dbDevice.LastDeviceInfo.Before(oneDayAgo)) && (!dbDevice.LastCertificateList.IsZero() && !dbDevice.LastProfileList.IsZero() && !dbDevice.LastSecurityInfo.IsZero() && !dbDevice.LastDeviceInfo.IsZero()) {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received all of the info commands within the last six hours."})
 			devices = append(devices, dbDevice)
 			continue

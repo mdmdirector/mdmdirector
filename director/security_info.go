@@ -38,11 +38,11 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	// secureBoot.DeviceUDID = device.UDID
 	secureBootReducedSecurity = securityInfo.SecureBoot.SecureBootReducedSecurity
 	secureBootReducedSecurity.DeviceUDID = device.UDID
-
+	securityInfo.DeviceUDID = device.UDID
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
-	err := db.DB.Model(&device).Where("ud_id = ?", device.UDID).Association("SecurityInfo").Append(&securityInfo)
+	err := db.DB.Model(&device).Association("SecurityInfo").Replace(&securityInfo)
 	if err != nil {
-		return errors.Wrap(err, "Append SecurityInfo Association")
+		return errors.Wrap(err, "Replace SecurityInfo Association")
 	}
 
 	err = db.DB.Model(&securityInfo).Association("FirmwarePasswordStatus").Append(&firmwarePasswordStatus)
@@ -73,6 +73,11 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	err = db.DB.Model(&secureBoot).Association("SecureBootReducedSecurity").Append(&secureBootReducedSecurity)
 	if err != nil {
 		return errors.Wrap(err, "Append SecureBootReducedSecurity Association")
+	}
+
+	siErr := device.UpdateLastSecurityInfo()
+	if siErr != nil {
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: siErr.Error()})
 	}
 
 	return nil

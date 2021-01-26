@@ -157,13 +157,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
-
-			if err == nil {
-				siErr := device.UpdateLastSecurityInfo()
-				if siErr != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: siErr.Error()})
-				}
-			}
 		}
 
 		_, ok = payloadDict["CertificateList"]
