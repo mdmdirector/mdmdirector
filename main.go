@@ -54,6 +54,8 @@ var DBHost string
 // DBPort is used to connect to the database
 var DBPort string
 
+var DBMaxConnections int
+
 // DBSSLMode is used to connect to the database
 var DBSSLMode string
 
@@ -94,6 +96,7 @@ func main() {
 	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the postgress instance")
 	flag.StringVar(&DBPort, "db-port", "5432", "The port of the postgress instance")
 	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to postgres")
+	flag.IntVar(&DBMaxConnections, "db-max-connections", 100, "Maximum number of database connections")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")

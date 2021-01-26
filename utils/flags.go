@@ -69,6 +69,10 @@ func DBSSLMode() string {
 	return flag.Lookup("db-sslmode").Value.(flag.Getter).Get().(string)
 }
 
+func DBMaxConnections() int {
+	return flag.Lookup("db-max-connections").Value.(flag.Getter).Get().(int)
+}
+
 func EscrowURL() string {
 	return flag.Lookup("escrowurl").Value.(flag.Getter).Get().(string)
 }

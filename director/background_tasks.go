@@ -17,7 +17,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-
 	"gorm.io/gorm"
 )
 
@@ -64,7 +63,7 @@ func pushNotNow() error {
 	var commands []types.Command
 	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Select NotNow Devices")
 	}
 
 	client := &http.Client{}
@@ -116,7 +115,7 @@ func pushAll() error {
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "PushAll: Scan devices")
 	}
 
 	for i := range dbDevices {
@@ -127,10 +126,7 @@ func pushAll() error {
 		oneDayAgo := time.Now().Add(-24 * time.Hour)
 		thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 
-		err := sendCommandToLazyMachines(dbDevice)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: err.Error()})
-		}
+		InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Considering device for scheduled push"})
 
 		if now.Before(dbDevice.NextPush) && !dbDevice.NextPush.IsZero() {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: dbDevice.NextPush.String()})
@@ -140,6 +136,11 @@ func pushAll() error {
 		if dbDevice.LastScheduledPush.After(thirtyMinsAgo) {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have pushed within the last 30 mins, not pushing again"})
 			continue
+		}
+
+		err := sendCommandToLazyMachines(dbDevice)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: err.Error()})
 		}
 
 		// We've not had all of the info payloads within the last day
@@ -294,7 +295,7 @@ func pushConcurrent(client *http.Client) error {
 
 		err = db.DB.Model(&device).Select("last_scheduled_push", "next_push").Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
 			LastScheduledPush: now,
-			NextPush:          time.Now().Add(3 * time.Hour),
+			NextPush:          time.Now().Add(30 * time.Minute),
 		}).Error
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
@@ -364,7 +365,7 @@ func processUnconfiguredDevices() error {
 
 	err := db.DB.Model(&awaitingConfigDevice).Where("awaiting_configuration = ?", true).Scan(&awaitingConfigDevices).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "processUnconfiguredDevices: Scan awaiting config devices")
 	}
 
 	for i := range awaitingConfigDevices {
@@ -381,6 +382,7 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	var scheduledPushes []types.ScheduledPush
+	InfoLogger(LogHolder{Message: "Clearing Scheduled Pushes"})
 	err := db.DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
@@ -397,10 +399,15 @@ func ScheduledCheckin() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
 
+	counter := 0
 	for {
 		if !DevicesFetchedFromMDM {
 			time.Sleep(30 * time.Second)
 			log.Info("Devices are still being fetched from MicroMDM")
+			counter = counter + 1
+			if counter > 10 {
+				break
+			}
 		} else {
 			break
 		}
@@ -429,7 +436,7 @@ func processScheduledCheckin() error {
 
 	err := pushAll()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "processScheduledCheckin::pushAll")
 	}
 
 	var certificates []types.Certificate
@@ -538,31 +545,65 @@ func FetchDevicesFromMDM() {
 func sendCommandToLazyMachines(device types.Device) error {
 	weekAgo := time.Now().Add(-168 * time.Hour)
 
+	updateLastInfo := false
+
+	// Don't bother on devices we've not heard from for ever
+	if device.LastCheckedIn.Before(time.Now().Add(-2160 * time.Hour)) {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Device has not checked in for 90 days", Metric: device.LastCheckedIn.String()})
+
+		return nil
+	}
+
+	if device.LastInfoRequested.After(time.Now().Add(-24 * time.Hour)) {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Requested info within the last day", Metric: device.LastInfoRequested.String()})
+
+		return nil
+	}
+
 	if device.LastCertificateList.Before(weekAgo) && !device.LastCertificateList.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Certificate List is over a week old", Metric: device.LastCertificateList.String()})
 		err := RequestCertificateList(device)
 		if err != nil {
 			return errors.Wrap(err, "Request CertificateList after not receiving it for a week")
 		}
+
+		updateLastInfo = true
 	}
 
 	if device.LastProfileList.Before(weekAgo) && !device.LastProfileList.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Profile List is over a week old", Metric: device.LastProfileList.String()})
 		err := RequestProfileList(device)
 		if err != nil {
 			return errors.Wrap(err, "Request ProfileList after not receiving it for a week")
 		}
+
+		updateLastInfo = true
 	}
 
 	if device.LastDeviceInfo.Before(weekAgo) && !device.LastDeviceInfo.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Device Info is over a week old", Metric: device.LastDeviceInfo.String()})
 		err := RequestDeviceInformation(device)
 		if err != nil {
 			return errors.Wrap(err, "Request DeviceInformation after not receiving it for a week")
 		}
+
+		updateLastInfo = true
 	}
 
 	if device.LastSecurityInfo.Before(weekAgo) && !device.LastSecurityInfo.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Security Info is over a week old", Metric: device.LastSecurityInfo.String()})
 		err := RequestSecurityInfo(device)
 		if err != nil {
 			return errors.Wrap(err, "RequestAllDeviceInfo")
+		}
+
+	}
+
+	if updateLastInfo {
+		err := db.DB.Model(&device).Where("ud_id = ?", device.UDID).Update("last_info_requested", time.Now()).Error
+		if err != nil {
+			return errors.Wrap(err, "Update last info requested")
+
 		}
 	}
 
