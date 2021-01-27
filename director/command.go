@@ -136,7 +136,7 @@ func ClearCommands(device *types.Device) error {
 		return errors.Wrapf(err, "Failed to clear Command Queue for %v", device.UDID)
 	}
 
-	clearDevice := utils.ClearDeviceOnEnroll()
+	clearDevice := utils.FlagProvider.ClearDeviceOnEnroll()
 	if clearDevice {
 		var deviceProfile types.DeviceProfile
 		var deviceProfiles []types.DeviceProfile
