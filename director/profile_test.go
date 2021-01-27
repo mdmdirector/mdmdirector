@@ -68,7 +68,7 @@ func TestVerifyMDMProfiles(t *testing.T) {
 	}
 
 	fmt.Println(profileListData)
-	err = VerifyMDMProfiles(profileListData, device)
+	err := VerifyMDMProfiles(profileListData, device)
 
 	assert.NotEmpty(t, err)
 	assert.Equal(t, "VerifyMDMProfiles: Cannot replace Profile List: Profile must have a PayloadUUID", err.Error())

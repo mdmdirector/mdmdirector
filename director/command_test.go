@@ -128,7 +128,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 		SerialNumber: "C02ABCDEFGH",
 		UDID:         "1234-5678-123456",
 	}
-	err = ClearCommands(&device)
+	err := ClearCommands(&device)
 
 	assert.NotEmpty(t, err)
 	assert.Equal(t, "Failed to clear Command Queue for 1234-5678-123456: database has gone away", err.Error())
