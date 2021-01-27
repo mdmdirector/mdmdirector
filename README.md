@@ -17,11 +17,17 @@ You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your
 ### Flags
 
 - `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
-- `-db-username string` - (Required) Username used to connect to the postgres instance.
-- `-db-password string` - (Required) Password of the DB user.
-- `-db-name string` - (Required) Name of the database to connect to.
+- `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls (default "false")
 - `-db-host string` - (Required) Hostname or IP of the postgres instance
+- `-db-max-connections int` - Maximum number of database connections (default 100)
+- `-db-name string` - (Required) Name of the database to connect to.
+- `-db-password string` - (Required) Password of the DB user.
+- `-db-port string` - The port of the postgres instance (default 5432)
+- `-db-sslmode` - The SSL Mode to use to connect to postgres (default "disable")
+- `-db-username string` - (Required) Username used to connect to the postgres instance.
 - `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
+- `-enrollment-profile` - Path to enrollment profile.
+- `-enrollment-profile-signed` - Is the enrollment profile you are providing already signed (default: false)
 - `-escrowurl` - HTTP endpoint to escrow erase and unlock PINs to ([Crypt](https://github.com/grahamgilbert/crypt-server) and other compatible servers).
 - `-key-password string` - Password to decrypt the signing key or p12 file.
 - `-loglevel string` - Log level. One of debug, info, warn, error (default "warn")
@@ -30,20 +36,17 @@ You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your
 - `-micromdmurl string` - (Required) MicroMDM Server URL
 - `-password string` - (Required) Password used for basic authentication
 - `-port string` - Port number to run mdmdirector on. (default "8000")
-- `-signing-private-key string` - Path to the signing private key. Don't use with p12 file.
 - `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
-- `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
 - `-scep-cert-issuer` - The issuer of your SCEP certificate (default: "CN=MicroMDM,OU=MICROMDM SCEP CA,O=MicroMDM,C=US")
 - `-scep-cert-min-validity` - The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent. (default: 180)
-- `-enrollment-profile` - Path to enrollment profile.
-- `-enrollment-profile-signed` - Is the enrollment profile you are providing already signed (default: false)
+- `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
+- `-signing-private-key string` - Path to the signing private key. Don't use with p12 file.
 
 ## Todo
 
 ### Documentation
 
 - Posting / removing profiles and apps
-- Example for systemd
 
 ### App
 
