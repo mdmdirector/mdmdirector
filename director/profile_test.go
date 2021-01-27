@@ -1,6 +1,7 @@
 package director
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -64,8 +65,10 @@ func TestVerifyMDMProfiles(t *testing.T) {
 		SerialNumber: "C02ABCDEFGH",
 		UDID:         "1234-5678-123456",
 	}
+
+	fmt.Println(profileListData)
 	err = VerifyMDMProfiles(profileListData, device)
 
 	assert.NotEmpty(t, err)
-	assert.Equal(t, "VerifyMDMProfiles: Cannot replace Profile List: database has rejected this request", err.Error())
+	assert.Equal(t, "VerifyMDMProfiles: Cannot replace Profile List: Profile must have a PayloadUUID", err.Error())
 }
