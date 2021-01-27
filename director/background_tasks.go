@@ -17,6 +17,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+
 	"gorm.io/gorm"
 )
 
@@ -410,7 +411,7 @@ func ScheduledCheckin() {
 		if !DevicesFetchedFromMDM {
 			time.Sleep(30 * time.Second)
 			log.Info("Devices are still being fetched from MicroMDM")
-			counter = counter + 1
+			counter++
 			if counter > 10 {
 				break
 			}
