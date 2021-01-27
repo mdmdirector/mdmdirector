@@ -3,7 +3,7 @@ name: Handle Release
 jobs:
   upload:
     name: Upload Artifacts
-    runs-on: - misspell
+    runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@master
       - name: Upload
