@@ -3,7 +3,6 @@ package director
 import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
-	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -53,7 +52,6 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 	securityInfo.ManagementStatus.DeviceUDID = device.UDID
 	securityInfo.SecureBoot.DeviceUDID = device.UDID
 	securityInfo.SecureBoot.SecureBootReducedSecurity.DeviceUDID = device.UDID
-	utils.PrintStruct(securityInfo)
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving SecurityInfo"})
 	err := db.DB.Session(&gorm.Session{FullSaveAssociations: true}).Model(&securityInfo).Updates(&securityInfo).Error
