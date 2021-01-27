@@ -56,7 +56,7 @@ func TestVerifyMDMProfiles(t *testing.T) {
 
 	profileListData := types.ProfileListData{
 		ProfileList: []types.ProfileList{
-			types.ProfileList{
+			{
 				ID: uuid.New(),
 			},
 		},

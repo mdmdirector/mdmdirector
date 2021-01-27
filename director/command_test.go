@@ -14,8 +14,11 @@ import (
 )
 
 func TestExampleHowToUseSqlmock(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	defer db.Close()
+	dbMock, mock, err := sqlmock.New()
+	if err != nil {
+		t.Errorf("Fail to get SQL mock")
+	}
+	defer dbMock.Close()
 
 	postgresMock, _, err := sqlmock.New()
 	if err != nil {
@@ -42,10 +45,10 @@ func TestClearCommands(t *testing.T) {
 	utils.FlagProvider = mockFlagBuilder{false}
 
 	postgresMock, mockSpy, err := sqlmock.New()
-	defer postgresMock.Close()
 	if err != nil {
 		t.Errorf("Fail to get postgres mock")
 	}
+	defer postgresMock.Close()
 
 	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
