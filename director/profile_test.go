@@ -10,6 +10,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ func TestVerifyMDMProfiles(t *testing.T) {
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
-	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1 AND installed = true`).WithArgs(
