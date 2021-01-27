@@ -24,28 +24,6 @@ func RequestSecurityInfo(device types.Device) error {
 }
 
 func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) error {
-	// var securityInfo types.SecurityInfo
-	// var managementStatus types.ManagementStatus
-	// var firmwarePasswordStatus types.FirmwarePasswordStatus
-	// var firewallSettings types.FirewallSettings
-	// // var firewallSettingsApplications []types.FirewallSettingsApplication
-	// var secureBoot types.SecureBoot
-	// var secureBootReducedSecurity types.SecureBootReducedSecurity
-	// securityInfo.DeviceUDID = device.UDID
-	// securityInfo = securityInfoData.SecurityInfo
-	// managementStatus = securityInfo.ManagementStatus
-	// managementStatus.DeviceUDID = device.UDID
-	// firmwarePasswordStatus = securityInfo.FirmwarePasswordStatus
-	// firmwarePasswordStatus.DeviceUDID = device.UDID
-	// firewallSettings = securityInfo.FirewallSettings
-	// firewallSettings.DeviceUDID = device.UDID
-	// // firewallSettingsApplications = firewallSettings.FirewallSettingsApplications
-	// secureBoot = securityInfo.SecureBoot
-	// secureBoot.DeviceUDID = device.UDID
-	// secureBootReducedSecurity = securityInfo.SecureBoot.SecureBootReducedSecurity
-	// secureBootReducedSecurity.DeviceUDID = device.UDID
-	// log.Info(device)
-
 	securityInfo := securityInfoData.SecurityInfo
 	securityInfo.DeviceUDID = device.UDID
 	securityInfo.FirewallSettings.DeviceUDID = device.UDID
@@ -75,11 +53,6 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 		return errors.Wrap(err, "Append FirewallSettings Association")
 	}
 
-	// err = db.DB.Unscoped().Model(&firewallSettings).Association("FirewallSettingsApplications").Replace(firewallSettingsApplications)
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// }
-
 	err = db.DB.Session(&gorm.Session{FullSaveAssociations: true}).Model(&securityInfo.SecureBoot).Updates(&securityInfo.SecureBoot).Error
 	if err != nil {
 		return errors.Wrap(err, "Append SecureBoot Association")
@@ -90,8 +63,8 @@ func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Devi
 		return errors.Wrap(err, "Append SecureBootReducedSecurity Association")
 	}
 
-	siErr := device.UpdateLastSecurityInfo()
-	if siErr != nil {
+	err = device.UpdateLastSecurityInfo()
+	if err != nil {
 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: siErr.Error()})
 	}
 
