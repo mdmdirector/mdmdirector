@@ -1,6 +1,7 @@
 package director
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -9,6 +10,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -17,7 +19,7 @@ func TestVerifyMDMProfiles(t *testing.T) {
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
-	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1 AND installed = true`).WithArgs(
@@ -55,7 +57,7 @@ func TestVerifyMDMProfiles(t *testing.T) {
 
 	profileListData := types.ProfileListData{
 		ProfileList: []types.ProfileList{
-			types.ProfileList{
+			{
 				ID: uuid.New(),
 			},
 		},
@@ -64,8 +66,10 @@ func TestVerifyMDMProfiles(t *testing.T) {
 		SerialNumber: "C02ABCDEFGH",
 		UDID:         "1234-5678-123456",
 	}
-	err = VerifyMDMProfiles(profileListData, device)
+
+	fmt.Println(profileListData)
+	err := VerifyMDMProfiles(profileListData, device)
 
 	assert.NotEmpty(t, err)
-	assert.Equal(t, "VerifyMDMProfiles: Cannot replace Profile List: database has rejected this request", err.Error())
+	assert.Equal(t, "VerifyMDMProfiles: Cannot replace Profile List: Profile must have a PayloadUUID", err.Error())
 }

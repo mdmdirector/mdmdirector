@@ -9,13 +9,17 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func TestExampleHowToUseSqlmock(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	defer db.Close()
+	dbMock, mock, err := sqlmock.New()
+	if err != nil {
+		t.Errorf("Fail to get SQL mock")
+	}
+	defer dbMock.Close()
 
 	postgresMock, _, err := sqlmock.New()
 	if err != nil {
@@ -42,12 +46,12 @@ func TestClearCommands(t *testing.T) {
 	utils.FlagProvider = mockFlagBuilder{false}
 
 	postgresMock, mockSpy, err := sqlmock.New()
-	defer postgresMock.Close()
 	if err != nil {
 		t.Errorf("Fail to get postgres mock")
 	}
+	defer postgresMock.Close()
 
-	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	mockSpy.ExpectBegin()
@@ -74,7 +78,7 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
-	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	// Set up Database expectations
@@ -102,7 +106,7 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 		SerialNumber: "C02ABCDEFGH",
 		UDID:         "1234-5678-123456",
 	}
-	err = ClearCommands(&device)
+	err := ClearCommands(&device)
 
 	assert.Equal(t, nil, err)
 }
@@ -111,7 +115,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
-	DB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
 	mockSpy.ExpectExec(`.*`).WithArgs(
@@ -124,7 +128,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 		SerialNumber: "C02ABCDEFGH",
 		UDID:         "1234-5678-123456",
 	}
-	err = ClearCommands(&device)
+	err := ClearCommands(&device)
 
 	assert.NotEmpty(t, err)
 	assert.Equal(t, "Failed to clear Command Queue for 1234-5678-123456: database has gone away", err.Error())

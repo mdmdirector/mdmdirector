@@ -674,7 +674,16 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	for i := range profileListData.ProfileList {
 		incomingProfile := profileListData.ProfileList[i]
+		if incomingProfile.PayloadUUID == "" {
+			err = errors.New("Profile must have a PayloadUUID")
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
 		profileLists = append(profileLists, incomingProfile)
+	}
+
+	if len(profileLists) == 0 {
+		err := errors.New("No Profiles in ProfileList data")
+		return errors.Wrap(err, "VerifyMDMProfiles")
 	}
 
 	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists)
