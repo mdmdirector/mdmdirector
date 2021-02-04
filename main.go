@@ -77,6 +77,8 @@ var SignEnrollmentProfile bool
 
 var LogFormat string
 
+var Prometheus bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -105,6 +107,7 @@ func main() {
 	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
 	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
+	flag.BoolVar(&Prometheus, "prometheus", env.Bool("PROMETHEUS", false), "Enable Prometheus")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -154,7 +157,10 @@ func main() {
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
-	http.Handle("/metrics", promhttp.Handler())
+	if utils.Prometheus() {
+		http.Handle("/metrics", promhttp.Handler())
+	}
+
 	http.Handle("/", r)
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
@@ -203,7 +209,9 @@ func main() {
 	go director.ProcessScheduledCheckinQueue()
 	// go director.UnconfiguredDevices()
 	// go director.RetryCommands()
-	director.Metrics()
+	if utils.Prometheus() {
+		director.Metrics()
+	}
 
 	log.Info(http.ListenAndServe(":"+port, nil))
 }

@@ -93,7 +93,9 @@ func pushNotNow() error {
 		}
 
 		resp.Body.Close()
-		TotalPushes.Inc()
+		if utils.Prometheus() {
+			TotalPushes.Inc()
+		}
 	}
 	return nil
 }
@@ -309,7 +311,10 @@ func pushConcurrent(client *http.Client) error {
 		}
 
 		resp.Body.Close()
-		TotalPushes.Inc()
+		if utils.Prometheus() {
+			TotalPushes.Inc()
+		}
+
 	}
 	return nil
 }
