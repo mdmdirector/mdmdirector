@@ -55,12 +55,14 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	InfoLogger(LogHolder{Message: "Sent Command", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: commandPayload.RequestType, CommandUUID: command.CommandUUID})
 
 	db.DB.Create(&command)
-	if commandPayload.RequestType == "InstallProfile" {
-		ProfilesPushed.Inc()
-	}
+	if utils.Prometheus() {
+		if commandPayload.RequestType == "InstallProfile" {
+			ProfilesPushed.Inc()
+		}
 
-	if commandPayload.RequestType == "InstallApplication" {
-		InstallApplicationsPushed.Inc()
+		if commandPayload.RequestType == "InstallApplication" {
+			InstallApplicationsPushed.Inc()
+		}
 	}
 
 	return command, nil
