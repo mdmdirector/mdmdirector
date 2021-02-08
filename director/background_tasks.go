@@ -559,38 +559,38 @@ func FetchDevicesFromMDM() {
 	log.Info("Finished fetching devices from MicroMDM...")
 }
 
-func sendCommandToLazyMachines(device types.Device) (bool, error) {
+func sendCommandToLazyMachines(device types.Device) bool {
 	weekAgo := time.Now().Add(-168 * time.Hour)
 	// Don't bother on devices we've not heard from for ever
 	if device.LastCheckedIn.Before(time.Now().Add(-2160 * time.Hour)) {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Device has not checked in for 90 days", Metric: device.LastCheckedIn.String()})
 
-		return false, nil
+		return false
 	}
 
 	if device.LastCertificateList.Before(weekAgo) && !device.LastCertificateList.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Certificate List is over a week old", Metric: device.LastCertificateList.String()})
 
-		return true, nil
+		return true
 	}
 
 	if device.LastProfileList.Before(weekAgo) && !device.LastProfileList.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Profile List is over a week old", Metric: device.LastProfileList.String()})
 
-		return true, nil
+		return true
 	}
 
 	if device.LastDeviceInfo.Before(weekAgo) && !device.LastDeviceInfo.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Device Info is over a week old", Metric: device.LastDeviceInfo.String()})
 
-		return true, nil
+		return true
 	}
 
 	if device.LastSecurityInfo.Before(weekAgo) && !device.LastSecurityInfo.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Security Info is over a week old", Metric: device.LastSecurityInfo.String()})
 
-		return true, nil
+		return true
 	}
 
-	return false, nil
+	return false
 }
