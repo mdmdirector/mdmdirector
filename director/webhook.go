@@ -2,7 +2,6 @@ package director
 
 import (
 	"encoding/json"
-	intErrors "errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,8 +13,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-
-	"gorm.io/gorm"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -213,20 +210,6 @@ func RequestDeviceUpdate(device types.Device) {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
-	}
-
-	// hourAgo := time.Now().Add(1 * time.Hour)
-	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
-
-	if utils.DebugMode() {
-		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
-	}
-
-	if err = db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			log.Debug("Last updated was under 30 minutes ago")
-			return
-		}
 	}
 
 	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"last_info_requested": time.Now()}).Error

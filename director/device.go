@@ -25,7 +25,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
 	now := time.Now()
-	// newDevice.NextPush = now.Add(12 * time.Hour)
+
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
@@ -398,6 +398,17 @@ func RequestAllDeviceInfo(device types.Device) error {
 	err = RequestCertificateList(device)
 	if err != nil {
 		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+
+	return nil
+}
+
+func setNextPushToThePast(device types.Device) error {
+	fiveMinutesAgo := time.Now().Add(time.Minute * -5)
+	var deviceModel types.Device
+	err := db.DB.Model(&deviceModel).Select("next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"next_push": fiveMinutesAgo}).Error
+	if err != nil {
+		return errors.Wrap(err, "Set next_push to a time in the past")
 	}
 
 	return nil

@@ -267,6 +267,11 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 		if err != nil {
 			return metadata, errors.Wrap(err, "Push Device")
 		}
+
+		err = setNextPushToThePast(device)
+		if err != nil {
+			return metadata, errors.Wrap(err, "Set last push to a date in the past")
+		}
 	}
 
 	return metadata, nil
