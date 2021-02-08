@@ -141,11 +141,7 @@ func pushAll() error {
 			continue
 		}
 
-		sendPush, err := sendCommandToLazyMachines(dbDevice)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: err.Error()})
-		}
-
+		sendPush := sendCommandToLazyMachines(dbDevice)
 		if sendPush {
 			devices = append(devices, dbDevice)
 			continue
