@@ -94,18 +94,17 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device, payloa
 		case "DeviceInformation":
 			commandRequestType = k
 			break
-		case "DeviceLock":
-			commandRequestType = k
-			break
-		case "EraseDevice":
-			commandRequestType = k
-			break
-		case "InstallApplication":
-			commandRequestType = k
-			break
-		case "InstallProfile":
-			commandRequestType = k
-			break
+		}
+	}
+
+	if commandRequestType == "unknown" {
+		err := db.DB.Model(&command).Select("request_type").Where("command_uuid = ?", ackEvent.CommandUUID).First(&command).Error
+		if err != nil {
+			if intErrors.Is(err, gorm.ErrRecordNotFound) {
+				InfoLogger(LogHolder{Message: "Command not found in queue"})
+			}
+		} else {
+			commandRequestType = command.RequestType
 		}
 	}
 
