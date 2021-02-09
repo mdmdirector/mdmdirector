@@ -68,12 +68,48 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	return command, nil
 }
 
-func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device) error {
+func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device, payloadDict map[string]interface{}) error {
 	var command types.Command
 
 	if device.UDID == "" {
 		log.Errorf("Cannot update command %v without a device UDID!!!!", ackEvent.CommandUUID)
 	}
+
+	commandRequestType := "unknown"
+
+OuterLoop:
+	for k := range payloadDict {
+		switch k {
+		case "ProfileList":
+			commandRequestType = k
+			break OuterLoop
+		case "SecurityInfo":
+			commandRequestType = k
+			break OuterLoop
+		case "CertificateList":
+			commandRequestType = k
+			break OuterLoop
+		case "QueryResponses":
+			commandRequestType = k
+			break OuterLoop
+		case "DeviceInformation":
+			commandRequestType = k
+			break OuterLoop
+		}
+	}
+
+	if commandRequestType == "unknown" {
+		err := db.DB.Model(&command).Select("request_type").Where("command_uuid = ?", ackEvent.CommandUUID).First(&command).Error
+		if err != nil {
+			if intErrors.Is(err, gorm.ErrRecordNotFound) {
+				InfoLogger(LogHolder{Message: "Command not found in queue"})
+			}
+		} else {
+			commandRequestType = command.RequestType
+		}
+	}
+
+	InfoLogger(LogHolder{Message: "Command response received", CommandStatus: ackEvent.Status, CommandUUID: ackEvent.CommandUUID, DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: commandRequestType})
 
 	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {

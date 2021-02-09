@@ -9,6 +9,7 @@ type LogHolder struct {
 	DeviceSerial       string
 	CommandUUID        string
 	CommandRequestType string
+	CommandStatus      string
 	ProfileUUID        string
 	ProfileIdentifier  string
 	Message            string
@@ -43,6 +44,13 @@ func processFields(logholder LogHolder) *log.Entry {
 		logger = logger.WithFields(
 			log.Fields{
 				"command_uuid": logholder.CommandUUID,
+			})
+	}
+
+	if logholder.CommandStatus != "" {
+		logger = logger.WithFields(
+			log.Fields{
+				"command_status": logholder.CommandStatus,
 			})
 	}
 
