@@ -77,7 +77,7 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device, payloa
 
 	commandRequestType := "unknown"
 
-    OuterLoop:
+OuterLoop:
 	for k := range payloadDict {
 		switch k {
 		case "ProfileList":
