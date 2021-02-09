@@ -94,6 +94,18 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device, payloa
 		case "DeviceInformation":
 			commandRequestType = k
 			break
+		case "DeviceLock":
+			commandRequestType = k
+			break
+		case "EraseDevice":
+			commandRequestType = k
+			break
+		case "InstallApplication":
+			commandRequestType = k
+			break
+		case "InstallProfile":
+			commandRequestType = k
+			break
 		}
 	}
 
