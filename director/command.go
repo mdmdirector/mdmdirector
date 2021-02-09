@@ -77,23 +77,24 @@ func UpdateCommand(ackEvent *types.AcknowledgeEvent, device types.Device, payloa
 
 	commandRequestType := "unknown"
 
+    OuterLoop:
 	for k := range payloadDict {
 		switch k {
 		case "ProfileList":
 			commandRequestType = k
-			break
+			break OuterLoop
 		case "SecurityInfo":
 			commandRequestType = k
-			break
+			break OuterLoop
 		case "CertificateList":
 			commandRequestType = k
-			break
+			break OuterLoop
 		case "QueryResponses":
 			commandRequestType = k
-			break
+			break OuterLoop
 		case "DeviceInformation":
 			commandRequestType = k
-			break
+			break OuterLoop
 		}
 	}
 
