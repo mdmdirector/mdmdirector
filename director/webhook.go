@@ -2,7 +2,6 @@ package director
 
 import (
 	"encoding/json"
-	intErrors "errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,8 +13,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-
-	"gorm.io/gorm"
 )
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -106,8 +103,14 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if out.AcknowledgeEvent != nil {
 
+		var payloadDict map[string]interface{}
+		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		}
+
 		if out.AcknowledgeEvent.CommandUUID != "" {
-			err = UpdateCommand(out.AcknowledgeEvent, device)
+			err = UpdateCommand(out.AcknowledgeEvent, device, payloadDict)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
@@ -116,11 +119,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if out.AcknowledgeEvent.Status == "Idle" {
 			RequestDeviceUpdate(device)
 			return
-		}
-		var payloadDict map[string]interface{}
-		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
 		// Is this a ProfileList response?
@@ -156,13 +154,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			err = SaveSecurityInfo(securityInfoData, device)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-
-			if err == nil {
-				siErr := device.UpdateLastSecurityInfo()
-				if siErr != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: siErr.Error()})
-				}
 			}
 		}
 
@@ -220,20 +211,6 @@ func RequestDeviceUpdate(device types.Device) {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
-	}
-
-	// hourAgo := time.Now().Add(1 * time.Hour)
-	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
-
-	if utils.DebugMode() {
-		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
-	}
-
-	if err = db.DB.Model(&deviceModel).Where("last_info_requested < ? AND ud_id = ?", thirtyMinsAgo, device.UDID).First(&device).Error; err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			log.Debug("Last updated was under 30 minutes ago")
-			return
-		}
 	}
 
 	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"last_info_requested": time.Now()}).Error

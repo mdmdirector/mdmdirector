@@ -16,7 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func RequestCertificateList(device types.Device) {
+func RequestCertificateList(device types.Device) error {
 	requestType := "CertificateList"
 	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
 	var payload types.CommandPayload
@@ -24,8 +24,10 @@ func RequestCertificateList(device types.Device) {
 	payload.RequestType = requestType
 	_, err := SendCommand(payload)
 	if err != nil {
-		log.Error(errors.Wrap(err, "RequestCertificateList: SendCommand"))
+		return errors.Wrap(err, "RequestCertificateList: SendCommand")
 	}
+
+	return nil
 }
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {
@@ -48,9 +50,11 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificates = append(certificates, certificate)
 	}
 
-	err := db.DB.Unscoped().Model(&device).Association("Certificates").Replace(certificates).Error
+	// DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: certificates})
+
+	err := db.DB.Model(&device).Association("Certificates").Replace(certificates)
 	if err != nil {
-		return errors.Wrap(errors.New(err()), "processCertificateList:SaveCerts")
+		return errors.Wrap(err, "processCertificateList:SaveCerts")
 	}
 
 	for _, certListItem := range certificateListData.CertificateList {
@@ -74,7 +78,7 @@ func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, er
 func validateScepCert(certListItem types.CertificateList, device types.Device) error {
 	enrollmentProfile := utils.EnrollmentProfile()
 	if enrollmentProfile == "" {
-		// No enrollment profile set
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No emrollment profile set, not continuing with SCEP Cert Validation"})
 		return nil
 	}
 
@@ -108,6 +112,8 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 
 			profile.MobileconfigData = data
 
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Pushing new enrollment profile"})
+
 			if utils.SignedEnrollmentProfile() {
 				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Enrollment Profile pre-signed"})
 				var commandPayload types.CommandPayload
@@ -127,7 +133,12 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 				}
 			}
 
+		} else {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Days remaining is greater or equal than the minimum SCEP validity", Metric: strconv.Itoa(days)})
 		}
+	} else {
+		msg := fmt.Sprintf("Incoming cert issuer %v does not match our SCEP issuer %v", cert.Issuer.String(), utils.ScepCertIssuer())
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg})
 	}
 	return nil
 }

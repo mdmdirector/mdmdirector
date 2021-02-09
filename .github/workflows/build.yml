@@ -3,7 +3,7 @@ on: [push]
 
 jobs:
   build:
-    runs-on: ubuntu-16.04
+    runs-on: ubuntu-18.04
     name: Build
     steps:
       - uses: actions/checkout@master
@@ -16,3 +16,4 @@ jobs:
         run: curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(go env GOPATH)/bin v1.35.2
       - name: Run golangci-lint
         run: $(go env GOPATH)/bin/golangci-lint run
+      - run: go test -cover -v ./...

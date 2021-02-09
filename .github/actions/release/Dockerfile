@@ -1,4 +1,4 @@
-FROM golang:1.12
+FROM golang:1.15
 
 LABEL "com.github.actions.name"="github-action-publish-binaries"
 LABEL "com.github.actions.description"="Upload artifacts when new releases are made"

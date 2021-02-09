@@ -64,7 +64,7 @@ func pushNotNow() error {
 	var commands []types.Command
 	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Select NotNow Devices")
 	}
 
 	client := &http.Client{}
@@ -93,7 +93,9 @@ func pushNotNow() error {
 		}
 
 		resp.Body.Close()
-		TotalPushes.Inc()
+		if utils.Prometheus() {
+			TotalPushes.Inc()
+		}
 	}
 	return nil
 }
@@ -116,7 +118,7 @@ func pushAll() error {
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "PushAll: Scan devices")
 	}
 
 	for i := range dbDevices {
@@ -125,19 +127,34 @@ func pushAll() error {
 		threeHoursAgo := time.Now().Add(-3 * time.Hour)
 		// sixHoursAgo := time.Now().Add(-6 * time.Hour)
 		oneDayAgo := time.Now().Add(-24 * time.Hour)
-		thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
+		hourAgo := time.Now().Add(-60 * time.Minute)
+
+		InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Considering device for scheduled push"})
+
 		if now.Before(dbDevice.NextPush) && !dbDevice.NextPush.IsZero() {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: dbDevice.NextPush.String()})
 			continue
 		}
 
-		if dbDevice.LastScheduledPush.After(thirtyMinsAgo) {
-			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have pushed within the last 30 mins, not pushing again"})
+		if dbDevice.LastScheduledPush.After(hourAgo) {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have pushed within the last hour, not pushing again"})
+			continue
+		}
+
+		sendPush := sendCommandToLazyMachines(dbDevice)
+		if sendPush {
+			devices = append(devices, dbDevice)
+			continue
+		}
+
+		if dbDevice.LastCertificateList.IsZero() || dbDevice.LastProfileList.IsZero() || dbDevice.LastSecurityInfo.IsZero() || dbDevice.LastDeviceInfo.IsZero() {
+			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
+			devices = append(devices, dbDevice)
 			continue
 		}
 
 		// We've not had all of the info payloads within the last day
-		if (dbDevice.LastCertificateList.Before(oneDayAgo) || dbDevice.LastProfileList.Before(oneDayAgo) || dbDevice.LastSecurityInfo.Before(oneDayAgo) || dbDevice.LastDeviceInfo.Before(oneDayAgo)) && !dbDevice.LastCertificateList.IsZero() && !dbDevice.LastProfileList.IsZero() && !dbDevice.LastSecurityInfo.IsZero() && !dbDevice.LastDeviceInfo.IsZero() {
+		if (dbDevice.LastCertificateList.Before(oneDayAgo) || dbDevice.LastProfileList.Before(oneDayAgo) || dbDevice.LastSecurityInfo.Before(oneDayAgo) || dbDevice.LastDeviceInfo.Before(oneDayAgo)) && (!dbDevice.LastCertificateList.IsZero() && !dbDevice.LastProfileList.IsZero() && !dbDevice.LastSecurityInfo.IsZero() && !dbDevice.LastDeviceInfo.IsZero()) {
 			InfoLogger(LogHolder{DeviceUDID: dbDevice.UDID, DeviceSerial: dbDevice.SerialNumber, Message: "Have not received all of the info commands within the last six hours."})
 			devices = append(devices, dbDevice)
 			continue
@@ -288,14 +305,17 @@ func pushConcurrent(client *http.Client) error {
 
 		err = db.DB.Model(&device).Select("last_scheduled_push", "next_push").Where("ud_id = ?", push.DeviceUDID).Updates(types.Device{
 			LastScheduledPush: now,
-			NextPush:          time.Now().Add(3 * time.Hour),
+			NextPush:          time.Now().Add(30 * time.Minute),
 		}).Error
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 
 		resp.Body.Close()
-		TotalPushes.Inc()
+		if utils.Prometheus() {
+			TotalPushes.Inc()
+		}
+
 	}
 	return nil
 }
@@ -332,6 +352,8 @@ func PushDevice(udid string) error {
 		return errors.Wrap(err, "PushDevice")
 	}
 
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device"})
+
 	return nil
 }
 
@@ -358,7 +380,7 @@ func processUnconfiguredDevices() error {
 
 	err := db.DB.Model(&awaitingConfigDevice).Where("awaiting_configuration = ?", true).Scan(&awaitingConfigDevices).Error
 	if err != nil {
-		return err
+		return errors.Wrap(err, "processUnconfiguredDevices: Scan awaiting config devices")
 	}
 
 	for i := range awaitingConfigDevices {
@@ -375,6 +397,7 @@ func processUnconfiguredDevices() error {
 
 func ScheduledCheckin() {
 	var scheduledPushes []types.ScheduledPush
+	InfoLogger(LogHolder{Message: "Clearing Scheduled Pushes"})
 	err := db.DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Model(&scheduledPushes).Delete(&types.ScheduledPush{}).Error
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
@@ -391,10 +414,15 @@ func ScheduledCheckin() {
 		ticker = time.NewTicker(20 * time.Second)
 	}
 
+	counter := 0
 	for {
 		if !DevicesFetchedFromMDM {
 			time.Sleep(30 * time.Second)
 			log.Info("Devices are still being fetched from MicroMDM")
+			counter++
+			if counter > 10 {
+				break
+			}
 		} else {
 			break
 		}
@@ -423,13 +451,8 @@ func processScheduledCheckin() error {
 
 	err := pushAll()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "processScheduledCheckin::pushAll")
 	}
-
-	// err = ExpireCommands()
-	// if err != nil {
-	// 	return err
-	// }
 
 	var certificates []types.Certificate
 
@@ -532,4 +555,40 @@ func FetchDevicesFromMDM() {
 	}
 	DevicesFetchedFromMDM = true
 	log.Info("Finished fetching devices from MicroMDM...")
+}
+
+func sendCommandToLazyMachines(device types.Device) bool {
+	weekAgo := time.Now().Add(-168 * time.Hour)
+	// Don't bother on devices we've not heard from for ever
+	if device.LastCheckedIn.Before(time.Now().Add(-2160 * time.Hour)) {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Device has not checked in for 90 days", Metric: device.LastCheckedIn.String()})
+
+		return false
+	}
+
+	if device.LastCertificateList.Before(weekAgo) && !device.LastCertificateList.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Certificate List is over a week old", Metric: device.LastCertificateList.String()})
+
+		return true
+	}
+
+	if device.LastProfileList.Before(weekAgo) && !device.LastProfileList.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Profile List is over a week old", Metric: device.LastProfileList.String()})
+
+		return true
+	}
+
+	if device.LastDeviceInfo.Before(weekAgo) && !device.LastDeviceInfo.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Device Info is over a week old", Metric: device.LastDeviceInfo.String()})
+
+		return true
+	}
+
+	if device.LastSecurityInfo.Before(weekAgo) && !device.LastSecurityInfo.IsZero() {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Last Security Info is over a week old", Metric: device.LastSecurityInfo.String()})
+
+		return true
+	}
+
+	return false
 }

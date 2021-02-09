@@ -27,6 +27,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +207,8 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 	var profileMetadataList []types.ProfileMetadata
 	var profilesToSave []types.DeviceProfile
 
+	pushRequired := false
+
 	// metadata.Device = device
 	for i := range profiles {
 		var profileMetadata types.ProfileMetadata
@@ -223,10 +226,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				profilesToSave = append(profilesToSave, profile)
 				status = "changed"
 				if pushNow {
-					_, err = PushProfiles(devices, []types.DeviceProfile{profile})
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-					}
+					pushRequired = true
 					status = "pushed"
 				} else {
 					status = "saved"
@@ -246,8 +246,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			}
 
 			if pushNow && profilePresent {
-				deletedProfile := []types.DeviceProfile{profile}
-				DeleteDeviceProfiles(devices, deletedProfile)
+				pushRequired = true
 			}
 		}
 
@@ -263,12 +262,24 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 	metadata.ProfileMetadata = profileMetadataList
 
+	if pushRequired {
+		err := PushDevice(device.UDID)
+		if err != nil {
+			return metadata, errors.Wrap(err, "Push Device")
+		}
+
+		err = setNextPushToThePast(device)
+		if err != nil {
+			return metadata, errors.Wrap(err, "Set last push to a date in the past")
+		}
+	}
+
 	return metadata, nil
 }
 
 func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
-	var profileList types.ProfileList
+	// var profileList types.ProfileList
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
@@ -277,16 +288,16 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 		}
 	}
 	// Make sure the profile isn't in the device's profilelist
-	err := db.DB.Model(&profileList).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
-	if err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// If it's not found, we'll catch in the false return at the end. Else raise an error
-			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile not found in device's ProfileList"})
-			return false, nil
-		}
+	// err := db.DB.Model(&profileList).Select("device_ud_id").Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
+	// if err != nil {
+	// 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
+	// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
+	// 		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile not found in device's ProfileList"})
+	// 		return false, nil
+	// 	}
 
-		return true, errors.Wrap(err, "Could not load ProfileList for device")
-	}
+	// 	return true, errors.Wrap(err, "Could not load ProfileList for device")
+	// }
 
 	return false, nil
 }
@@ -460,25 +471,35 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
 	for i := range devices {
 		device := devices[i]
+		if device.UDID == "" {
+			continue
+		}
 		for profilei := range profiles {
-			var profileModel types.DeviceProfile
+			// var profileModel types.DeviceProfile
 			var boolModel types.DeviceProfile
-			var oldProfile types.DeviceProfile
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
-			if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).First(&profileModel).Scan(&oldProfile).Error; err != nil {
-				if intErrors.Is(err, gorm.ErrRecordNotFound) {
-					db.DB.Create(&profileData)
-				}
-			} else {
-				err := db.DB.Model(&profileModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Assign(&profileData).FirstOrCreate(&profileModel).Error
-				if err != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: "Update profile"})
-				}
+			err := db.DB.Clauses(clause.OnConflict{
+				UpdateAll: true,
+			}).Create(&profileData).Error
+			if err != nil {
+				theErr := fmt.Sprintf("Update profile: %v", err.Error())
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: theErr})
 			}
+			// if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).FirstOrCreate(&profileModel).Error; err != nil {
+			// 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			// 		db.DB.Create(&profileData)
+			// 	}
+			// } else {
+			// 	err := db.DB.Model(&profileModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Assign(&profileData).FirstOrCreate(&profileModel).Error
+			// 	if err != nil {
+			// 		theErr := fmt.Sprintf("Update profile: %v", err.Error())
+			// 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: theErr})
+			// 	}
+			// }
 
 			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: "Updating profile installed bool"})
-			err := db.DB.Model(&boolModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Updates(map[string]interface{}{
+			err = db.DB.Model(&boolModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Updates(map[string]interface{}{
 				"installed": profiles[profilei].Installed,
 			}).Error
 			if err != nil {
@@ -651,20 +672,33 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	var devices []types.Device
 	var profileLists []types.ProfileList
 
+	if device.UDID == "" {
+		err := errors.New("Device UDID cannot be empty")
+		return errors.Wrap(err, "VerifyMDMProfiles")
+	}
 	// Get the profiles that should be installed on the device
-	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
+	err := db.DB.Where("device_ud_id = ? AND installed = true", device.UDID).Find(&profiles).Error
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to install")
 	}
 
 	for i := range profileListData.ProfileList {
 		incomingProfile := profileListData.ProfileList[i]
+		if incomingProfile.PayloadUUID == "" {
+			err = errors.New("Profile must have a PayloadUUID")
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
 		profileLists = append(profileLists, incomingProfile)
 	}
 
-	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists).Error
+	if len(profileLists) == 0 {
+		err := errors.New("No Profiles in ProfileList data")
+		return errors.Wrap(err, "VerifyMDMProfiles")
+	}
+
+	dberr := db.DB.Model(&device).Association("ProfileList").Replace(profileLists)
 	if dberr != nil {
-		return errors.Wrap(errors.New(dberr()), "VerifyMDMProfiles: Cannot replace Profile List")
+		return errors.Wrap(err, "VerifyMDMProfiles: Cannot replace Profile List")
 	}
 
 	// For each, loop over the present profiles
@@ -710,16 +744,18 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		}
 
 		// Make sure we aren't managing this at a device level
-		for i := range profilesToInstall {
-			deviceProfile := profilesToInstall[i]
-			if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedSharedProfile.HashedPayloadUUID, ProfileIdentifier: savedSharedProfile.PayloadIdentifier, Message: "Shared Profile is a device profile, skipping"})
-				found = true
-				continue
-			}
-		}
+		// check this is working!
+		// for i := range profilesToInstall {
+		// 	deviceProfile := profilesToInstall[i]
+		// 	if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
+		// 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedSharedProfile.HashedPayloadUUID, ProfileIdentifier: savedSharedProfile.PayloadIdentifier, Message: "Shared Profile is a device profile, skipping"})
+		// 		found = true
+		// 		continue
+		// 	}
+		// }
 
 		if !found {
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedSharedProfile.HashedPayloadUUID, ProfileIdentifier: savedSharedProfile.PayloadIdentifier, Message: "Shared Profile is not installed"})
 			sharedProfilesToInstall = append(sharedProfilesToInstall, savedSharedProfile)
 		}
 	}
@@ -743,7 +779,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			if savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
 				profilesToRemove = append(profilesToRemove, savedProfile)
-				DebugLogger(LogHolder{Message: string(len(profilesToRemove))})
+				DebugLogger(LogHolder{Message: fmt.Sprint(len(profilesToRemove))})
 				continue
 			}
 		}
@@ -761,20 +797,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedSharedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
-				found := false
-				// Make sure the profile isn't being managed at a device level
-				for i := range profilesToInstall {
-					deviceProfile := profilesToInstall[i]
-					if savedSharedProfile.PayloadIdentifier == deviceProfile.PayloadIdentifier {
-						found = true
-					}
-				}
-				if !found {
-					sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
-				}
-
+				sharedProfilesToRemove = append(sharedProfilesToRemove, savedSharedProfile)
 			}
 		}
+
 	}
 
 	DeleteSharedProfiles(devices, sharedProfilesToRemove)
@@ -887,7 +913,7 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 	return priv, cert, nil
 }
 
-func RequestProfileList(device types.Device) {
+func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
 	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
@@ -896,8 +922,10 @@ func RequestProfileList(device types.Device) {
 
 	_, err := SendCommand(commandPayload)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		return errors.Wrap(err, "RequestProfileList: SendCommand")
 	}
+
+	return nil
 }
 
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {
@@ -937,7 +965,10 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
-	RequestProfileList(device)
+	err = RequestProfileList(device)
+	if err != nil {
+		return pushedCommands, errors.Wrap(err, "RequestProfileList")
+	}
 
 	return pushedCommands, nil
 }

@@ -67,7 +67,7 @@ type ProfileList struct {
 	PayloadIdentifier        string        `plist:"PayloadIdentifier"`
 	PayloadOrganization      string        `plist:"PayloadOrganization"`
 	PayloadRemovalDisallowed bool          `plist:"PayloadRemovalDisallowed"`
-	PayloadUUID              string        `plist:"PayloadUUID"`
+	PayloadUUID              string        `plist:"PayloadUUID" gorm:"not null"`
 	PayloadVersion           int           `plist:"PayloadVersion"`
 	FullPayload              bool          `plist:"FullPayload"`
 }

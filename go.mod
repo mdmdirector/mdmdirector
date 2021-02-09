@@ -3,6 +3,7 @@ module github.com/mdmdirector/mdmdirector
 go 1.12
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.2
@@ -13,6 +14,7 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/prometheus/client_golang v1.6.0
 	github.com/sirupsen/logrus v1.4.2
+	github.com/stretchr/testify v1.5.1
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	gopkg.in/ajg/form.v1 v1.5.1
 	gorm.io/driver/postgres v1.0.6

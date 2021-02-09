@@ -43,9 +43,9 @@ func Open() error {
 		newLogger = logger.New(
 			log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 			logger.Config{
-				SlowThreshold: time.Second,  // Slow SQL threshold
-				LogLevel:      logger.Error, // Log level
-				Colorful:      true,         // Disable color
+				SlowThreshold: time.Second,   // Slow SQL threshold
+				LogLevel:      logger.Silent, // Log level
+				Colorful:      false,         // Disable color
 			},
 		)
 	}
@@ -53,13 +53,27 @@ func Open() error {
 	var err error
 	DB, err = gorm.Open(postgres.Open(dbURI), &gorm.Config{Logger: newLogger, DisableForeignKeyConstraintWhenMigrating: true})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Open DB")
 	}
 
 	err = DB.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";").Error
 	if err != nil {
 		return errors.Wrap(err, "creating uuid-ossp extension")
 	}
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return errors.Wrap(err, "creating sqldb object")
+	}
+
+	// SetMaxIdleConns sets the maximum number of connections in the idle connection pool.
+	// sqlDB.SetMaxIdleConns(10)
+
+	// SetMaxOpenConns sets the maximum number of open connections to the database.
+	sqlDB.SetMaxOpenConns(utils.DBMaxConnections())
+
+	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused.
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return nil
 }

@@ -54,6 +54,8 @@ var DBHost string
 // DBPort is used to connect to the database
 var DBPort string
 
+var DBMaxConnections int
+
 // DBSSLMode is used to connect to the database
 var DBSSLMode string
 
@@ -75,6 +77,8 @@ var SignEnrollmentProfile bool
 
 var LogFormat string
 
+var Prometheus bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -88,20 +92,22 @@ func main() {
 	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
-	flag.StringVar(&DBUsername, "db-username", "", "The username associated with the postgress instance")
+	flag.StringVar(&DBUsername, "db-username", "", "The username associated with the Postgres instance")
 	flag.StringVar(&DBPassword, "db-password", "", "The password of the db user account")
-	flag.StringVar(&DBName, "db-name", "", "The name of the postgress database to use")
-	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the postgress instance")
-	flag.StringVar(&DBPort, "db-port", "5432", "The port of the postgress instance")
-	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to postgres")
+	flag.StringVar(&DBName, "db-name", "", "The name of the Postgres database to use")
+	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the Postgres instance")
+	flag.StringVar(&DBPort, "db-port", "5432", "The port of the Postgres instance")
+	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to Postgres")
+	flag.IntVar(&DBMaxConnections, "db-max-connections", 100, "Maximum number of database connections")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
 	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
 	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
 	flag.StringVar(&LogFormat, "log-format", env.String("LOG_FORMAT", "logfmt"), "Format to output logs. Defaults to logfmt. Can be set to logfmt or json.")
-	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "CN=MicroMDM,OU=MICROMDM SCEP CA,O=MicroMDM,C=US"), "The issuer of your SCEP certificate")
+	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "OU=MICROMDM SCEP CA,O=MicroMDM,C=US"), "The issuer of your SCEP certificate")
 	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
 	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
+	flag.BoolVar(&Prometheus, "prometheus", env.Bool("PROMETHEUS", false), "Enable Prometheus")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -151,7 +157,10 @@ func main() {
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
-	http.Handle("/metrics", promhttp.Handler())
+	if utils.Prometheus() {
+		http.Handle("/metrics", promhttp.Handler())
+	}
+
 	http.Handle("/", r)
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
@@ -159,11 +168,12 @@ func main() {
 		log.Fatal("Failed to open database")
 	}
 	director.InfoLogger(director.LogHolder{Message: "Connected to database"})
-	sqlDB, err := db.DB.DB()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer sqlDB.Close()
+	// sqlDB, err := db.DB.DB()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// defer sqlDB.Close()
 
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 
@@ -199,7 +209,9 @@ func main() {
 	go director.ProcessScheduledCheckinQueue()
 	// go director.UnconfiguredDevices()
 	// go director.RetryCommands()
-	director.Metrics()
+	if utils.Prometheus() {
+		director.Metrics()
+	}
 
 	log.Info(http.ListenAndServe(":"+port, nil))
 }

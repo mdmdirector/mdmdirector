@@ -25,7 +25,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
 	now := time.Now()
-	// newDevice.NextPush = now.Add(12 * time.Hour)
+
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
@@ -368,7 +368,7 @@ func RequestDeviceInformation(device types.Device) error {
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
 	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-	err := db.DB.Model(&deviceModel).Select("token_update_received", "authenticate_received").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_received": true, "authenticate_received": true}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")
 	}
@@ -380,12 +380,36 @@ func SetTokenUpdate(device types.Device) (types.Device, error) {
 }
 
 func RequestAllDeviceInfo(device types.Device) error {
-	RequestProfileList(device)
-	RequestSecurityInfo(device)
-	err := RequestDeviceInformation(device)
+	err := RequestProfileList(device)
 	if err != nil {
 		return errors.Wrap(err, "RequestAllDeviceInfo")
 	}
-	RequestCertificateList(device)
+
+	err = RequestSecurityInfo(device)
+	if err != nil {
+		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+
+	err = RequestDeviceInformation(device)
+	if err != nil {
+		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+
+	err = RequestCertificateList(device)
+	if err != nil {
+		return errors.Wrap(err, "RequestAllDeviceInfo")
+	}
+
+	return nil
+}
+
+func setNextPushToThePast(device types.Device) error {
+	fiveMinutesAgo := time.Now().Add(time.Minute * -5)
+	var deviceModel types.Device
+	err := db.DB.Model(&deviceModel).Select("next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"next_push": fiveMinutesAgo}).Error
+	if err != nil {
+		return errors.Wrap(err, "Set next_push to a time in the past")
+	}
+
 	return nil
 }
