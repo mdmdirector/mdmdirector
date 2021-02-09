@@ -352,6 +352,8 @@ func PushDevice(udid string) error {
 		return errors.Wrap(err, "PushDevice")
 	}
 
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device"})
+
 	return nil
 }
 

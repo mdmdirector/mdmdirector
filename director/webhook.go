@@ -103,8 +103,14 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	if out.AcknowledgeEvent != nil {
 
+		var payloadDict map[string]interface{}
+		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		}
+
 		if out.AcknowledgeEvent.CommandUUID != "" {
-			err = UpdateCommand(out.AcknowledgeEvent, device)
+			err = UpdateCommand(out.AcknowledgeEvent, device, payloadDict)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
@@ -113,11 +119,6 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if out.AcknowledgeEvent.Status == "Idle" {
 			RequestDeviceUpdate(device)
 			return
-		}
-		var payloadDict map[string]interface{}
-		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 
 		// Is this a ProfileList response?
