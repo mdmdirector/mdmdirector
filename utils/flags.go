@@ -2,7 +2,6 @@ package utils
 
 import (
 	"flag"
-	"fmt"
 	"strings"
 )
 
@@ -107,7 +106,6 @@ func Prometheus() bool {
 }
 
 func RedisHost() string {
-	fmt.Println(flag.Lookup("redis-host").Value.(flag.Getter).Get())
 	return flag.Lookup("redis-host").Value.(flag.Getter).Get().(string)
 }
 
