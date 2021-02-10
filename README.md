@@ -4,7 +4,7 @@ MDMDirector is an opinionated orchestrator for MicroMDM. It enables profiles to 
 
 ## Usage
 
-MDMDirector is a compiled binary - it has no external dependencies other than a Postgresql database and optionally a signing certificate for signing profiles. It is configured using flags.
+MDMDirector is a compiled binary - it has no external dependencies other than a Postgresql database, Redis and optionally a signing certificate for signing profiles. It is configured using flags.
 
 ### MicroMDM Setup
 
@@ -25,6 +25,9 @@ You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your
 - `-db-port string` - The port of the postgres instance (default 5432)
 - `-db-sslmode` - The SSL Mode to use to connect to postgres (default "disable")
 - `-db-username string` - (Required) Username used to connect to the postgres instance.
+- `-redis-host string` - Hostname of your Redis instance (default "localhost").
+- `-redis-port string` - Port of your Redis instance (default 6379).
+- `-redis-password string` - Password for your redist instance (default is no password).
 - `-debug` - Enable debug mode. Does things like shorten intervals for scheduled tasks. Only to be used during development.
 - `-enrollment-profile` - Path to enrollment profile.
 - `-enrollment-profile-signed` - Is the enrollment profile you are providing already signed (default: false)

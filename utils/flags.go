@@ -105,6 +105,18 @@ func Prometheus() bool {
 	return flag.Lookup("prometheus").Value.(flag.Getter).Get().(bool)
 }
 
+func RedisHost() string {
+	return flag.Lookup("redis-host").Value.(flag.Getter).Get().(string)
+}
+
+func RedisPort() string {
+	return flag.Lookup("redis-port").Value.(flag.Getter).Get().(string)
+}
+
+func RedisPassword() string {
+	return flag.Lookup("redis-password").Value.(flag.Getter).Get().(string)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.

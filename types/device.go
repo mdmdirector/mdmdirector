@@ -82,12 +82,12 @@ type Device struct {
 	TempUnlockPin            UnlockPin `gorm:"foreignKey:DeviceUDID"`
 	LastInfoRequested        time.Time
 	NextPush                 time.Time
-	LastScheduledPush        time.Time
-	LastCheckedIn            time.Time
-	LastCertificateList      time.Time
-	LastProfileList          time.Time
-	LastDeviceInfo           time.Time
-	LastSecurityInfo         time.Time
+	// LastScheduledPush        time.Time
+	LastCheckedIn       time.Time
+	LastCertificateList time.Time
+	LastProfileList     time.Time
+	LastDeviceInfo      time.Time
+	LastSecurityInfo    time.Time
 }
 
 var DeviceInformationQueries = []string{"ActiveManagedUsers", "AppAnalyticsEnabled", "AutoSetupAdminAccounts", "AvailableDeviceCapacity", "AwaitingConfiguration", "BatteryLevel", "BluetoothMAC", "BuildVersion", "CarrierSettingsVersion", "CellularTechnology", "CurrentMCC", "CurrentMNC", "DataRoamingEnabled", "DeviceCapacity", "DeviceID", "DeviceName", "DiagnosticSubmissionEnabled", "EASDeviceIdentifier", "ICCID", "IMEI", "IsActivationLockEnabled", "IsCloudBackupEnabled", "IsDeviceLocatorServiceEnabled", "IsDoNotDisturbInEffect", "IsMDMLostModeEnabled", "IsMultiUser", "IsNetworkTethered", "IsRoaming", "IsSupervised", "iTunesStoreAccountHash", "iTunesStoreAccountIsActive", "LastCloudBackupDate", "MaximumResidentUsers", "MDMOptions", "MEID", "Model", "ModelName", "ModemFirmwareVersion", "OrganizationInfo", "OSUpdateSettings", "OSVersion", "PersonalHotspotEnabled", "PhoneNumber", "ProductName", "PushToken", "SerialNumber", "ServiceSubscriptions", "SIMCarrierNetwork", "SIMMCC", "SIMMNC", "SubscriberCarrierNetwork", "SubscriberMCC", "SubscriberMNC", "SystemIntegrityProtectionEnabled", "UDID", "VoiceRoamingEnabled", "WiFiMAC", "EthernetMAC"}

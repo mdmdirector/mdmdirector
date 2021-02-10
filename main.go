@@ -10,6 +10,8 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/vmihailenco/taskq/v3"
+	"github.com/vmihailenco/taskq/v3/redisq"
 
 	"github.com/micromdm/go4/env"
 	log "github.com/sirupsen/logrus"
@@ -79,6 +81,12 @@ var LogFormat string
 
 var Prometheus bool
 
+var RedisHost string
+
+var RedisPort string
+
+var RedisPassword string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -97,6 +105,9 @@ func main() {
 	flag.StringVar(&DBName, "db-name", "", "The name of the Postgres database to use")
 	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the Postgres instance")
 	flag.StringVar(&DBPort, "db-port", "5432", "The port of the Postgres instance")
+	flag.StringVar(&RedisHost, "redis-host", env.String("REDIS_HOST", "localhost"), "Redis hostname")
+	flag.StringVar(&RedisPort, "redis-port", env.String("REDIS_PORT", "6379"), "Redis port")
+	flag.StringVar(&RedisPassword, "redis-password", env.String("REDIS_PASSWORD", ""), "Redis password")
 	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to Postgres")
 	flag.IntVar(&DBMaxConnections, "db-max-connections", 100, "Maximum number of database connections")
 	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
@@ -118,6 +129,10 @@ func main() {
 
 	if LogFormat == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
+	} else {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+		})
 	}
 
 	if MicroMDMURL == "" {
@@ -168,12 +183,6 @@ func main() {
 		log.Fatal("Failed to open database")
 	}
 	director.InfoLogger(director.LogHolder{Message: "Connected to database"})
-	// sqlDB, err := db.DB.DB()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// defer sqlDB.Close()
 
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 
@@ -193,7 +202,6 @@ func main() {
 		&types.SharedInstallApplication{},
 		&types.DeviceInstallApplication{},
 		&types.Certificate{},
-		&types.ScheduledPush{},
 		&types.ProfileList{},
 		&types.UnlockPin{},
 	)
@@ -204,11 +212,19 @@ func main() {
 
 	director.InfoLogger(director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."})
 
+	var QueueFactory = redisq.NewFactory()
+
+	var PushQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
+		Name:  "pushnotifications",
+		Redis: director.RedisClient(), // go-redis client
+	})
+	err = PushQueue.Purge()
+	if err != nil {
+		log.Error(err)
+	}
 	go director.FetchDevicesFromMDM()
-	go director.ScheduledCheckin()
-	go director.ProcessScheduledCheckinQueue()
-	// go director.UnconfiguredDevices()
-	// go director.RetryCommands()
+	go director.ScheduledCheckin(PushQueue)
+	go director.ProcessScheduledCheckinQueue(PushQueue)
 	if utils.Prometheus() {
 		director.Metrics()
 	}
