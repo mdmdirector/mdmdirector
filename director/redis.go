@@ -2,6 +2,7 @@ package director
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -20,6 +21,6 @@ func RedisClient() *redis.Client {
 		Password: password,
 		DB:       0, // use default DB
 	})
-
+	time.Sleep(5 * time.Second)
 	return rdb
 }
