@@ -402,14 +402,3 @@ func RequestAllDeviceInfo(device types.Device) error {
 
 	return nil
 }
-
-func setNextPushToThePast(device types.Device) error {
-	fiveMinutesAgo := time.Now().Add(time.Minute * -5)
-	var deviceModel types.Device
-	err := db.DB.Model(&deviceModel).Select("next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"next_push": fiveMinutesAgo}).Error
-	if err != nil {
-		return errors.Wrap(err, "Set next_push to a time in the past")
-	}
-
-	return nil
-}

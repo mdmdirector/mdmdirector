@@ -207,8 +207,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 	var profileMetadataList []types.ProfileMetadata
 	var profilesToSave []types.DeviceProfile
 
-	pushRequired := false
-
 	// metadata.Device = device
 	for i := range profiles {
 		var profileMetadata types.ProfileMetadata
@@ -226,7 +224,10 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				profilesToSave = append(profilesToSave, profile)
 				status = "changed"
 				if pushNow {
-					pushRequired = true
+					_, err = PushProfiles(devices, []types.DeviceProfile{profile})
+					if err != nil {
+						ErrorLogger(LogHolder{Message: err.Error()})
+					}
 					status = "pushed"
 				} else {
 					status = "saved"
@@ -246,7 +247,8 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			}
 
 			if pushNow && profilePresent {
-				pushRequired = true
+				deletedProfile := []types.DeviceProfile{profile}
+				DeleteDeviceProfiles(devices, deletedProfile)
 			}
 		}
 
@@ -261,18 +263,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 	SaveProfiles(devices, profilesToSave)
 
 	metadata.ProfileMetadata = profileMetadataList
-
-	if pushRequired {
-		err := PushDevice(device.UDID)
-		if err != nil {
-			return metadata, errors.Wrap(err, "Push Device")
-		}
-
-		err = setNextPushToThePast(device)
-		if err != nil {
-			return metadata, errors.Wrap(err, "Set last push to a date in the past")
-		}
-	}
 
 	return metadata, nil
 }
