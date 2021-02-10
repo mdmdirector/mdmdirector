@@ -2,6 +2,7 @@ package director
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
@@ -20,8 +21,8 @@ func ScheduledCheckin(pushQueue taskq.Queue) {
 
 	var task = taskq.RegisterTask(&taskq.TaskOptions{
 		Name: "push",
-		Handler: func(device types.Device) error {
-			err := PushDevice(device)
+		Handler: func(uuid string) error {
+			err := PushDevice(uuid)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			}
@@ -62,10 +63,11 @@ func ScheduledCheckin(pushQueue taskq.Queue) {
 func ProcessScheduledCheckinQueue(pushQueue taskq.Queue) {
 	ctx := context.Background()
 	p := pushQueue.Consumer()
-	DebugLogger(LogHolder{Message: "Processing item from scheduled checkin Queue"})
+	DebugLogger(LogHolder{Message: "Processing items from scheduled checkin Queue"})
 	err := p.Start(ctx)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		msg := fmt.Errorf("Starting consumer: %v", err.Error())
+		ErrorLogger(LogHolder{Message: msg.Error()})
 	}
 }
 
@@ -149,18 +151,26 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 		}
 		DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
 
-		msg := task.WithArgs(ctx, device)
+		msg := task.WithArgs(ctx, device.UDID)
 		var onceIn time.Duration
 		if utils.DebugMode() {
 			onceIn = 2 * time.Minute
 		} else {
 			onceIn = 1 * time.Hour
 		}
-		msg.OnceInPeriod(onceIn, device.UDID)
+		msg.OnceInPeriod(onceIn)
 		err := pushQueue.Add(msg)
-		if err != nil {
+		switch {
+		case errors.Is(msg.Err, taskq.ErrDuplicate):
+			// handle duplicate task
+			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
+		case err != nil:
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		case msg.Err != nil:
+			// handle duplicate task
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
 		}
+
 		counter++
 		total++
 	}
@@ -171,9 +181,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 func deviceNeedsPush(device types.Device) bool {
 	now := time.Now()
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
-	// sixHoursAgo := time.Now().Add(-6 * time.Hour)
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
-	// hourAgo := time.Now().Add(-60 * time.Minute)
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
 
@@ -181,11 +189,6 @@ func deviceNeedsPush(device types.Device) bool {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: device.NextPush.String()})
 		return false
 	}
-
-	// if device.LastScheduledPush.After(hourAgo) {
-	// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Have pushed within the last hour, not pushing again"})
-	// 	return false
-	// }
 
 	if device.LastCertificateList.IsZero() || device.LastProfileList.IsZero() || device.LastSecurityInfo.IsZero() || device.LastDeviceInfo.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
@@ -210,7 +213,12 @@ func deviceNeedsPush(device types.Device) bool {
 	return true
 }
 
-func PushDevice(device types.Device) error {
+func PushDevice(udid string) error {
+	// device, err := GetDevice(udid)
+	// if err != nil {
+	// 	return errors.Wrap(err, "PushDevice:GetDevice")
+	// }
+	device := types.Device{UDID: udid}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending push to device"})
 	DelaySeconds := getDelay()
 	now := time.Now()

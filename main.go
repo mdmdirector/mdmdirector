@@ -129,6 +129,10 @@ func main() {
 
 	if LogFormat == "json" {
 		log.SetFormatter(&log.JSONFormatter{})
+	} else {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp: true,
+		})
 	}
 
 	if MicroMDMURL == "" {
@@ -179,12 +183,6 @@ func main() {
 		log.Fatal("Failed to open database")
 	}
 	director.InfoLogger(director.LogHolder{Message: "Connected to database"})
-	// sqlDB, err := db.DB.DB()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// defer sqlDB.Close()
 
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 
@@ -220,11 +218,13 @@ func main() {
 		Name:  "pushnotifications",
 		Redis: director.RedisClient(), // go-redis client
 	})
+	err = PushQueue.Purge()
+	if err != nil {
+		log.Error(err)
+	}
 	go director.FetchDevicesFromMDM()
 	go director.ScheduledCheckin(PushQueue)
 	go director.ProcessScheduledCheckinQueue(PushQueue)
-	// go director.UnconfiguredDevices()
-	// go director.RetryCommands()
 	if utils.Prometheus() {
 		director.Metrics()
 	}
