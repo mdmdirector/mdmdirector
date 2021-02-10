@@ -214,10 +214,6 @@ func deviceNeedsPush(device types.Device) bool {
 }
 
 func PushDevice(udid string) error {
-	// device, err := GetDevice(udid)
-	// if err != nil {
-	// 	return errors.Wrap(err, "PushDevice:GetDevice")
-	// }
 	device := types.Device{UDID: udid}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending push to device"})
 	DelaySeconds := getDelay()
