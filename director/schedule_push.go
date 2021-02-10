@@ -152,7 +152,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 		msg := task.WithArgs(ctx, device)
 		var onceIn time.Duration
 		if utils.DebugMode() {
-			onceIn = 10 * time.Second
+			onceIn = 2 * time.Minute
 		} else {
 			onceIn = 1 * time.Hour
 		}
@@ -173,7 +173,7 @@ func deviceNeedsPush(device types.Device) bool {
 	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	// sixHoursAgo := time.Now().Add(-6 * time.Hour)
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
-	hourAgo := time.Now().Add(-60 * time.Minute)
+	// hourAgo := time.Now().Add(-60 * time.Minute)
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
 
@@ -182,10 +182,10 @@ func deviceNeedsPush(device types.Device) bool {
 		return false
 	}
 
-	if device.LastScheduledPush.After(hourAgo) {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Have pushed within the last hour, not pushing again"})
-		return false
-	}
+	// if device.LastScheduledPush.After(hourAgo) {
+	// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Have pushed within the last hour, not pushing again"})
+	// 	return false
+	// }
 
 	if device.LastCertificateList.IsZero() || device.LastProfileList.IsZero() || device.LastSecurityInfo.IsZero() || device.LastDeviceInfo.IsZero() {
 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
