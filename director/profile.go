@@ -263,7 +263,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 	metadata.ProfileMetadata = profileMetadataList
 
 	if pushRequired {
-		err := PushDevice(device.UDID)
+		err := PushDevice(device)
 		if err != nil {
 			return metadata, errors.Wrap(err, "Push Device")
 		}

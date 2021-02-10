@@ -1,7 +1,5 @@
 package types
 
-import "github.com/google/uuid"
-
 type DeviceFromMDM struct {
 	SerialNumber     string `json:"serial_number"`
 	UDID             string `json:"udid"`
@@ -11,11 +9,4 @@ type DeviceFromMDM struct {
 
 type DevicesFromMDM struct {
 	Devices []DeviceFromMDM `json:"devices"`
-}
-
-type ScheduledPush struct {
-	ID         uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
-	DeviceUDID string
-	Status     string `gorm:"default:'pending'"`
-	Expiration int64
 }
