@@ -38,11 +38,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if out.Topic == "mdm.CheckOut" {
-		device.Active = false
-		device.AuthenticateRecieved = false
-		device.TokenUpdateRecieved = false
-		device.InitialTasksRun = false
-		err = ClearCommands(&device)
+		err = ResetDevice(device)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}

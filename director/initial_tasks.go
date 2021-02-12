@@ -6,7 +6,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 )
 
 func RunInitialTasks(udid string) error {
@@ -107,8 +106,8 @@ func ResetDevice(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
-	log.Infof("Resetting %v", device.UDID)
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false}).Error
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Resetting device"})
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false, "active": false}).Error
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}

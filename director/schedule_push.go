@@ -145,7 +145,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 	for i := range devices {
 		device := devices[i]
 		if float64(counter) >= devicesPerSecond {
-			InfoLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
+			DebugLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
 			time.Sleep(500 * time.Millisecond)
 			counter = 0
 		}
@@ -202,13 +202,13 @@ func deviceNeedsPush(device types.Device) bool {
 	}
 
 	// If it's been updated within the last three hours, try to push again as it might still be online
-	if device.LastCheckedIn.After(threeHoursAgo) {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Checked in more than three hours ago"})
-		if now.Before(device.NextPush) {
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: device.NextPush.String()})
-			return false
-		}
-	}
+	// if device.LastCheckedIn.After(threeHoursAgo) {
+	// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Checked in more than three hours ago"})
+	// 	if now.Before(device.NextPush) {
+	// 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: device.NextPush.String()})
+	// 		return false
+	// 	}
+	// }
 
 	return true
 }
@@ -217,15 +217,15 @@ func PushDevice(udid string) error {
 	device := types.Device{UDID: udid}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending push to device"})
 	DelaySeconds := getDelay()
-	now := time.Now()
+	// now := time.Now()
 	var retry int64
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Performing scheduled push"})
-	if now.After(device.NextPush) {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "After scheduled push. Pushing with an expiry of 24 hours.", Metric: device.NextPush.String()})
-		retry = time.Now().Unix() + 86400
-	} else {
-		retry = time.Now().Unix() + int64(DelaySeconds)
-	}
+	// if now.After(device.NextPush) {
+	// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "After scheduled push. Pushing with an expiry of 24 hours.", Metric: device.NextPush.String()})
+	// 	retry = time.Now().Unix() + 86400
+	// } else {
+	retry = time.Now().Unix() + int64(DelaySeconds)
+	// }
 
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
