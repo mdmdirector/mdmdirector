@@ -3,6 +3,7 @@ package director
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -110,6 +111,23 @@ func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task) error {
 	return nil
 }
 
+func deviceChunkSlice(slice []types.Device, chunkSize int) [][]types.Device {
+	var chunks [][]types.Device
+	for i := 0; i < len(slice); i += chunkSize {
+		end := i + chunkSize
+
+		// necessary check to avoid slicing beyond
+		// slice capacity
+		if end > len(slice) {
+			end = len(slice)
+		}
+
+		chunks = append(chunks, slice[i:end])
+	}
+
+	return chunks
+}
+
 func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 	var devices []types.Device
 	var dbDevices []types.Device
@@ -141,38 +159,45 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
 	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: strconv.Itoa(int(devicesPerSecond))})
 
+	devicesPerMinute := int(math.Ceil(float64(len(devices)) / 60))
+	deviceChunks := deviceChunkSlice(devices, devicesPerMinute)
+
 	ctx := context.Background()
-	for i := range devices {
-		device := devices[i]
-		if float64(counter) >= devicesPerSecond {
-			DebugLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
-			time.Sleep(500 * time.Millisecond)
-			counter = 0
-		}
-		DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
+	for i := range deviceChunks {
+		for j := range deviceChunks[i] {
+			device := deviceChunks[i][j]
+			if float64(counter) >= devicesPerSecond {
+				DebugLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
+				time.Sleep(500 * time.Millisecond)
+				counter = 0
+			}
+			DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
 
-		msg := task.WithArgs(ctx, device.UDID)
-		var onceIn time.Duration
-		if utils.DebugMode() {
-			onceIn = 2 * time.Minute
-		} else {
-			onceIn = 1 * time.Hour
-		}
-		msg.OnceInPeriod(onceIn)
-		err := pushQueue.Add(msg)
-		switch {
-		case errors.Is(msg.Err, taskq.ErrDuplicate):
-			// handle duplicate task
-			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
-		case err != nil:
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-		case msg.Err != nil:
-			// handle duplicate task
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
-		}
+			msg := task.WithArgs(ctx, device.UDID)
+			var onceIn time.Duration
+			if utils.DebugMode() {
+				onceIn = 2 * time.Minute
+			} else {
+				onceIn = 1 * time.Hour
+			}
+			msg.OnceInPeriod(onceIn)
+			err := pushQueue.Add(msg)
+			switch {
+			case errors.Is(msg.Err, taskq.ErrDuplicate):
+				// handle duplicate task
+				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
+			case err != nil:
+				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			case msg.Err != nil:
+				// handle duplicate task
+				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
+			}
 
-		counter++
-		total++
+			counter++
+			total++
+		}
+		// Wait 1 minute before processing the next chunk of devices
+		time.Sleep(time.Minute * 1)
 	}
 	InfoLogger(LogHolder{Message: "Completed scheduling pushes", Metric: strconv.Itoa(len(devices))})
 	return nil
