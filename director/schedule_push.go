@@ -205,7 +205,6 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 
 func deviceNeedsPush(device types.Device) bool {
 	now := time.Now()
-	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
