@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
@@ -43,20 +44,24 @@ func ScheduledCheckin(pushQueue taskq.Queue) {
 			break
 		}
 	}
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	fn := func() {
+
+	var wg sync.WaitGroup
+	sem := make(chan int, 1)
+
+	fn := func(sem chan int, wg *sync.WaitGroup) {
+		defer wg.Done()
 		log.Info("Running scheduled checkin")
 		err := processScheduledCheckin(pushQueue, task)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
+		<-sem
 	}
 
-	fn()
-
-	for range ticker.C {
-		go fn()
+	for {
+		sem <- 1
+		wg.Add(1)
+		go fn(sem, &wg)
 	}
 }
 
@@ -180,7 +185,6 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 
 func deviceNeedsPush(device types.Device) bool {
 	now := time.Now()
-	threeHoursAgo := time.Now().Add(-3 * time.Hour)
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
