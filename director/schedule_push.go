@@ -160,8 +160,9 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: strconv.Itoa(int(devicesPerSecond))})
 
 	devicesPerMinute := int(math.Ceil(float64(len(devices)) / 60))
+	InfoLogger(LogHolder{Message: fmt.Sprintf("%d will be processed each minute", devicesPerMinute)})
 	deviceChunks := deviceChunkSlice(devices, devicesPerMinute)
-
+	InfoLogger(LogHolder{Message: fmt.Sprintf("%d chunks of %d devices each will be processed", len(deviceChunks), devicesPerMinute)})
 	ctx := context.Background()
 	for i := range deviceChunks {
 		for j := range deviceChunks[i] {
@@ -197,6 +198,9 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 			total++
 		}
 		// Wait 1 minute before processing the next chunk of devices
+		msg := fmt.Sprintf("%d/%d devices processed", i+1*devicesPerMinute, len(devices))
+		InfoLogger(LogHolder{Message: msg})
+		InfoLogger(LogHolder{Message: "Sleeping 1 minute before processing next chunk of devices"})
 		time.Sleep(time.Minute * 1)
 	}
 	InfoLogger(LogHolder{Message: "Completed scheduling pushes", Metric: strconv.Itoa(len(devices))})
