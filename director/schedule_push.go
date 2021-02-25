@@ -203,7 +203,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 			total++
 		}
 		// Wait 1 minute before processing the next chunk of devices
-		msg := fmt.Sprintf("%d/%d devices processed", i+1*devicesPerMinute, len(devices))
+		msg := fmt.Sprintf("%d/%d devices processed", (i+1)*devicesPerMinute, len(devices))
 		InfoLogger(LogHolder{Message: msg})
 		InfoLogger(LogHolder{Message: "Sleeping 1 minute before processing next chunk of devices"})
 		time.Sleep(time.Minute * 1)
