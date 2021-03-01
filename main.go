@@ -122,7 +122,7 @@ func main() {
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
 	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
 	flag.BoolVar(&Prometheus, "prometheus", env.Bool("PROMETHEUS", false), "Enable Prometheus")
-	flag.IntVar(&OnceIn, "once-in", env.Int("once-in", 60), "Number of minutes to wait before queuing another command for a device. Ignored and overidden as 2 (minutes) if --debug is passed.")
+	flag.IntVar(&OnceIn, "once-in", env.Int("ONCE_IN", 60), "Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
