@@ -44,7 +44,7 @@ You must set the `-command-webhook-url` flag on MicroMDM to be the URL that your
 - `-scep-cert-min-validity` - The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent. (default: 180)
 - `-sign` - Sign profiles prior to sending to MicroMDM. Requires `-cert` to be passed.
 - `-signing-private-key string` - Path to the signing private key. Don't use with p12 file.
-- `-once-in` - Number of minutes to wait before queuing an additional command for an individual device. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.
+- `-once-in` - Number of minutes to wait before queuing an additional command for any device. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.
 
 ## Todo
 
