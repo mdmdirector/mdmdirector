@@ -19,7 +19,7 @@ import (
 	"github.com/vmihailenco/taskq/v3"
 )
 
-func ScheduledCheckin(pushQueue taskq.Queue) {
+func ScheduledCheckin(pushQueue taskq.Queue, onceIn time.Duration) {
 
 	var task = taskq.RegisterTask(&taskq.TaskOptions{
 		Name: "push",
@@ -52,7 +52,7 @@ func ScheduledCheckin(pushQueue taskq.Queue) {
 	fn := func(sem chan int, wg *sync.WaitGroup) {
 		defer wg.Done()
 		log.Info("Running scheduled checkin")
-		err := processScheduledCheckin(pushQueue, task)
+		err := processScheduledCheckin(pushQueue, task, onceIn)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
@@ -77,12 +77,12 @@ func ProcessScheduledCheckinQueue(pushQueue taskq.Queue) {
 	}
 }
 
-func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task) error {
+func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) error {
 	if utils.DebugMode() {
 		DebugLogger(LogHolder{Message: "Processing scheduledCheckin in debug mode"})
 	}
 
-	err := pushAll(pushQueue, task)
+	err := pushAll(pushQueue, task, onceIn)
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::pushAll")
 	}
@@ -133,7 +133,7 @@ func deviceChunkSlice(slice []types.Device, chunkSize int) [][]types.Device {
 	return chunks
 }
 
-func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
+func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) error {
 	var devices []types.Device
 	var dbDevices []types.Device
 
@@ -169,6 +169,8 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 	deviceChunks := deviceChunkSlice(devices, devicesPerMinute)
 	InfoLogger(LogHolder{Message: fmt.Sprintf("%d chunks of %d devices each will be processed", len(deviceChunks), devicesPerMinute)})
 	ctx := context.Background()
+	msgTxt := fmt.Sprintf("commands will only be queued for an individual device every %s mins at maximum", onceIn)
+	InfoLogger(LogHolder{Message: msgTxt})
 	for i := range deviceChunks {
 		for j := range deviceChunks[i] {
 			device := deviceChunks[i][j]
@@ -180,12 +182,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task) error {
 			DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
 
 			msg := task.WithArgs(ctx, device.UDID)
-			var onceIn time.Duration
-			if utils.DebugMode() {
-				onceIn = 2 * time.Minute
-			} else {
-				onceIn = 1 * time.Hour
-			}
+
 			msg.OnceInPeriod(onceIn)
 			err := pushQueue.Add(msg)
 			switch {

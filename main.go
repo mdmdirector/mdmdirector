@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
@@ -87,6 +88,8 @@ var RedisPort string
 
 var RedisPassword string
 
+var OnceIn int
+
 func main() {
 	var port string
 	var debugMode bool
@@ -100,11 +103,11 @@ func main() {
 	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
 	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
 	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
-	flag.StringVar(&DBUsername, "db-username", "", "The username associated with the Postgres instance")
-	flag.StringVar(&DBPassword, "db-password", "", "The password of the db user account")
-	flag.StringVar(&DBName, "db-name", "", "The name of the Postgres database to use")
-	flag.StringVar(&DBHost, "db-host", "", "The hostname or IP of the Postgres instance")
-	flag.StringVar(&DBPort, "db-port", "5432", "The port of the Postgres instance")
+	flag.StringVar(&DBUsername, "db-username", env.String("DB_USERNAME", ""), "The username associated with the Postgres instance")
+	flag.StringVar(&DBPassword, "db-password", env.String("DB_PASSWORD", ""), "The password of the db user account")
+	flag.StringVar(&DBName, "db-name", env.String("DB_NAME", ""), "The name of the Postgres database to use")
+	flag.StringVar(&DBHost, "db-host", env.String("DB_HOST", ""), "The hostname or IP of the Postgres instance")
+	flag.StringVar(&DBPort, "db-port", env.String("DB_PORT", "5432"), "The port of the Postgres instance")
 	flag.StringVar(&RedisHost, "redis-host", env.String("REDIS_HOST", "localhost"), "Redis hostname")
 	flag.StringVar(&RedisPort, "redis-port", env.String("REDIS_PORT", "6379"), "Redis port")
 	flag.StringVar(&RedisPassword, "redis-password", env.String("REDIS_PASSWORD", ""), "Redis password")
@@ -119,6 +122,7 @@ func main() {
 	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
 	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
 	flag.BoolVar(&Prometheus, "prometheus", env.Bool("PROMETHEUS", false), "Enable Prometheus")
+	flag.IntVar(&OnceIn, "once-in", env.Int("once-in", 60), "Number of minutes to wait before queuing another command for a device. Ignored and overidden as 2 (minutes) if --debug is passed.")
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -223,7 +227,14 @@ func main() {
 		log.Error(err)
 	}
 	go director.FetchDevicesFromMDM()
-	go director.ScheduledCheckin(PushQueue)
+
+	// Override OnceIn if --debug is passed
+	if debugMode {
+		OnceIn = 2
+	}
+
+	onceInDuration := (time.Minute * time.Duration(OnceIn))
+	go director.ScheduledCheckin(PushQueue, onceInDuration)
 	go director.ProcessScheduledCheckinQueue(PushQueue)
 	if utils.Prometheus() {
 		director.Metrics()
