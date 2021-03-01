@@ -402,3 +402,19 @@ func RequestAllDeviceInfo(device types.Device) error {
 
 	return nil
 }
+
+func PushDeviceHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	udid := vars["udid"]
+
+	err := PushDevice(udid)
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		_, err = w.Write([]byte("{\"status\":\"push_sent\""))
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+	}
+}
