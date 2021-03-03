@@ -249,6 +249,7 @@ func PushDevice(udid string) error {
 	now := time.Now()
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Performing device push"})
 
+	// This will ensure the apns push is expired when we push again - this helps prevent a flood of responses from the device whilst ensuring there is always a push waiting for the device when it comes online.
 	retry := now.Add(time.Minute * time.Duration(int64(utils.OnceIn())))
 	retryUnix := retry.Unix()
 
