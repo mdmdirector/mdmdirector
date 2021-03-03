@@ -169,7 +169,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 	deviceChunks := deviceChunkSlice(devices, devicesPerMinute)
 	InfoLogger(LogHolder{Message: fmt.Sprintf("%d chunks of %d devices each will be processed", len(deviceChunks), devicesPerMinute)})
 	ctx := context.Background()
-	msgTxt := fmt.Sprintf("commands will only be queued for an individual device every %s mins at maximum", onceIn)
+	msgTxt := fmt.Sprintf("commands will only be queued for an individual device every %s at maximum", onceIn)
 	InfoLogger(LogHolder{Message: msgTxt})
 	for i := range deviceChunks {
 		for j := range deviceChunks[i] {
