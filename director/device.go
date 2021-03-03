@@ -406,7 +406,7 @@ func RequestAllDeviceInfo(device types.Device) error {
 func PushDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	udid := vars["udid"]
-
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Request to /device/push received"})
 	err := PushDevice(udid)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
