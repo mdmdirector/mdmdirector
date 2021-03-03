@@ -117,6 +117,10 @@ func RedisPassword() string {
 	return flag.Lookup("redis-password").Value.(flag.Getter).Get().(string)
 }
 
+func OnceIn() int {
+	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.

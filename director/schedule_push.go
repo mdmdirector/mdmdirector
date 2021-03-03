@@ -246,16 +246,12 @@ func deviceNeedsPush(device types.Device) bool {
 func PushDevice(udid string) error {
 	device := types.Device{UDID: udid}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending push to device"})
-	DelaySeconds := getDelay()
-	// now := time.Now()
-	var retry int64
-	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Performing scheduled push"})
-	// if now.After(device.NextPush) {
-	// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "After scheduled push. Pushing with an expiry of 24 hours.", Metric: device.NextPush.String()})
-	// 	retry = time.Now().Unix() + 86400
-	// } else {
-	retry = time.Now().Unix() + int64(DelaySeconds)
-	// }
+	now := time.Now()
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Performing device push"})
+
+	// This will ensure the apns push is expired when we push again - this helps prevent a flood of responses from the device whilst ensuring there is always a push waiting for the device when it comes online.
+	retry := now.Add(time.Minute * time.Duration(int64(utils.OnceIn())))
+	retryUnix := retry.Unix()
 
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
@@ -264,7 +260,7 @@ func PushDevice(udid string) error {
 
 	endpoint.Path = path.Join(endpoint.Path, "push", device.UDID)
 	queryString := endpoint.Query()
-	queryString.Set("expiration", strconv.FormatInt(retry, 10))
+	queryString.Set("expiration", strconv.FormatInt(retryUnix, 10))
 	endpoint.RawQuery = queryString.Encode()
 	req, err := http.NewRequest("GET", endpoint.String(), nil)
 	if err != nil {
