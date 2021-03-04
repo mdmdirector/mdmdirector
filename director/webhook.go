@@ -225,7 +225,7 @@ func RequestDeviceUpdate(device types.Device) {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, last push is within threshold", Metric: device.LastInfoRequested.String()})
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, last push is within info-request-interval", Metric: device.LastInfoRequested.String()})
 	}
 
 	// PushDevice(device.UDID)
