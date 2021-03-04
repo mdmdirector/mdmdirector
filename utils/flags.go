@@ -121,6 +121,10 @@ func OnceIn() int {
 	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
 }
 
+func InfoRequestInterval() int {
+	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.
