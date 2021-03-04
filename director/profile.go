@@ -141,6 +141,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					}
+					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
 					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
@@ -176,6 +177,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						continue
 					}
+					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
 					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
@@ -429,6 +431,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 	for i := range devices {
 		device := devices[i]
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing DELETE to /profiles"})
 		for i := range out.Mobileconfigs {
 			var profile types.DeviceProfile
 			profile.PayloadIdentifier = out.Mobileconfigs[i].PayloadIdentifier
@@ -768,6 +771,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			// DebugLogger(LogHolder{Message: incomingProfile.PayloadIdentifier})
 			if savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: incomingProfile.PayloadIdentifier, Message: "Device profile marked for removal is installed"})
 				profilesToRemove = append(profilesToRemove, savedProfile)
 				DebugLogger(LogHolder{Message: fmt.Sprint(len(profilesToRemove))})
 				continue

@@ -412,7 +412,7 @@ func PushDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
-		_, err = w.Write([]byte("{\"status\":\"push_sent\""))
+		_, err = w.Write([]byte("{\"status\":\"push_sent\"}"))
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
