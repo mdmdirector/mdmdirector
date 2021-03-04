@@ -215,9 +215,10 @@ func RequestDeviceUpdate(device types.Device) {
 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}
 
+	now := time.Now()
 	intervalMins := utils.InfoRequestInterval()
-	interval := time.Now().Add(time.Minute * time.Duration(-intervalMins))
-	if time.Now().After(interval) {
+	interval := now.Add(time.Minute * time.Duration(-intervalMins))
+	if device.LastInfoRequested.Before(interval) {
 		log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
 		err = RequestAllDeviceInfo(device)
 		if err != nil {
