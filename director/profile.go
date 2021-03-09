@@ -27,7 +27,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
@@ -53,11 +52,13 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 		err = plist.Unmarshal(mobileconfig, &profile)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		var tempProfileDict map[string]interface{}
@@ -65,6 +66,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
@@ -75,6 +77,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		profile.MobileconfigData = mobileconfig
@@ -88,6 +91,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		sharedProfile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
@@ -105,6 +109,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 
 		sharedProfile.MobileconfigData = mobileconfig
@@ -140,6 +145,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+						return
 					}
 					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
 					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
@@ -159,6 +165,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				err = SaveSharedProfiles(sharedProfiles)
 				if err != nil {
@@ -194,6 +201,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
 
 		_, err = w.Write(output)
@@ -262,7 +270,10 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 	}
 
-	SaveProfiles(devices, profilesToSave)
+	err := SaveProfiles(devices, profilesToSave)
+	if err != nil {
+		return metadata, errors.Wrap(err, "SaveProfiles")
+	}
 
 	metadata.ProfileMetadata = profileMetadataList
 
@@ -461,46 +472,43 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) {
+func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error {
 	for i := range devices {
 		device := devices[i]
 		if device.UDID == "" {
 			continue
 		}
 		for profilei := range profiles {
-			// var profileModel types.DeviceProfile
+			var savedProfile types.DeviceProfile
 			var boolModel types.DeviceProfile
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
-			err := db.DB.Clauses(clause.OnConflict{
-				UpdateAll: true,
-			}).Create(&profileData).Error
+
+			err := db.DB.Model(&savedProfile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Delete(&types.DeviceProfile{}).Error
 			if err != nil {
-				theErr := fmt.Sprintf("Update profile: %v", err.Error())
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: theErr})
+				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Wrap(err, "Delete old profiles")
+				}
 			}
-			// if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).FirstOrCreate(&profileModel).Error; err != nil {
-			// 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// 		db.DB.Create(&profileData)
-			// 	}
-			// } else {
-			// 	err := db.DB.Model(&profileModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Assign(&profileData).FirstOrCreate(&profileModel).Error
-			// 	if err != nil {
-			// 		theErr := fmt.Sprintf("Update profile: %v", err.Error())
-			// 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: theErr})
-			// 	}
-			// }
+
+			err = db.DB.Save(&profileData).Error
+			if err != nil {
+				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Wrap(err, "Save incoming profile")
+				}
+			}
 
 			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profileData.PayloadIdentifier, Message: "Updating profile installed bool"})
 			err = db.DB.Model(&boolModel).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Updates(map[string]interface{}{
 				"installed": profiles[profilei].Installed,
 			}).Error
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				return errors.Wrap(err, "Update boolean on profile")
 			}
 
 		}
 	}
+	return nil
 }
 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {

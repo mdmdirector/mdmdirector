@@ -400,6 +400,15 @@ func RequestAllDeviceInfo(device types.Device) error {
 		return errors.Wrap(err, "RequestAllDeviceInfo")
 	}
 
+	now := time.Now()
+	var deviceModel types.Device
+	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
+		"last_info_requested": now,
+	}).Error
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

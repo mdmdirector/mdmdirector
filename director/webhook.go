@@ -209,14 +209,23 @@ func RequestDeviceUpdate(device types.Device) {
 
 	}
 
-	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"last_info_requested": time.Now()}).Error
+	err = db.DB.Model(&deviceModel).Select("ud_id", "last_info_requested", "lock", "serial_number").Where("ud_id = ?", device.UDID).First(&device).Error
+
 	if err != nil {
 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 	}
-	log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
-	err = RequestAllDeviceInfo(device)
-	if err != nil {
-		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+
+	now := time.Now()
+	intervalMins := utils.InfoRequestInterval()
+	interval := now.Add(time.Minute * time.Duration(-intervalMins))
+	if device.LastInfoRequested.Before(interval) {
+		log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
+		err = RequestAllDeviceInfo(device)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		}
+	} else {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, last push is within info-request-interval", Metric: device.LastInfoRequested.String()})
 	}
 
 	// PushDevice(device.UDID)
