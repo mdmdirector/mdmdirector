@@ -478,23 +478,24 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 		if device.UDID == "" {
 			continue
 		}
+
 		for profilei := range profiles {
 			var savedProfile types.DeviceProfile
 			var boolModel types.DeviceProfile
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
 
-			err := db.DB.Model(&savedProfile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Delete(&types.DeviceProfile{}).Error
-			if err != nil {
-				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.Wrap(err, "Delete old profiles")
-				}
-			}
-
-			err = db.DB.Save(&profileData).Error
+			err := db.DB.Save(&profileData).Error
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
 					return errors.Wrap(err, "Save incoming profile")
+				}
+			}
+
+			err = db.DB.Model(&savedProfile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Not("hashed_payload_uuid = ?", profileData.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
+			if err != nil {
+				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Wrap(err, "Delete old profiles")
 				}
 			}
 
