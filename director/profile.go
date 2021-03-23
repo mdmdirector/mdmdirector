@@ -709,14 +709,14 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			incomingProfile := profileListData.ProfileList[i]
 			if savedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is installed"})
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "VerifyMDMProfiles: Device Profile is installed"})
 				found = true
 				continue
 			}
 		}
 
 		if !found {
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "Device Profile is not installed"})
+			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: savedProfile.HashedPayloadUUID, ProfileIdentifier: savedProfile.PayloadIdentifier, Message: "VerifyMDMProfiles: Device Profile is not installed"})
 			profilesToInstall = append(profilesToInstall, savedProfile)
 		}
 	}
@@ -778,7 +778,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			// DebugLogger(LogHolder{Message: incomingProfile.PayloadIdentifier})
 			if savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
 				// If missing, queue up to be installed
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: incomingProfile.PayloadIdentifier, Message: "Device profile marked for removal is installed"})
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: incomingProfile.PayloadIdentifier, Message: "VerifyMDMProfiles: Device profile marked for removal is installed"})
 				profilesToRemove = append(profilesToRemove, savedProfile)
 				DebugLogger(LogHolder{Message: fmt.Sprint(len(profilesToRemove))})
 				continue
