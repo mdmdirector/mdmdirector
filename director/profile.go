@@ -268,15 +268,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 		profileMetadata.Status = status
 		profileMetadataList = append(profileMetadataList, profileMetadata)
 
-		// Cleanup the old duplicated profiles
-		// Remove this in a later version when this is not a problem anymore
-		err := db.DB.Model(&profile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
-		if err != nil {
-			if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-				return metadata, errors.Wrap(err, "Delete old profiles")
-			}
-		}
-
 	}
 
 	err := SaveProfiles(devices, profilesToSave)
@@ -487,13 +478,22 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 		if device.UDID == "" {
 			continue
 		}
-
 		for profilei := range profiles {
+			profile := profiles[i]
 			var boolModel types.DeviceProfile
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
 
-			err := db.DB.Save(&profileData).Error
+			// Cleanup the old duplicated profiles
+			// Remove this in a later version when this is not a problem anymore
+			err := db.DB.Model(&profile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
+
+			if err != nil {
+				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+				}
+			}
+
+			err = db.DB.Save(&profileData).Error
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
 					return errors.Wrap(err, "Save incoming profile")
