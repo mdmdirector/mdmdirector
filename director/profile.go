@@ -268,6 +268,15 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 		profileMetadata.Status = status
 		profileMetadataList = append(profileMetadataList, profileMetadata)
 
+		// Cleanup the old duplicated profiles
+		// Remove this in a later version when this is not a problem anymore
+		err := db.DB.Model(&profile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
+		if err != nil {
+			if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+				return metadata, errors.Wrap(err, "Delete old profiles")
+			}
+		}
+
 	}
 
 	err := SaveProfiles(devices, profilesToSave)
@@ -480,7 +489,6 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 		}
 
 		for profilei := range profiles {
-			var savedProfile types.DeviceProfile
 			var boolModel types.DeviceProfile
 			profileData := profiles[profilei]
 			profileData.DeviceUDID = device.UDID
@@ -489,13 +497,6 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
 					return errors.Wrap(err, "Save incoming profile")
-				}
-			}
-
-			err = db.DB.Model(&savedProfile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profileData.PayloadIdentifier).Not("hashed_payload_uuid = ?", profileData.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
-			if err != nil {
-				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.Wrap(err, "Delete old profiles")
 				}
 			}
 
@@ -704,8 +705,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	// For each, loop over the present profiles
-	for _, savedProfile := range profiles {
+	for profileI := range profiles {
 		found := false
+		savedProfile := profiles[profileI]
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
