@@ -127,7 +127,8 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			} else {
-				dh.Message = string(jsonblob)
+				dh.Message = "Json blob of ProfileList"
+				dh.Metric = string(jsonblob)
 				DebugLogger(dh)
 			}
 			var profileListData types.ProfileListData
