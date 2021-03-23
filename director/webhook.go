@@ -120,7 +120,16 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		// Is this a ProfileList response?
 		_, ok := payloadDict["ProfileList"]
 		if ok {
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"})
+			lh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"}
+			InfoLogger(lh)
+			dh := lh
+			jsonblob, err := json.Marshal(payloadDict["ProfileList"])
+			if err != nil {
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+			} else {
+				dh.Message = string(jsonblob)
+				DebugLogger(dh)
+			}
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
