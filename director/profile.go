@@ -704,9 +704,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	// For each, loop over the present profiles
-	for i := range profiles {
+	for _, savedProfile := range profiles {
 		found := false
-		savedProfile := profiles[i]
 		for i := range profileListData.ProfileList {
 			incomingProfile := profileListData.ProfileList[i]
 			if savedProfile.HashedPayloadUUID == incomingProfile.PayloadUUID && savedProfile.PayloadIdentifier == incomingProfile.PayloadIdentifier {
