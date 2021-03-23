@@ -270,12 +270,12 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 		// Cleanup the old duplicated profiles
 		// Remove this in a later version when this is not a problem anymore
-		err := db.DB.Model(&profile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
-		if err != nil {
-			if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-				return metadata, errors.Wrap(err, "Delete old profiles")
-			}
-		}
+		// err := db.DB.Model(&profile).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).Delete(&types.DeviceProfile{}).Error
+		// if err != nil {
+		// 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		// 		return metadata, errors.Wrap(err, "Delete old profiles")
+		// 	}
+		// }
 
 	}
 
