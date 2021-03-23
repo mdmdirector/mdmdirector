@@ -490,6 +490,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+					return errors.Wrap(err, "Delete old profiles")
 				}
 			}
 
