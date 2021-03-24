@@ -795,11 +795,18 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but hashed payload UUID does not match", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToInstallLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			}
+
+			// Profile is present and hash matches, success
+			if profileForVerification.Installed && hashMatches {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and hashed payload UUID matches", Metric: profileForVerification.Type})
+			}
 		} else { // Profile is not in the profileList
 			// But it should be installed
 			if profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present not in the profile list and should be installed", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToInstallLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
+			} else { // Not present, and shouldn't be installed
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is not present and should not be installed", Metric: profileForVerification.Type})
 			}
 		}
 	}
