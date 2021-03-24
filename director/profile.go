@@ -267,7 +267,10 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 			if pushNow && profilePresent {
 				deletedProfile := []types.DeviceProfile{profile}
-				DeleteDeviceProfiles(devices, deletedProfile)
+				_, err := DeleteDeviceProfiles(devices, deletedProfile)
+				if err != nil {
+					return metadata, errors.Wrap(err, "Delete device profiles")
+				}
 			}
 
 			// Cleanup the old duplicated profiles
@@ -418,7 +421,10 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 			return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not set installed = false")
 		}
 	}
-	DeleteSharedProfiles(devices, sharedProfiles)
+	_, err = DeleteSharedProfiles(devices, sharedProfiles)
+	if err != nil {
+		return errors.Wrap(err, "Profiles::DisableSharedProfiles: DeleteSharedProfiles")
+	}
 	return nil
 }
 
@@ -787,13 +793,13 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			// Profile is present, but should not be installed
 			if !profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but should not be installed", Metric: profileForVerification.Type})
-				sharedProfilesToRemove, profilesToRemove = addProfileToRemovalLists(profileForVerification, sharedProfilesToRemove, profilesToRemove)
+				sharedProfilesToRemove, profilesToRemove = addProfileToLists(profileForVerification, sharedProfilesToRemove, profilesToRemove)
 			}
 
 			// Profile is present, but the hash doesn't match
 			if profileForVerification.Installed && !hashMatches {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but hashed payload UUID does not match", Metric: profileForVerification.Type})
-				sharedProfilesToInstall, profilesToInstall = addProfileToInstallLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
+				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			}
 
 			// Profile is present and hash matches, success
@@ -840,48 +846,20 @@ func profileInProfileList(profileForVerification ProfileForVerification, profile
 	for i := range profileLists {
 		profileList := profileLists[i]
 		// Profile is present in profile list, payloaduuid matches what we expect, should be installed
-		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && profileForVerification.Installed == true {
+		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && profileForVerification.Installed {
 			return true, true
 		}
 
 		// Profile is present in profile list, profile should not be installed
-		if profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && profileForVerification.Installed == false {
+		if profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && !profileForVerification.Installed {
 			return true, false
 		}
 	}
 	return false, false
 }
 
-// Add to the appropriate install list
-func addProfileToInstallLists(profileForVerification ProfileForVerification, sharedProfilesToInstall []types.SharedProfile, profilesToInstall []types.DeviceProfile) ([]types.SharedProfile, []types.DeviceProfile) {
-	if profileForVerification.Type == "shared" {
-		var sharedProfile types.SharedProfile
-		sharedProfile.HashedPayloadUUID = profileForVerification.HashedPayloadUUID
-		sharedProfile.PayloadUUID = profileForVerification.PayloadUUID
-		sharedProfile.PayloadIdentifier = profileForVerification.PayloadIdentifier
-		sharedProfile.Installed = profileForVerification.Installed
-		sharedProfile.MobileconfigData = profileForVerification.MobileconfigData
-		sharedProfile.MobileconfigHash = profileForVerification.MobileconfigHash
-		sharedProfilesToInstall = append(sharedProfilesToInstall, sharedProfile)
-	}
-
-	if profileForVerification.Type == "device" {
-		var deviceProfile types.DeviceProfile
-		deviceProfile.HashedPayloadUUID = profileForVerification.HashedPayloadUUID
-		deviceProfile.PayloadUUID = profileForVerification.PayloadUUID
-		deviceProfile.PayloadIdentifier = profileForVerification.PayloadIdentifier
-		deviceProfile.Installed = profileForVerification.Installed
-		deviceProfile.MobileconfigData = profileForVerification.MobileconfigData
-		deviceProfile.MobileconfigHash = profileForVerification.MobileconfigHash
-		deviceProfile.DeviceUDID = profileForVerification.DeviceUDID
-		profilesToInstall = append(profilesToInstall, deviceProfile)
-	}
-
-	return sharedProfilesToInstall, profilesToInstall
-}
-
-// Add to the appropriate removal list
-func addProfileToRemovalLists(profileForVerification ProfileForVerification, sharedProfilesToRemove []types.SharedProfile, profilesToRemove []types.DeviceProfile) ([]types.SharedProfile, []types.DeviceProfile) {
+// Add to the appropriate list
+func addProfileToLists(profileForVerification ProfileForVerification, sharedProfilesToRemove []types.SharedProfile, profilesToRemove []types.DeviceProfile) ([]types.SharedProfile, []types.DeviceProfile) {
 	if profileForVerification.Type == "shared" {
 		var sharedProfile types.SharedProfile
 		sharedProfile.HashedPayloadUUID = profileForVerification.HashedPayloadUUID
