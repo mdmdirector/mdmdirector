@@ -16,8 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func logProfileListData(device types.Device, profileListData types.ProfileListData) {
-	dh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "ProfileList Data"}
+func profileListDataJson(device types.Device, profileListData types.ProfileListData) ([]byte, error) {
 	var metricMap []map[string]string
 	for i, payload := range profileListData.ProfileList {
 		metricMap = append(metricMap, make(map[string]string))
@@ -32,12 +31,10 @@ func logProfileListData(device types.Device, profileListData types.ProfileListDa
 		return buffer.Bytes(), err
 	}(metricMap)
 	if err != nil {
-		err = errors.Wrapf(err, "problem with creating jsonblob")
-		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		return nil, errors.Wrapf(err, "problem with creating jsonblob")
 	}
 
-	dh.Metric = string(jsonBlob[:])
-	DebugLogger(dh)
+	return jsonBlob, nil
 }
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +149,12 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
-			logProfileListData(device, profileListData)
+			jsonBlob, err := profileListDataJson(device, profileListData)
+			if err != nil {
+				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+			} else {
+				DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "ProfileList Data", Metric: string(jsonBlob)})
+			}
 
 			err = VerifyMDMProfiles(profileListData, device)
 			if err != nil {
