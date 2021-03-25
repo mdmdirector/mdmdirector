@@ -17,8 +17,7 @@ import (
 )
 
 func logProfileListData(device types.Device, profileListData types.ProfileListData) {
-	dh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"}
-	dh.Message = "ProfileList Data"
+	dh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "ProfileList Data"}
 	var metricMap []map[string]string
 	for i, payload := range profileListData.ProfileList {
 		metricMap = append(metricMap, make(map[string]string))
