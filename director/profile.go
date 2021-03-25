@@ -774,7 +774,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 
 	for i := range sharedProfiles {
 		var profileForVerification ProfileForVerification
-		sharedProfile := profiles[i]
+		sharedProfile := sharedProfiles[i]
 		profileForVerification.PayloadUUID = sharedProfile.PayloadUUID
 		profileForVerification.PayloadIdentifier = sharedProfile.PayloadIdentifier
 		profileForVerification.HashedPayloadUUID = sharedProfile.HashedPayloadUUID
