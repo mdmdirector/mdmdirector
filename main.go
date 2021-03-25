@@ -135,10 +135,13 @@ func main() {
 	log.SetLevel(logLevel)
 
 	if LogFormat == "json" {
-		log.SetFormatter(&log.JSONFormatter{})
+		log.SetFormatter(&log.JSONFormatter{
+			DisableHTMLEscape: true,
+		})
 	} else {
 		log.SetFormatter(&log.TextFormatter{
 			FullTimestamp: true,
+			DisableQuote:  true,
 		})
 	}
 

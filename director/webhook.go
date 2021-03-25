@@ -1,6 +1,7 @@
 package director
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,31 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
+
+func logProfileListData(device types.Device, profileListData types.ProfileListData) {
+	dh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"}
+	dh.Message = "ProfileList Data"
+	var metricMap []map[string]string
+	for i, payload := range profileListData.ProfileList {
+		metricMap = append(metricMap, make(map[string]string))
+		metricMap[i]["PayloadIdentifier"] = payload.PayloadIdentifier
+		metricMap[i]["PayloadUUID"] = payload.PayloadUUID
+	}
+	jsonBlob, err := func(t []map[string]string) ([]byte, error) {
+		buffer := &bytes.Buffer{}
+		encoder := json.NewEncoder(buffer)
+		encoder.SetEscapeHTML(false)
+		err := encoder.Encode(t)
+		return buffer.Bytes(), err
+	}(metricMap)
+	if err != nil {
+		err = errors.Wrapf(err, "problem with creating jsonblob")
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+	}
+
+	dh.Metric = string(jsonBlob[:])
+	DebugLogger(dh)
+}
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
@@ -122,20 +148,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			lh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"}
 			InfoLogger(lh)
-			dh := lh
-			jsonblob, err := json.Marshal(payloadDict["ProfileList"])
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			} else {
-				dh.Message = "Json blob of ProfileList"
-				dh.Metric = string(jsonblob)
-				DebugLogger(dh)
-			}
 			var profileListData types.ProfileListData
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
+			logProfileListData(device, profileListData)
+
 			err = VerifyMDMProfiles(profileListData, device)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
