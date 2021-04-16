@@ -4,13 +4,13 @@
 #          ./tools/device_lock $udid $pincode
 #
 source $MDMDIRECTOR_ENV_PATH
-endpoint="device_lock"
+endpoint="device/command/device_lock"
 jq -n \
   --arg udid "$1" \
-  --arg pincode "$2"
+  --arg pincode "$2" \
   '.udids = [$udid]
   |.value = true
   |.push_now = true
-  |.pin = "[$pincode]"
+  |.pin = $pincode
   '|\
   curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-
