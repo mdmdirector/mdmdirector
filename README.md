@@ -10,15 +10,16 @@ Requirements:
 
 * Redis for the scheduled checkin queue
 * PostgreSQL database for storing device information
-* (Optional) Signing certificate for signing profiles
+* (Recommended) Signing certificate for signing profiles
+* (STRONGLY recommended) Load balancer/proxy to serve and terminate TLS for MDMDirector
 
 
 ### MicroMDM Setup
 
-You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMDirector instance (with the additon of `/webhook`)
+You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMDirector instance (with the addition of `/webhook`).
 
 ```
--command-webhook-url=http://mdmdirector.company.com/webhook
+-command-webhook-url=https://mdmdirector.company.com/webhook
 ```
 
 ### Flags
@@ -48,6 +49,7 @@ You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMD
 - `-once-in` - Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overridden as 2 (minutes) if --debug is passed.
 - `-password string` - **(Required)** Password used for basic authentication
 - `-port string` - Port number to run MDMDirector on. (default "8000")
+- `-prometheus` - Enable Prometheus metrics. (default false)
 - `-push-new-build` - Re-push profiles if the device's build number changes. (default true)
 - `-scep-cert-issuer` - The issuer of your SCEP certificate (default: "CN=MicroMDM,OU=MICROMDM SCEP CA,O=MicroMDM,C=US")
 - `-scep-cert-min-validity` - The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent. (default: 180)
