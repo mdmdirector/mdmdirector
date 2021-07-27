@@ -890,7 +890,15 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	vars := mux.Vars(r)
 
-	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
+	notFoundErr := db.DB.First(&profiles, "device_ud_id = ?", vars["udid"]).Error
+	if errors.Is(notFoundErr, gorm.ErrRecordNotFound) {
+		errorMSG := fmt.Sprintf("Device Profiles returned no records found for device UDID = %s.\n", vars["udid"])
+		w.WriteHeader(404)
+		log.Errorf(errorMSG)
+		_, _ = w.Write([]byte(errorMSG))
+		return
+	}
+	err := db.DB.Find(&profiles, "device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
 	}
