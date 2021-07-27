@@ -892,7 +892,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 
 	notFoundErr := db.DB.First(&profiles, "device_ud_id = ?", vars["udid"]).Error
 	if errors.Is(notFoundErr, gorm.ErrRecordNotFound) {
-		errorMSG := fmt.Sprintf("Device Profiles returned no records found for device UDID = %s.\n", vars["udid"])
+		errorMSG := "Device Profiles returned no records found for device UDID in request."
 		w.WriteHeader(404)
 		log.Errorf(errorMSG)
 		_, _ = w.Write([]byte(errorMSG))
