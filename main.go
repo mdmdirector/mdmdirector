@@ -183,11 +183,7 @@ func main() {
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
-	if utils.Prometheus() {
-		http.Handle("/metrics", promhttp.Handler())
-	}
 
-	http.Handle("/", r)
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
 		director.ErrorLogger(director.LogHolder{Message: err.Error()})
@@ -233,6 +229,12 @@ func main() {
 	if err != nil {
 		log.Error(err)
 	}
+
+	if utils.Prometheus() {
+		director.Metrics()
+		r.Handle("/metrics", promhttp.Handler())
+	}
+
 	go director.FetchDevicesFromMDM()
 
 	// Override OnceIn if --debug is passed
@@ -243,9 +245,6 @@ func main() {
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
 	go director.ScheduledCheckin(PushQueue, onceInDuration)
 	go director.ProcessScheduledCheckinQueue(PushQueue)
-	if utils.Prometheus() {
-		director.Metrics()
-	}
 
-	log.Info(http.ListenAndServe(":"+port, nil))
+	log.Info(http.ListenAndServe(":"+port, r))
 }
