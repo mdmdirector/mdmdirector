@@ -1,4 +1,4 @@
-export GO111MODULE=on
+# export GO111MODULE=on
 current_dir = $(shell pwd)
 
 SHELL = /bin/sh
@@ -62,7 +62,7 @@ curlprofile:
 	curl -o EnrollmentProfile.mobileconfig ${SERVER_URL}/mdm/enroll
 
 mdmdirector: build curlprofile
-	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll -enrollment-profile=EnrollmentProfile.mobileconfig -enrollment-profile-signed #-log-format=json
+	build/$(CURRENT_PLATFORM)/mdmdirector -micromdmurl="${SERVER_URL}" -micromdmapikey="supersecret" -debug -sign -cert=SigningCert.p12 -key-password=password -password=secret  -db-username=postgres -db-host=127.0.0.1 -db-port=5432 -db-name=postgres -db-password=password -db-sslmode=disable -loglevel=debug -escrowurl="${ESCROW_URL}" -clear-device-on-enroll -enrollment-profile=EnrollmentProfile.mobileconfig -enrollment-profile-signed -prometheus #-log-format=json
 
 test:
 	go test -cover -v ./...
