@@ -1,4 +1,3 @@
-# export GO111MODULE=on
 current_dir = $(shell pwd)
 
 SHELL = /bin/sh
