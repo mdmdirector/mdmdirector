@@ -40,8 +40,10 @@ build: clean .pre-build
 	go build -o build/$(CURRENT_PLATFORM)/mdmdirector
 
 xp-build:  clean .pre-build
-	GOOS=darwin go build -o build/darwin/mdmdirector
-	GOOS=linux CGO_ENABLED=0 go build -o build/linux/mdmdirector
+	GOOS=darwin GOARCH=amd64 go build -o build/darwin/mdmdirector-darwin-amd64
+	GOOS=darwin GOARCH=arm64 go build -o build/darwin/mdmdirector-darwin-arm64
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o build/linux/mdmdirector-linux-amd64
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o build/linux/mdmdirector-linux-arm64
 
 postgres-clean:
 	rm -rf postgres
