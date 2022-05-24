@@ -16,7 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func profileListDataJSON(device types.Device, profileListData types.ProfileListData) ([]byte, error) {
+func profileListDataJSON(profileListData types.ProfileListData) ([]byte, error) {
 	var metricMap []map[string]string
 	for i := range profileListData.ProfileList {
 		metricMap = append(metricMap, make(map[string]string))
@@ -150,7 +150,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			}
-			jsonBlob, err := profileListDataJSON(device, profileListData)
+			jsonBlob, err := profileListDataJSON(profileListData)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 			} else {
