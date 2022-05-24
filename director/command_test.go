@@ -115,7 +115,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
-	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{SkipDefaultTransaction: true})
 	db.DB = DB
 
 	mockSpy.ExpectExec(`.*`).WithArgs(
