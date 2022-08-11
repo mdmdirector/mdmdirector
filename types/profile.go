@@ -70,10 +70,10 @@ type ProfileList struct {
 	PayloadUUID              string        `plist:"PayloadUUID" gorm:"not null"`
 	PayloadVersion           int           `plist:"PayloadVersion"`
 	FullPayload              bool          `plist:"FullPayload"`
+	SignerCertificates       []byte        `plist:"SignerCertificates" gorm:"-"`
 }
 
 type MetadataItem struct {
-	// Device          Device            `json:"device"`
 	ProfileMetadata []ProfileMetadata `json:"profile_metadata"`
 }
 

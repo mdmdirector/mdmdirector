@@ -273,27 +273,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				}
 			}
 
-			// Cleanup the old duplicated profiles
-			// Remove this in a later version when this is not a problem anymore
-			// var count int64
-			// db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Count(&count)
-			// if count > 1 {
-			// 	var firstProfile types.DeviceProfile
-
-			// 	err = db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).First(&firstProfile).Error
-			// 	if err != nil {
-			// 		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// 			return metadata, errors.Wrap(err, "Cleanup old profiles: Select first profile")
-			// 		}
-			// 	}
-
-			// 	err = db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("id = ?", profile.ID).Delete(&types.DeviceProfile{}).Error
-			// 	if err != nil {
-			// 		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// 			return metadata, errors.Wrap(err, "Cleanup old profiles: Delete profiles")
-			// 		}
-			// 	}
-			// }
 		}
 
 		profileMetadata.HashedPayloadUUID = profile.HashedPayloadUUID
@@ -316,7 +295,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
-	// var profileList types.ProfileList
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
@@ -324,17 +302,6 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 			return true, nil
 		}
 	}
-	// Make sure the profile isn't in the device's profilelist
-	// err := db.DB.Model(&profileList).Select("device_ud_id").Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
-	// if err != nil {
-	// 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
-	// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
-	// 		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile not found in device's ProfileList"})
-	// 		return false, nil
-	// 	}
-
-	// 	return true, errors.Wrap(err, "Could not load ProfileList for device")
-	// }
 
 	return false, nil
 }
@@ -367,37 +334,6 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	}
 
 	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-		// if profileList.PayloadUUID == "" {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID is not present in ProfileList", Metric: profileList.PayloadUUID})
-		// } else {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID doesn't match what's in ProfileList", Metric: profileList.PayloadUUID})
-		// }
-		// // May be waiting for a device to report in full - just bail if there profilelist count is 0
-		// var profileCount int
-		// err := db.DB.Model(&profileList).Where("device_ud_id = ?", device.UDID).Count(&profileCount).Error
-		// if err != nil {
-		// 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-		// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
-		// 		return true, errors.Wrap(err, "Could not load ProfileList for device")
-		// 	}
-		// }
-		// if profileCount == 0 {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Device has an empty ProfileList stored"})
-		// }
-		// skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-		// tenMinsAgo := time.Now().Add(-10 * time.Minute)
-		// for _, item := range skipCommands {
-		// 	inQueue := CommandInQueue(device, item, tenMinsAgo)
-		// 	if inQueue {
-		// 		msg := fmt.Sprintf("%v is in queue", item)
-		// 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: msg, Metric: profileList.PayloadUUID})
-		// 		return false, nil
-		// 	}
-		// }
-
-		// InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
-		// _ = RequestAllDeviceInfo(device)
-
 		return false, nil
 	}
 
