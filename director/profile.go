@@ -721,11 +721,25 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
+	_, cert, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
+	if err != nil {
+		log.Errorf("loading signing certificate and private key: %v", err)
+	}
+
+	// ensure certificate matches on enrollment profile
+	err = ensureCertOnEnrollmentProfile(device, profileLists, cert)
+	if err != nil {
+		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
+	}
+
 	for i := range profilesForVerification {
 		profileForVerification := profilesForVerification[i]
-		isInList, hashMatches := profileInProfileList(profileForVerification, profileLists)
+		isInstalled, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, cert)
+		if err != nil {
+			return errors.Wrap(err, "validateProfileInProfileList")
+		}
 		// Profile is present in the ProfileList output
-		if isInList {
+		if isInstalled {
 			// Profile is present, but should not be installed
 			if !profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but should not be installed", Metric: profileForVerification.Type})
@@ -733,14 +747,14 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			}
 
 			// Profile is present, but the hash doesn't match
-			if profileForVerification.Installed && !hashMatches {
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but hashed payload UUID does not match", Metric: profileForVerification.Type})
+			if profileForVerification.Installed && needsReinstall {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but profile needs to be reinstalled", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			}
 
-			// Profile is present and hash matches, success
-			if profileForVerification.Installed && hashMatches {
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and hashed payload UUID matches", Metric: profileForVerification.Type})
+			// Profile is present and does not need to be reinstalled, success
+			if profileForVerification.Installed && !needsReinstall {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and profile does not require reinstallation", Metric: profileForVerification.Type})
 			}
 		} else { // Profile is not in the profileList
 			// But it should be installed
@@ -777,21 +791,44 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	return nil
 }
 
-// Checks if a) the profile is in the profile list (bool #1) and b) if the profile should be installed, if the hashes match (bool #2)
-func profileInProfileList(profileForVerification ProfileForVerification, profileLists []types.ProfileList) (bool, bool) {
+// Checks if a) if the certificate used to sign the profile returned by ProfileList matches the one we have locally (if we are signing profiles), b) if the certificate returned by ProfileList has the same hashed payload as the one we have locally and c) if the profile is present, but we should remove it
+// Returned bool #1 represents whether the profile is currently installed installed
+// Returned bool #2 represents whether the profile needs to be reinstalled
+
+func validateProfileInProfileList(profileForVerification ProfileForVerification, profileLists []types.ProfileList, signingCert *x509.Certificate) (bool, bool, error) {
 	for i := range profileLists {
 		profileList := profileLists[i]
-		// Profile is present in profile list, payloaduuid matches what we expect, should be installed
-		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && profileForVerification.Installed {
-			return true, true
-		}
 
-		// Profile is present in profile list, profile should not be installed
-		if profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && !profileForVerification.Installed {
-			return true, false
+		// Verify the certifacte
+		if utils.Sign() && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
+			InfoLogger(LogHolder{ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "Verifying signing certificate for profile"})
+			certMatched := false
+			for _, cert := range profileList.SignerCertificates {
+				parsed, err := x509.ParseCertificate(cert)
+				if err != nil {
+					return true, false, errors.Wrap(err, "parse PEM certificate data")
+				}
+				if parsed.Subject.String() == signingCert.Subject.String() && parsed.NotAfter == signingCert.NotAfter && parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
+					msg := fmt.Sprintf("%v Parsed certificate matches local signing certificate", signingCert.Subject.String())
+					InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+					certMatched = true
+					break
+				}
+			}
+			if !certMatched {
+				msg := fmt.Sprintf("%v No certificates found matching local certificates", signingCert.Subject.String())
+				InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+				return true, true, nil
+			}
+		}
+		// Profile is present in profile list, payloaduuid matches what we expect, should be installed
+		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
+			return true, false, nil
 		}
 	}
-	return false, false
+
+	// If we get here, we have not found the profile in the ProfileList response
+	return false, true, nil
 }
 
 // Add to the appropriate list

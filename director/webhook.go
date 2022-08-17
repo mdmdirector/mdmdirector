@@ -149,6 +149,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+				return
 			}
 			jsonBlob, err := profileListDataJSON(profileListData)
 			if err != nil {

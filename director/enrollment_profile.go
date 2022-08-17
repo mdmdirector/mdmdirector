@@ -1,6 +1,7 @@
 package director
 
 import (
+	"crypto/x509"
 	"encoding/base64"
 	"io/ioutil"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ReinstallEnrollmentProfile(device types.Device) error {
+func reinstallEnrollmentProfile(device types.Device) error {
 	enrollmentProfile := utils.EnrollmentProfile()
 	data, err := ioutil.ReadFile(enrollmentProfile)
 	if err != nil {
@@ -46,5 +47,44 @@ func ReinstallEnrollmentProfile(device types.Device) error {
 			return errors.Wrap(err, "Failed to push enrollment profile")
 		}
 	}
+	return nil
+}
+
+// If we have enabled signing profiles, this function will verify that the certificate used to sign the enrollment profile is the same as we have locally, and if it is not, will reinstall the profile
+func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.ProfileList, signingCert *x509.Certificate) error {
+	// Return early if we don't want to sign
+	if !utils.Sign() {
+		return nil
+	}
+
+	for i := range profileLists {
+		for j := range profileLists[i].PayloadContent {
+			if profileLists[i].PayloadContent[j].PayloadType == "com.apple.mdm" {
+				profileForVerification := ProfileForVerification{
+					PayloadUUID:       profileLists[i].PayloadUUID,
+					PayloadIdentifier: profileLists[i].PayloadIdentifier,
+					HashedPayloadUUID: profileLists[i].PayloadUUID,
+					DeviceUDID:        device.UDID,
+					Installed:         true, // You always want an enrollment profile to be installed
+				}
+
+				_, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, signingCert)
+				if err != nil {
+					return errors.Wrap(err, "validateProfileInProfileList")
+				}
+
+				if needsReinstall {
+					err = reinstallEnrollmentProfile(device)
+					if err != nil {
+						return errors.Wrap(err, "reinstallEnrollmentProfile")
+					}
+				}
+
+				return nil
+			}
+		}
+
+	}
+
 	return nil
 }

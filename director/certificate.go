@@ -95,9 +95,9 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 		if days <= utils.ScepCertMinValidity() {
 			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg, Metric: strconv.Itoa(days)})
 
-			err := ReinstallEnrollmentProfile(device)
+			err := reinstallEnrollmentProfile(device)
 			if err != nil {
-				return errors.Wrap(err, "ReinstallEnrollmentProfile")
+				return errors.Wrap(err, "reinstallEnrollmentProfile")
 			}
 
 		} else {

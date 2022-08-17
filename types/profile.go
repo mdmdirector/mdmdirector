@@ -58,19 +58,19 @@ type ProfileListData struct {
 type ProfileList struct {
 	ID                       uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
 	DeviceUDID               string
-	HasRemovalPasscode       bool          `plist:"HasRemovalPasscode"`
-	IsEncrypted              bool          `plist:"IsEncrypted"`
-	IsManaged                bool          `plist:"IsManaged"`
-	PayloadContent           []interface{} `plist:"PaylodContent" gorm:"-"`
-	PayloadDescription       string        `plist:"PayloadDescription"`
-	PayloadDisplayName       string        `plist:"PayloadDisplayName"`
-	PayloadIdentifier        string        `plist:"PayloadIdentifier"`
-	PayloadOrganization      string        `plist:"PayloadOrganization"`
-	PayloadRemovalDisallowed bool          `plist:"PayloadRemovalDisallowed"`
-	PayloadUUID              string        `plist:"PayloadUUID" gorm:"not null"`
-	PayloadVersion           int           `plist:"PayloadVersion"`
-	FullPayload              bool          `plist:"FullPayload"`
-	SignerCertificates       []byte        `plist:"SignerCertificates" gorm:"-"`
+	HasRemovalPasscode       bool                 `plist:"HasRemovalPasscode"`
+	IsEncrypted              bool                 `plist:"IsEncrypted"`
+	IsManaged                bool                 `plist:"IsManaged"`
+	PayloadContent           []PayloadContentItem `plist:"PayloadContent" gorm:"-"`
+	PayloadDescription       string               `plist:"PayloadDescription"`
+	PayloadDisplayName       string               `plist:"PayloadDisplayName"`
+	PayloadIdentifier        string               `plist:"PayloadIdentifier"`
+	PayloadOrganization      string               `plist:"PayloadOrganization"`
+	PayloadRemovalDisallowed bool                 `plist:"PayloadRemovalDisallowed"`
+	PayloadUUID              string               `plist:"PayloadUUID" gorm:"not null"`
+	PayloadVersion           int                  `plist:"PayloadVersion"`
+	FullPayload              bool                 `plist:"FullPayload"`
+	SignerCertificates       [][]byte             `plist:"SignerCertificates" gorm:"-"`
 }
 
 type MetadataItem struct {
@@ -82,6 +82,16 @@ type ProfileMetadata struct {
 	PayloadIdentifier string `json:"payload_identifier"`
 	PayloadUUID       string `json:"payload_uuid"`
 	HashedPayloadUUID string `json:"hashed_payload_uuid"`
+}
+
+// https://developer.apple.com/documentation/devicemanagement/profilelistresponse/profilelistitem/payloadcontentitem
+type PayloadContentItem struct {
+	PayloadDescription  string `plist:"PayloadDescription"`
+	PayloadDisplayName  string `plist:"PayloadDisplayName"`
+	PayloadIdentifier   string `plist:"PayloadIdentifier"`
+	PayloadOrganization string `plist:"PayloadOrganization"`
+	PayloadType         string `plist:"PayloadType"`
+	PayloadVersion      int    `plist:"PayloadVersion"`
 }
 
 func (profile *DeviceProfile) AfterCreate(tx *gorm.DB) (err error) {
