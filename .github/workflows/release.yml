@@ -9,6 +9,6 @@ jobs:
       - name: Upload
         uses: ./.github/actions/release
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: "mdmdirector-linux mdmdirector-darwin"
