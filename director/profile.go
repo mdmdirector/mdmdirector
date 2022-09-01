@@ -273,27 +273,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				}
 			}
 
-			// Cleanup the old duplicated profiles
-			// Remove this in a later version when this is not a problem anymore
-			// var count int64
-			// db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Count(&count)
-			// if count > 1 {
-			// 	var firstProfile types.DeviceProfile
-
-			// 	err = db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("hashed_payload_uuid = ?", profile.HashedPayloadUUID).First(&firstProfile).Error
-			// 	if err != nil {
-			// 		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// 			return metadata, errors.Wrap(err, "Cleanup old profiles: Select first profile")
-			// 		}
-			// 	}
-
-			// 	err = db.DB.Model(&types.DeviceProfile{}).Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).Not("id = ?", profile.ID).Delete(&types.DeviceProfile{}).Error
-			// 	if err != nil {
-			// 		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// 			return metadata, errors.Wrap(err, "Cleanup old profiles: Delete profiles")
-			// 		}
-			// 	}
-			// }
 		}
 
 		profileMetadata.HashedPayloadUUID = profile.HashedPayloadUUID
@@ -316,7 +295,6 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 
 func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
-	// var profileList types.ProfileList
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
@@ -324,17 +302,6 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 			return true, nil
 		}
 	}
-	// Make sure the profile isn't in the device's profilelist
-	// err := db.DB.Model(&profileList).Select("device_ud_id").Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).First(&profileList).Error
-	// if err != nil {
-	// 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
-	// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
-	// 		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile not found in device's ProfileList"})
-	// 		return false, nil
-	// 	}
-
-	// 	return true, errors.Wrap(err, "Could not load ProfileList for device")
-	// }
 
 	return false, nil
 }
@@ -367,37 +334,6 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 	}
 
 	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-		// if profileList.PayloadUUID == "" {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID is not present in ProfileList", Metric: profileList.PayloadUUID})
-		// } else {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Hashed payload UUID doesn't match what's in ProfileList", Metric: profileList.PayloadUUID})
-		// }
-		// // May be waiting for a device to report in full - just bail if there profilelist count is 0
-		// var profileCount int
-		// err := db.DB.Model(&profileList).Where("device_ud_id = ?", device.UDID).Count(&profileCount).Error
-		// if err != nil {
-		// 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-		// 		// If it's not found, we'll catch in the false return at the end. Else raise an error
-		// 		return true, errors.Wrap(err, "Could not load ProfileList for device")
-		// 	}
-		// }
-		// if profileCount == 0 {
-		// 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Device has an empty ProfileList stored"})
-		// }
-		// skipCommands := []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"}
-		// tenMinsAgo := time.Now().Add(-10 * time.Minute)
-		// for _, item := range skipCommands {
-		// 	inQueue := CommandInQueue(device, item, tenMinsAgo)
-		// 	if inQueue {
-		// 		msg := fmt.Sprintf("%v is in queue", item)
-		// 		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: msg, Metric: profileList.PayloadUUID})
-		// 		return false, nil
-		// 	}
-		// }
-
-		// InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileIdentifier: profile.PayloadIdentifier, ProfileUUID: profile.HashedPayloadUUID, Message: "Requesting Device Info", Metric: profileList.PayloadUUID})
-		// _ = RequestAllDeviceInfo(device)
-
 		return false, nil
 	}
 
@@ -785,11 +721,25 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
+	_, cert, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
+	if err != nil {
+		log.Errorf("loading signing certificate and private key: %v", err)
+	}
+
+	// ensure certificate matches on enrollment profile
+	err = ensureCertOnEnrollmentProfile(device, profileLists, cert)
+	if err != nil {
+		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
+	}
+
 	for i := range profilesForVerification {
 		profileForVerification := profilesForVerification[i]
-		isInList, hashMatches := profileInProfileList(profileForVerification, profileLists)
+		isInstalled, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, cert)
+		if err != nil {
+			return errors.Wrap(err, "validateProfileInProfileList")
+		}
 		// Profile is present in the ProfileList output
-		if isInList {
+		if isInstalled {
 			// Profile is present, but should not be installed
 			if !profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but should not be installed", Metric: profileForVerification.Type})
@@ -797,14 +747,14 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			}
 
 			// Profile is present, but the hash doesn't match
-			if profileForVerification.Installed && !hashMatches {
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but hashed payload UUID does not match", Metric: profileForVerification.Type})
+			if profileForVerification.Installed && needsReinstall {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but profile needs to be reinstalled", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			}
 
-			// Profile is present and hash matches, success
-			if profileForVerification.Installed && hashMatches {
-				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and hashed payload UUID matches", Metric: profileForVerification.Type})
+			// Profile is present and does not need to be reinstalled, success
+			if profileForVerification.Installed && !needsReinstall {
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and profile does not require reinstallation", Metric: profileForVerification.Type})
 			}
 		} else { // Profile is not in the profileList
 			// But it should be installed
@@ -841,21 +791,44 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	return nil
 }
 
-// Checks if a) the profile is in the profile list (bool #1) and b) if the profile should be installed, if the hashes match (bool #2)
-func profileInProfileList(profileForVerification ProfileForVerification, profileLists []types.ProfileList) (bool, bool) {
+// Checks if a) if the certificate used to sign the profile returned by ProfileList matches the one we have locally (if we are signing profiles), b) if the certificate returned by ProfileList has the same hashed payload as the one we have locally and c) if the profile is present, but we should remove it
+// Returned bool #1 represents whether the profile is currently installed installed
+// Returned bool #2 represents whether the profile needs to be reinstalled
+
+func validateProfileInProfileList(profileForVerification ProfileForVerification, profileLists []types.ProfileList, signingCert *x509.Certificate) (bool, bool, error) {
 	for i := range profileLists {
 		profileList := profileLists[i]
-		// Profile is present in profile list, payloaduuid matches what we expect, should be installed
-		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && profileForVerification.Installed {
-			return true, true
-		}
 
-		// Profile is present in profile list, profile should not be installed
-		if profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && !profileForVerification.Installed {
-			return true, false
+		// Verify the certifacte
+		if utils.Sign() && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
+			InfoLogger(LogHolder{ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "Verifying signing certificate for profile"})
+			certMatched := false
+			for _, cert := range profileList.SignerCertificates {
+				parsed, err := x509.ParseCertificate(cert)
+				if err != nil {
+					return true, false, errors.Wrap(err, "parse PEM certificate data")
+				}
+				if parsed.Subject.String() == signingCert.Subject.String() && parsed.NotAfter == signingCert.NotAfter && parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
+					msg := fmt.Sprintf("%v Parsed certificate matches local signing certificate", signingCert.Subject.String())
+					InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+					certMatched = true
+					break
+				}
+			}
+			if !certMatched {
+				msg := fmt.Sprintf("%v No certificates found matching local certificates", signingCert.Subject.String())
+				InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+				return true, true, nil
+			}
+		}
+		// Profile is present in profile list, payloaduuid matches what we expect, should be installed
+		if profileForVerification.HashedPayloadUUID == profileList.PayloadUUID && profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
+			return true, false, nil
 		}
 	}
-	return false, false
+
+	// If we get here, we have not found the profile in the ProfileList response
+	return false, true, nil
 }
 
 // Add to the appropriate list

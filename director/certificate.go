@@ -2,13 +2,10 @@ package director
 
 import (
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"strconv"
 	"time"
 
-	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -98,39 +95,9 @@ func validateScepCert(certListItem types.CertificateList, device types.Device) e
 		if days <= utils.ScepCertMinValidity() {
 			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg, Metric: strconv.Itoa(days)})
 
-			data, err := ioutil.ReadFile(enrollmentProfile)
+			err := reinstallEnrollmentProfile(device)
 			if err != nil {
-				return errors.Wrap(err, "Failed to read enrollment profile")
-			}
-
-			var profile types.DeviceProfile
-
-			err = plist.Unmarshal(data, &profile)
-			if err != nil {
-				return errors.Wrap(err, "Failed to unmarshal enrollment profile to struct")
-			}
-
-			profile.MobileconfigData = data
-
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Pushing new enrollment profile"})
-
-			if utils.SignedEnrollmentProfile() {
-				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Enrollment Profile pre-signed"})
-				var commandPayload types.CommandPayload
-				commandPayload.RequestType = "InstallProfile"
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(profile.MobileconfigData)
-				commandPayload.UDID = device.UDID
-
-				_, err := SendCommand(commandPayload)
-				if err != nil {
-					return errors.Wrap(err, "Failed to push enrollment profile")
-				}
-			} else {
-				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Signing Enrollment Profile"})
-				_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
-				if err != nil {
-					return errors.Wrap(err, "Failed to push enrollment profile")
-				}
+				return errors.Wrap(err, "reinstallEnrollmentProfile")
 			}
 
 		} else {
