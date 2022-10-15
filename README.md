@@ -57,17 +57,8 @@ You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMD
 - `-signing-private-key string` - Path to the signing private key. Don't use with p12 file.
 
 
-## Todo
+## [Todo](/mdmdirector/getting_involved_docs/start_here.md)
 
-### Documentation
+## [Contributing](/mdmdirector/getting_involved_docs/start_here.md)
 
-- Posting / removing profiles and apps
 
-### App
-
-- App state inspection binary (perhaps a separate service to MDMDirector due to requiring exposure to the public internet)
-
-## Contributing
-
-- File issues
-- Open Pull Requests
