@@ -1,7 +1,3 @@
-## Start here
-
-Welcome mobile device management enthusiasts!
-
 ### Community Standards
 
 The project owner is a MacAdmin fan and community member.
@@ -32,18 +28,3 @@ Long Version of standards is available at the link below.
 >
 > Everyone is welcome to participate, and no judgement will be made on members of the greater Mac community who are not a part of the community.
 >
-
-### Why use mdmdirector?
-
-- Open source!
-- Director your interactions with MicroMDM efficiently
-- Fun and community
-
-
-### Who uses mdmdirector?
-
-Industry professionals that are managing a fleet of hardware at scale.
-
-### Decision Making in mdmdirector
-
-### Contributing to mdmdirector
