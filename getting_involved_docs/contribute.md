@@ -2,8 +2,10 @@
 
 List of steps on how to make a contribution
 
-- [Sample Pull Request](sample_pr.md)
+- File issues
+- Open Pull Requests
 
-perhaps a sample pr?
+[Sample Pull Request](sample_pr.md)
 
-- [Changelog](changelog.md)
+
+Once a change has been merged, follow steps to add to [Changelog](changelog.md).
