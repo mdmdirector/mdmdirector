@@ -61,4 +61,3 @@ You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMD
 
 ## [Contributing](/mdmdirector/getting_involved_docs/start_here.md)
 
-
