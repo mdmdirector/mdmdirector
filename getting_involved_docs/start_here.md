@@ -12,10 +12,12 @@ Welcome mobile device management enthusiasts!
 - Fun and community
 
 
-### [Who uses mdmdirector?](who_mdmdirector.md)
+### Who uses mdmdirector?
 
-Industry professionals that are managing a fleet of hardware at scale.
+mdmdirector was created for Client Engineering teams and other Corporate Infrastructure IT teams who manage hardware at an enterprise level.
 
-### [Decision Making in mdmdirector](decisions.md)
+### Decision Making in mdmdirector
+
+The main project owner, Graham Gilbert, makes all decisions regarding which fixes, issues, and pull requests are merged.
 
 ### [Contributing to mdmdirector](contribute.md)
