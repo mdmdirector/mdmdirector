@@ -5,7 +5,7 @@ Welcome mobile device management enthusiasts!
 ### [Community Standards](community_standards.md)
 
 
-### [Why use mdmdirector?](why_mdmdirector.md)
+### Why use mdmdirector?
 
 - Open source!
 - Director your interactions with MicroMDM efficiently
@@ -21,3 +21,10 @@ mdmdirector was created for Client Engineering teams and other Corporate Infrast
 The main project owner, Graham Gilbert, makes all decisions regarding which fixes, issues, and pull requests are merged.
 
 ### [Contributing to mdmdirector](contribute.md)
+
+### Getting in touch with mdmdirector developer community
+
+Join the Mac Admins Slack community [here](https://www.macadmins.org/). 
+After you join, the discussions for mdmdirector are held on the #micromdm channel.
+
+Additional Mac Admins open source projects are on [Mac Admin Github](https://github.com/macadmins).
