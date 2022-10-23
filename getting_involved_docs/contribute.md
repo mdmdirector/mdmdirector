@@ -2,6 +2,8 @@
 
 List of steps on how to make a contribution
 
+- Review identified opportunities in the [To Do](to_do.md) list.
+
 - File issues using the [bug](./ISSUE_TEMPLATE/bug.md) template.
 
 - Open Pull Requests using the steps outlined below:
