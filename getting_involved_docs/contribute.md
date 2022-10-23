@@ -2,7 +2,7 @@
 
 List of steps on how to make a contribution
 
-- File issues using the [bug](/mdmdirector/getting_involved_docs/ISSUE_TEMPLATE/bug.md)template.
+- File issues using the [bug](./ISSUE_TEMPLATE/bug.md) template.
 
 - Open Pull Requests using the steps outlined below:
 
