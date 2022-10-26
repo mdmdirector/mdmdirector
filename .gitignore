@@ -6,3 +6,4 @@ postgres_v1/*
 *.p12
 EnrollmentProfile.mobileconfig
 env
+.DS_Store
