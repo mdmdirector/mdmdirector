@@ -4,11 +4,9 @@ List of steps on how to make a contribution
 
 - Review identified opportunities in the [To Do](to_do.md) list.
 
-- File issues using the [bug](./ISSUE_TEMPLATE/bug.md) template.
+- File issues by navigating to the `Issues` tab and selecting the `New Issue` button. Bug reporting template is included from Github.
 
-- Open Pull Requests using the steps outlined below:
-
-[Sample Pull Request](sample_pr.md)
+- Open Pull Requests by navigating to the `Pull Requests` tab and selecting the `changes from` and `changes to` branches and then click the `Create Pull Request` button. PR template is included from Github.
 
 Once a change has been merged, follow steps to add to CHANGELOG.md
 
