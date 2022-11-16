@@ -117,11 +117,11 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		sharedProfiles = append(sharedProfiles, sharedProfile)
 	}
 
-	if out.DeviceUDIDs != nil {
+	if out.UDIDs != nil {
 		// Not empty list
-		if len(out.DeviceUDIDs) > 0 {
+		if len(out.UDIDs) > 0 {
 			// Targeting all devices
-			if out.DeviceUDIDs[0] == "*" {
+			if out.UDIDs[0] == "*" {
 				devices, err = GetAllDevices()
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
@@ -140,7 +140,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				// Individual devices
-				for _, item := range out.DeviceUDIDs {
+				for _, item := range out.UDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})

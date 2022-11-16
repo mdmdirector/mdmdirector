@@ -29,11 +29,31 @@ type SharedProfile struct {
 	Installed         bool `gorm:"default:true"`
 }
 
+// UserProfile (s) are profiles that are deployed to a specific user via the user channel
+type UserProfile struct {
+	PayloadUUID       string
+	PayloadIdentifier string `gorm:"primaryKey"`
+	HashedPayloadUUID string
+	MobileconfigData  []byte
+	MobileconfigHash  []byte
+	UserUUID          string `gorm:"primaryKey"`
+	Installed         bool   `gorm:"default:true"`
+}
+
+// MDMUser is an MDM User
+type MDMUser struct {
+	ShortUserName string
+	LongUserName  string
+	UUID          string `gorm:"primaryKey"`
+	DeviceUDID    string
+}
+
 // ProfilePayload - struct to unpack the payload sent to mdmdirector
 type ProfilePayload struct {
 	SerialNumbers []string `json:"serial_numbers,omitempty"`
-	DeviceUDIDs   []string `json:"udids,omitempty"`
+	UDIDs         []string `json:"udids,omitempty"`
 	Mobileconfigs []string `json:"profiles"`
+	Type          []string `json:"type,omitempty"`
 	PushNow       bool     `json:"push_now"`
 	Metadata      bool     `json:"metadata"`
 }
