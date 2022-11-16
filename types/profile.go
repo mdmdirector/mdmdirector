@@ -53,7 +53,7 @@ type ProfilePayload struct {
 	SerialNumbers []string `json:"serial_numbers,omitempty"`
 	UDIDs         []string `json:"udids,omitempty"`
 	Mobileconfigs []string `json:"profiles"`
-	Type          []string `json:"type,omitempty"`
+	Channel       string   `json:"channel,omitempty"`
 	PushNow       bool     `json:"push_now"`
 	Metadata      bool     `json:"metadata"`
 }
