@@ -30,11 +30,13 @@ import (
 )
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
-	var profiles []types.DeviceProfile
-	var sharedProfiles []types.SharedProfile
-	var devices []types.Device
-	var out types.ProfilePayload
-	var metadata []types.MetadataItem
+	var (
+		profiles       []types.DeviceProfile
+		sharedProfiles []types.SharedProfile
+		devices        []types.Device
+		out            types.ProfilePayload
+		metadata       []types.MetadataItem
+	)
 
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
@@ -212,11 +214,12 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, pushNow bool, requestType string) (types.MetadataItem, error) {
-	var metadata types.MetadataItem
-	var devices []types.Device
-	var profileMetadataList []types.ProfileMetadata
-	var profilesToSave []types.DeviceProfile
-
+	var (
+		metadata            types.MetadataItem
+		devices             []types.Device
+		profileMetadataList []types.ProfileMetadata
+		profilesToSave      []types.DeviceProfile
+	)
 	// metadata.Device = device
 	for i := range profiles {
 		var profileMetadata types.ProfileMetadata
@@ -365,11 +368,12 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 }
 
 func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
-	var profiles []types.DeviceProfile
-	var devices []types.Device
-	var out types.DeleteProfilePayload
-	var metadata []types.MetadataItem
-
+	var (
+		profiles []types.DeviceProfile
+		devices  []types.Device
+		out      types.DeleteProfilePayload
+		metadata []types.MetadataItem
+	)
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
@@ -551,19 +555,27 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 }
 
 func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile) ([]types.Command, error) {
-	var pushedCommands []types.Command
-	for i := range devices {
-		device := devices[i]
-		for i := range profiles {
-			profileData := profiles[i]
-			var commandPayload types.CommandPayload
-			commandPayload.UDID = device.UDID
-			commandPayload.RequestType = "RemoveProfile"
-			commandPayload.Identifier = profileData.PayloadIdentifier
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Shared Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
+	pushedCommands := make([]types.Command, 0, len(devices)*len(profiles))
+
+	for _, device := range devices {
+		for _, profileData := range profiles {
+			commandPayload := types.CommandPayload{
+				UDID:        device.UDID,
+				RequestType: "RemoveProfile",
+				Identifier:  profileData.PayloadIdentifier,
+			}
+			InfoLogger(LogHolder{
+				DeviceUDID:         device.UDID,
+				DeviceSerial:       device.SerialNumber,
+				Message:            "Deleting Shared Profile",
+				ProfileIdentifier:  profileData.PayloadIdentifier,
+				ProfileUUID:        profileData.HashedPayloadUUID,
+				CommandRequestType: commandPayload.RequestType,
+			})
+
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteSharedProfiles")
+				return pushedCommands, errors.Wrap(err, "failed to send RemoveProfile command")
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -573,19 +585,27 @@ func DeleteSharedProfiles(devices []types.Device, profiles []types.SharedProfile
 }
 
 func DeleteDeviceProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
-	var pushedCommands []types.Command
-	for i := range devices {
-		device := devices[i]
-		for i := range profiles {
-			profileData := profiles[i]
-			var commandPayload types.CommandPayload
-			commandPayload.UDID = device.UDID
-			commandPayload.RequestType = "RemoveProfile"
-			commandPayload.Identifier = profileData.PayloadIdentifier
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Deleting Device Profile", ProfileIdentifier: profileData.PayloadIdentifier, ProfileUUID: profileData.HashedPayloadUUID, CommandRequestType: commandPayload.RequestType})
+	pushedCommands := make([]types.Command, 0, len(devices)*len(profiles))
+
+	for _, device := range devices {
+		for _, profileData := range profiles {
+			commandPayload := types.CommandPayload{
+				UDID:        device.UDID,
+				RequestType: "RemoveProfile",
+				Identifier:  profileData.PayloadIdentifier,
+			}
+			InfoLogger(LogHolder{
+				DeviceUDID:         device.UDID,
+				DeviceSerial:       device.SerialNumber,
+				Message:            "Deleting Device Profile",
+				ProfileIdentifier:  profileData.PayloadIdentifier,
+				ProfileUUID:        profileData.HashedPayloadUUID,
+				CommandRequestType: commandPayload.RequestType,
+			})
+
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteDeviceProfiles")
+				return pushedCommands, errors.Wrap(err, "failed to send RemoveProfile command")
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -646,18 +666,25 @@ type ProfileForVerification struct {
 }
 
 func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Device) error {
-	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Verifying MDM Profiles"})
-	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
-	var sharedProfiles []types.SharedProfile
-	var profilesToInstall []types.DeviceProfile
-	var profilesToRemove []types.DeviceProfile
-	var sharedProfilesToInstall []types.SharedProfile
-	var sharedProfilesToRemove []types.SharedProfile
-	var devices []types.Device
-	var profileLists []types.ProfileList
+	InfoLogger(LogHolder{
+		DeviceUDID:   device.UDID,
+		DeviceSerial: device.SerialNumber,
+		Message:      "Verifying MDM Profiles",
+	},
+	)
 
-	var profilesForVerification []ProfileForVerification
+	var (
+		profiles                []types.DeviceProfile
+		sharedProfile           types.SharedProfile
+		sharedProfiles          []types.SharedProfile
+		profilesToInstall       []types.DeviceProfile
+		profilesToRemove        []types.DeviceProfile
+		sharedProfilesToInstall []types.SharedProfile
+		sharedProfilesToRemove  []types.SharedProfile
+		devices                 []types.Device
+		profileLists            []types.ProfileList
+		profilesForVerification []ProfileForVerification
+	)
 
 	if device.UDID == "" {
 		err := errors.New("Device UDID cannot be empty")
@@ -690,16 +717,17 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	for i := range profiles {
-		var profileForVerification ProfileForVerification
-		deviceprofile := profiles[i]
-		profileForVerification.PayloadUUID = deviceprofile.PayloadUUID
-		profileForVerification.PayloadIdentifier = deviceprofile.PayloadIdentifier
-		profileForVerification.HashedPayloadUUID = deviceprofile.HashedPayloadUUID
-		profileForVerification.MobileconfigData = deviceprofile.MobileconfigData
-		profileForVerification.MobileconfigHash = deviceprofile.MobileconfigHash
-		profileForVerification.DeviceUDID = deviceprofile.DeviceUDID
-		profileForVerification.Installed = deviceprofile.Installed
-		profileForVerification.Type = "device"
+		deviceProfile := profiles[i]
+		profileForVerification := ProfileForVerification{
+			Type:              "device",
+			PayloadUUID:       deviceProfile.PayloadUUID,
+			PayloadIdentifier: deviceProfile.PayloadIdentifier,
+			HashedPayloadUUID: deviceProfile.HashedPayloadUUID,
+			MobileconfigData:  deviceProfile.MobileconfigData,
+			MobileconfigHash:  deviceProfile.MobileconfigHash,
+			DeviceUDID:        deviceProfile.DeviceUDID,
+			Installed:         deviceProfile.Installed,
+		}
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
@@ -709,15 +737,16 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	for i := range sharedProfiles {
-		var profileForVerification ProfileForVerification
 		sharedProfile := sharedProfiles[i]
-		profileForVerification.PayloadUUID = sharedProfile.PayloadUUID
-		profileForVerification.PayloadIdentifier = sharedProfile.PayloadIdentifier
-		profileForVerification.HashedPayloadUUID = sharedProfile.HashedPayloadUUID
-		profileForVerification.MobileconfigData = sharedProfile.MobileconfigData
-		profileForVerification.MobileconfigHash = sharedProfile.MobileconfigHash
-		profileForVerification.Installed = sharedProfile.Installed
-		profileForVerification.Type = "shared"
+		profileForVerification := ProfileForVerification{
+			Type:              "shared",
+			PayloadUUID:       sharedProfile.PayloadUUID,
+			PayloadIdentifier: sharedProfile.PayloadIdentifier,
+			HashedPayloadUUID: sharedProfile.HashedPayloadUUID,
+			MobileconfigData:  sharedProfile.MobileconfigData,
+			MobileconfigHash:  sharedProfile.MobileconfigHash,
+			Installed:         sharedProfile.Installed,
+		}
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
@@ -738,30 +767,36 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")
 		}
+
+		switch {
 		// Profile is present in the ProfileList output
-		if isInstalled {
+		case isInstalled:
+			switch {
 			// Profile is present, but should not be installed
-			if !profileForVerification.Installed {
+			case !profileForVerification.Installed:
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but should not be installed", Metric: profileForVerification.Type})
 				sharedProfilesToRemove, profilesToRemove = addProfileToLists(profileForVerification, sharedProfilesToRemove, profilesToRemove)
-			}
 
 			// Profile is present, but the hash doesn't match
-			if profileForVerification.Installed && needsReinstall {
+			case needsReinstall:
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present but profile needs to be reinstalled", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
-			}
 
 			// Profile is present and does not need to be reinstalled, success
-			if profileForVerification.Installed && !needsReinstall {
+			default:
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present and profile does not require reinstallation", Metric: profileForVerification.Type})
 			}
-		} else { // Profile is not in the profileList
+
+		// Profile is not in the profileList
+		default:
+			switch {
 			// But it should be installed
-			if profileForVerification.Installed {
+			case profileForVerification.Installed:
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present not in the profile list and should be installed", Metric: profileForVerification.Type})
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
-			} else { // Not present, and shouldn't be installed
+
+			// Not present, and shouldn't be installed
+			default:
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is not present and should not be installed", Metric: profileForVerification.Type})
 			}
 		}
@@ -833,26 +868,28 @@ func validateProfileInProfileList(profileForVerification ProfileForVerification,
 
 // Add to the appropriate list
 func addProfileToLists(profileForVerification ProfileForVerification, sharedProfilesToRemove []types.SharedProfile, profilesToRemove []types.DeviceProfile) ([]types.SharedProfile, []types.DeviceProfile) {
-	if profileForVerification.Type == "shared" {
-		var sharedProfile types.SharedProfile
-		sharedProfile.HashedPayloadUUID = profileForVerification.HashedPayloadUUID
-		sharedProfile.PayloadUUID = profileForVerification.PayloadUUID
-		sharedProfile.PayloadIdentifier = profileForVerification.PayloadIdentifier
-		sharedProfile.Installed = profileForVerification.Installed
-		sharedProfile.MobileconfigData = profileForVerification.MobileconfigData
-		sharedProfile.MobileconfigHash = profileForVerification.MobileconfigHash
+	switch profileForVerification.Type {
+	case "shared":
+		sharedProfile := types.SharedProfile{
+			HashedPayloadUUID: profileForVerification.HashedPayloadUUID,
+			PayloadUUID:       profileForVerification.PayloadUUID,
+			PayloadIdentifier: profileForVerification.PayloadIdentifier,
+			Installed:         profileForVerification.Installed,
+			MobileconfigData:  profileForVerification.MobileconfigData,
+			MobileconfigHash:  profileForVerification.MobileconfigHash,
+		}
 		sharedProfilesToRemove = append(sharedProfilesToRemove, sharedProfile)
-	}
 
-	if profileForVerification.Type == "device" {
-		var deviceProfile types.DeviceProfile
-		deviceProfile.HashedPayloadUUID = profileForVerification.HashedPayloadUUID
-		deviceProfile.PayloadUUID = profileForVerification.PayloadUUID
-		deviceProfile.PayloadIdentifier = profileForVerification.PayloadIdentifier
-		deviceProfile.Installed = profileForVerification.Installed
-		deviceProfile.MobileconfigData = profileForVerification.MobileconfigData
-		deviceProfile.MobileconfigHash = profileForVerification.MobileconfigHash
-		deviceProfile.DeviceUDID = profileForVerification.DeviceUDID
+	case "device":
+		deviceProfile := types.DeviceProfile{
+			HashedPayloadUUID: profileForVerification.HashedPayloadUUID,
+			PayloadUUID:       profileForVerification.PayloadUUID,
+			PayloadIdentifier: profileForVerification.PayloadIdentifier,
+			Installed:         profileForVerification.Installed,
+			MobileconfigData:  profileForVerification.MobileconfigData,
+			MobileconfigHash:  profileForVerification.MobileconfigHash,
+			DeviceUDID:        profileForVerification.DeviceUDID,
+		}
 		profilesToRemove = append(profilesToRemove, deviceProfile)
 	}
 
@@ -863,10 +900,19 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	vars := mux.Vars(r)
 
-	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
+	err := db.DB.Where("device_ud_id = ?", vars["udid"]).Limit(1).Find(&profiles).Error
 	if err != nil {
-		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "Device profile not found")
+		} else {
+			log.Errorf("Error retrieving device profiles: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, "Internal server error")
+		}
+		return
 	}
+
 	output, err := json.MarshalIndent(&profiles, "", "    ")
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
@@ -882,7 +928,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.SharedProfile
 
-	err := db.DB.Find(&profiles).Scan(&profiles).Error
+	err := db.DB.Find(&profiles).Error
 	if err != nil {
 		log.Error("Couldn't scan to Shared Profiles model", err)
 	}
@@ -967,9 +1013,11 @@ func loadSigningKey(keyPass, keyPath, certPath string) (crypto.PrivateKey, *x509
 func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
 	log.Debugf("Requesting Profile List for %v", device.UDID)
-	var commandPayload types.CommandPayload
-	commandPayload.UDID = device.UDID
-	commandPayload.RequestType = requestType
+
+	commandPayload := types.CommandPayload{
+		UDID:        device.UDID,
+		RequestType: requestType,
+	}
 
 	_, err := SendCommand(commandPayload)
 	if err != nil {
@@ -980,45 +1028,52 @@ func RequestProfileList(device types.Device) error {
 }
 
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {
-	var profile types.DeviceProfile
-	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
-	var sharedProfiles []types.SharedProfile
-	var devices []types.Device
+	var (
+		profile        types.DeviceProfile
+		profiles       []types.DeviceProfile
+		sharedProfile  types.SharedProfile
+		sharedProfiles []types.SharedProfile
+		pushedCommands []types.Command
+	)
 
-	var pushedCommands []types.Command
+	// Retrieve the profiles and shared profiles that should be installed on the device
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Find(&profiles).Error; err != nil {
+			return errors.Wrap(err, "Failed to retrieve device profiles")
+		}
 
-	devices = append(devices, device)
+		if err := tx.Model(&sharedProfile).Where("installed = true").Find(&sharedProfiles).Error; err != nil {
+			return errors.Wrap(err, "Failed to retrieve shared profiles")
+		}
 
-	// Get the profiles that should be installed on the device
-	err := db.DB.Model(&profile).Where("device_ud_id = ? AND installed = true", device.UDID).Scan(&profiles).Error
+		return nil
+	})
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	}
-	log.Debugf("Pushing Profiles %v", device.UDID)
-	commands, err := PushProfiles(devices, profiles)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	} else {
-		pushedCommands = append(pushedCommands, commands...)
-	}
-
-	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Where("installed = true").Scan(&sharedProfiles).Error
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		return pushedCommands, err
 	}
 
-	log.Debugf("Pushing Shared Profiles %v", device.UDID)
-	commands, err = PushSharedProfiles(devices, sharedProfiles)
+	log.Debugf("Pushing profiles for device %v", device.UDID)
+
+	// Push the device and shared profiles
+	commands, err := PushProfiles([]types.Device{device}, profiles)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	} else {
-		pushedCommands = append(pushedCommands, commands...)
+		return pushedCommands, errors.Wrap(err, "Failed to push device profiles")
 	}
 
-	err = RequestProfileList(device)
+	pushedCommands = append(pushedCommands, commands...)
+
+	log.Debugf("Pushing shared profiles for device %v", device.UDID)
+
+	commands, err = PushSharedProfiles([]types.Device{device}, sharedProfiles)
 	if err != nil {
-		return pushedCommands, errors.Wrap(err, "RequestProfileList")
+		return pushedCommands, errors.Wrap(err, "Failed to push shared profiles")
+	}
+
+	pushedCommands = append(pushedCommands, commands...)
+
+	// Request the profile list
+	if err := RequestProfileList(device); err != nil {
+		return pushedCommands, errors.Wrap(err, "Failed to request profile list")
 	}
 
 	return pushedCommands, nil
