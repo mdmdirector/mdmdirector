@@ -223,12 +223,12 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 	)
 	// metadata.Device = device
 	for i := range profiles {
-		var profileMetadata types.ProfileMetadata
 		status := "unchanged"
 		profile := profiles[i]
 
 		devices = append(devices, device)
-		if requestType == "post" {
+		switch requestType {
+		case "post":
 			profileDiffers, err := SavedDeviceProfileDiffers(device, profile)
 			if err != nil {
 				return metadata, errors.Wrap(err, "Could not determine if saved profile differs from incoming profile.")
@@ -236,16 +236,17 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 			profile.Installed = true
 			if profileDiffers {
 				profilesToSave = append(profilesToSave, profile)
-				status = "changed"
 				if pushNow {
 					_, err = PushProfiles(devices, []types.DeviceProfile{profile})
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
+						break
 					}
 					status = "pushed"
 				} else {
 					status = "saved"
 				}
+				status = "changed"
 			}
 
 			// Cleanup the old duplicated profiles
@@ -257,7 +258,7 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				}
 			}
 
-		} else if requestType == "delete" {
+		case "delete":
 			profilePresent, err := SavedProfileIsPresent(device, profile)
 			if err != nil {
 				return metadata, errors.Wrap(err, "Could not determine if saved profile is present.")
@@ -277,34 +278,46 @@ func ProcessDeviceProfiles(device types.Device, profiles []types.DeviceProfile, 
 				}
 			}
 
+		default:
+			return metadata, errors.Errorf("unsupported request type: %s", requestType)
 		}
 
-		profileMetadata.HashedPayloadUUID = profile.HashedPayloadUUID
-		profileMetadata.PayloadIdentifier = profile.PayloadIdentifier
-		profileMetadata.PayloadUUID = profile.PayloadUUID
-		profileMetadata.Status = status
-		profileMetadataList = append(profileMetadataList, profileMetadata)
+		profileMetadataList = append(profileMetadataList, types.ProfileMetadata{
+			HashedPayloadUUID: profile.HashedPayloadUUID,
+			PayloadIdentifier: profile.PayloadIdentifier,
+			PayloadUUID:       profile.PayloadUUID,
+			Status:            status,
+		})
 
 	}
-
+	// Save updated profiles to the device database
 	err := SaveProfiles(devices, profilesToSave)
 	if err != nil {
 		return metadata, errors.Wrap(err, "SaveProfiles")
 	}
 
+	// Build profile metadata for response
 	metadata.ProfileMetadata = profileMetadataList
 
 	return metadata, nil
+
 }
 
 func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
 	// Make sure profile is marked as install = false
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, false).First(&savedProfile).Error; err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile present and marked as installed = true"})
-			return true, nil
+		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+			return false, errors.Wrap(err, "SavedProfileIsPresent: Cannot retrieve saved profile")
 		}
+		// Record not found, the profile is not present
+		return false, nil
+	}
+
+	// The profile is present if it's installed
+	if savedProfile.Installed {
+		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, ProfileIdentifier: profile.PayloadIdentifier, Message: "Profile present and marked as installed = true"})
+		return true, nil
 	}
 
 	return false, nil
