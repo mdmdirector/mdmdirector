@@ -119,81 +119,82 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		sharedProfiles = append(sharedProfiles, sharedProfile)
 	}
 
-	if out.DeviceUDIDs != nil {
-		// Not empty list
-		if len(out.DeviceUDIDs) > 0 {
-			// Targeting all devices
-			if out.DeviceUDIDs[0] == "*" {
-				devices, err = GetAllDevices()
-				if err != nil {
-					ErrorLogger(LogHolder{Message: err.Error()})
-					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				}
-				err = SaveSharedProfiles(sharedProfiles)
-				if err != nil {
-					ErrorLogger(LogHolder{Message: err.Error()})
-				}
+	// If targeting devices by UDID
+	if out.DeviceUDIDs != nil && len(out.DeviceUDIDs) > 0 {
+		// If targeting all devices
+		if out.DeviceUDIDs[0] == "*" {
+			// Get all devices and save shared profiles
+			devices, err = GetAllDevices()
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+			err = SaveSharedProfiles(sharedProfiles)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			}
 
-				if out.PushNow {
-					_, err = PushSharedProfiles(devices, sharedProfiles)
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-					}
-				}
-			} else {
-				// Individual devices
-				for _, item := range out.DeviceUDIDs {
-					device, err := GetDevice(item)
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-						return
-					}
-					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
-					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-					metadata = append(metadata, metadataItem)
+			// If push now flag is set, push shared profiles to devices
+			if out.PushNow {
+				_, err = PushSharedProfiles(devices, sharedProfiles)
+				if err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
 				}
 			}
-		}
-	} else if out.SerialNumbers != nil {
-		if len(out.SerialNumbers) > 0 {
-			// Targeting all devices
-			if out.SerialNumbers[0] == "*" {
-				devices, err = GetAllDevices()
+		} else { // If targeting individual devices by UDID
+			for _, item := range out.DeviceUDIDs {
+				// Get device and process profiles for device
+				device, err := GetDevice(item)
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 					return
 				}
-				err = SaveSharedProfiles(sharedProfiles)
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
+				metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
+				if err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
+				metadata = append(metadata, metadataItem)
+			}
+		}
+	} else if out.SerialNumbers != nil && len(out.SerialNumbers) > 0 { // If targeting devices by serial number
+		// If targeting all devices
+		if out.SerialNumbers[0] == "*" {
+			// Get all devices and save shared profiles
+			devices, err = GetAllDevices()
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+			err = SaveSharedProfiles(sharedProfiles)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			}
+
+			// If push now flag is set, push shared profiles to devices
+			if out.PushNow {
+				_, err = PushSharedProfiles(devices, sharedProfiles)
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 				}
-
-				if out.PushNow {
-					_, err = PushSharedProfiles(devices, sharedProfiles)
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-					}
+			}
+		} else { // If targeting individual devices by serial number
+			for _, item := range out.SerialNumbers {
+				device, err := GetDeviceSerial(item)
+				if err != nil {
+					continue
 				}
-			} else {
-				for _, item := range out.SerialNumbers {
-					device, err := GetDeviceSerial(item)
-					if err != nil {
-						continue
-					}
-					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
-					metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-					}
-					metadata = append(metadata, metadataItem)
+				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
+				metadataItem, err := ProcessDeviceProfiles(device, profiles, out.PushNow, "post")
+				if err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
+				metadata = append(metadata, metadataItem)
 			}
 		}
 	}
