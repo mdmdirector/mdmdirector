@@ -70,6 +70,7 @@ func reinstallEnrollmentProfile(device types.Device) error {
 
 // If we have enabled signing profiles, this function will verify that the certificate used to sign the enrollment profile is the same as we have locally, and if it is not, will reinstall the profile
 func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.ProfileList, signingCert *x509.Certificate) error {
+	// Return early if we don't want to sign
 	if !utils.Sign() {
 		return nil
 	}
@@ -82,7 +83,7 @@ func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.Pro
 					PayloadIdentifier: profileList.PayloadIdentifier,
 					HashedPayloadUUID: profileList.PayloadUUID,
 					DeviceUDID:        device.UDID,
-					Installed:         true,
+					Installed:         true, // You always want an enrollment profile to be installed
 				}
 
 				_, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, signingCert)
