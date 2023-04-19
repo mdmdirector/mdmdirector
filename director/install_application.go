@@ -121,28 +121,31 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) error {
-	var installApplication types.DeviceInstallApplication
-
-	for i := range devices {
-		device := devices[i]
-		for _, ManifestURL := range payload.ManifestURLs {
-			installApplication.ManifestURL = ManifestURL.URL
-			installApplication.DeviceUDID = device.UDID
-			err := db.DB.Model(&device).Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
+func SaveInstallApplications(devices []types.Device, installPayload types.InstallApplicationPayload) error {
+	for _, device := range devices {
+		for _, url := range installPayload.ManifestURLs {
+			installApplication := types.DeviceInstallApplication{
+				ManifestURL: url.URL,
+				DeviceUDID:  device.UDID,
+			}
+			err := db.DB.Model(&device).
+				Where("device_ud_id = ? AND manifest_url = ?", device.UDID, url.URL).
+				Assign(&installApplication).
+				FirstOrCreate(&installApplication).Error
 			if err != nil {
 				return errors.Wrap(err, "SaveInstallApplications")
 			}
 		}
 	}
-
 	return nil
 }
 
+// PushInstallApplication pushes an installation request for a specific application to one or more devices.
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
 	var sentCommands []types.Command
-	for i := range devices {
-		device := devices[i]
+
+	for _, device := range devices {
+		// Check if the app is already in the installation queue for this device.
 		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
 		if err != nil {
 			// Shit went wrong for this device, but logging here feels wrong
@@ -154,20 +157,20 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 			continue
 		}
 
-		var commandPayload types.CommandPayload
-		commandPayload.UDID = device.UDID
-		commandPayload.RequestType = "InstallApplication"
-		commandPayload.ManifestURL = installApplication.ManifestURL
+		commandPayload := types.CommandPayload{
+			UDID:        device.UDID,
+			RequestType: "InstallApplication",
+			ManifestURL: installApplication.ManifestURL,
+		}
 
 		command, err := SendCommand(commandPayload)
 		if err != nil {
 			// We should return an error or something here
 			ErrorLogger(LogHolder{Message: err.Error()})
 			continue
-		} else {
-			sentCommands = append(sentCommands, command)
 		}
 
+		sentCommands = append(sentCommands, command)
 	}
 	return sentCommands, nil
 }
@@ -216,17 +219,14 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
-	var sharedInstallApplication types.SharedInstallApplication
-	var deviceInstallApplication types.DeviceInstallApplication
-	var sharedInstallApplications []types.SharedInstallApplication
-	var deviceInstallApplications []types.DeviceInstallApplication
-	var devices []types.Device
-	var sentCommands []types.Command
+	devices := []types.Device{device}
+	var (
+		sharedInstallApplications []types.SharedInstallApplication
+		deviceInstallApplications []types.DeviceInstallApplication
+		sentCommands              []types.Command
+	)
 
-	devices = append(devices, device)
-
-	err := db.DB.Model(&sharedInstallApplication).Scan(&sharedInstallApplications).Error
-	if err != nil {
+	if err := db.DB.Model(&types.SharedInstallApplication{}).Scan(&sharedInstallApplications).Error; err != nil {
 		return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:dbcall")
 	}
 
@@ -242,8 +242,7 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 
 	}
 
-	err = db.DB.Model(&deviceInstallApplication).Where("device_ud_id = ?", device.UDID).Scan(&deviceInstallApplications).Error
-	if err != nil {
+	if err := db.DB.Model(&types.DeviceInstallApplication{}).Where("device_ud_id = ?", device.UDID).Scan(&deviceInstallApplications).Error; err != nil {
 		return sentCommands, errors.Wrap(err, "InstallBootstrapPackages:dbcall2")
 	}
 

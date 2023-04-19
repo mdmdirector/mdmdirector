@@ -14,16 +14,15 @@ import (
 )
 
 func RequestCertificateList(device types.Device) error {
-	requestType := "CertificateList"
-	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
-	var payload types.CommandPayload
-	payload.UDID = device.UDID
-	payload.RequestType = requestType
+	payload := types.CommandPayload{
+		UDID:        device.UDID,
+		RequestType: "CertificateList",
+	}
+	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: payload.RequestType})
 	_, err := SendCommand(payload)
 	if err != nil {
 		return errors.Wrap(err, "RequestCertificateList: SendCommand")
 	}
-
 	return nil
 }
 
@@ -32,31 +31,31 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Saving CertificateList"})
 
 	for _, certListItem := range certificateListData.CertificateList {
-		var certificate types.Certificate
 		cert, err := parseCertificate(certListItem)
 		if err != nil {
 			log.Errorf("processCertificateList:parseCertificate: %v", err)
+			continue
 		}
 
-		certificate.Data = certListItem.Data
-		certificate.CommonName = cert.Issuer.CommonName
-		certificate.NotAfter = cert.NotAfter
-		certificate.NotBefore = cert.NotBefore
-		certificate.Subject = cert.Subject.String()
-		certificate.Issuer = cert.Issuer.String()
+		certificate := types.Certificate{
+			Data:       certListItem.Data,
+			CommonName: cert.Issuer.CommonName,
+			NotAfter:   cert.NotAfter,
+			NotBefore:  cert.NotBefore,
+			Subject:    cert.Subject.String(),
+			Issuer:     cert.Issuer.String(),
+		}
 		certificates = append(certificates, certificate)
 	}
 
 	// DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: certificates})
 
-	err := db.DB.Model(&device).Association("Certificates").Replace(certificates)
-	if err != nil {
+	if err := db.DB.Model(&device).Association("Certificates").Replace(certificates); err != nil {
 		return errors.Wrap(err, "processCertificateList:SaveCerts")
 	}
 
 	for _, certListItem := range certificateListData.CertificateList {
-		scepErr := validateScepCert(certListItem, device)
-		if scepErr != nil {
+		if scepErr := validateScepCert(certListItem, device); scepErr != nil {
 			return errors.Wrap(scepErr, "processCertificateList:validateScepCert")
 		}
 	}

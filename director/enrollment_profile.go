@@ -70,20 +70,19 @@ func reinstallEnrollmentProfile(device types.Device) error {
 
 // If we have enabled signing profiles, this function will verify that the certificate used to sign the enrollment profile is the same as we have locally, and if it is not, will reinstall the profile
 func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.ProfileList, signingCert *x509.Certificate) error {
-	// Return early if we don't want to sign
 	if !utils.Sign() {
 		return nil
 	}
 
-	for i := range profileLists {
-		for j := range profileLists[i].PayloadContent {
-			if profileLists[i].PayloadContent[j].PayloadType == "com.apple.mdm" {
+	for _, profileList := range profileLists {
+		for _, payload := range profileList.PayloadContent {
+			if payload.PayloadType == "com.apple.mdm" {
 				profileForVerification := ProfileForVerification{
-					PayloadUUID:       profileLists[i].PayloadUUID,
-					PayloadIdentifier: profileLists[i].PayloadIdentifier,
-					HashedPayloadUUID: profileLists[i].PayloadUUID,
+					PayloadUUID:       profileList.PayloadUUID,
+					PayloadIdentifier: profileList.PayloadIdentifier,
+					HashedPayloadUUID: profileList.PayloadUUID,
 					DeviceUDID:        device.UDID,
-					Installed:         true, // You always want an enrollment profile to be installed
+					Installed:         true,
 				}
 
 				_, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, signingCert)
@@ -101,7 +100,6 @@ func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.Pro
 				return nil
 			}
 		}
-
 	}
 
 	return nil
