@@ -3,7 +3,7 @@ package director
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -60,7 +60,11 @@ func RetryCommands() {
 func pushNotNow() error {
 	var command types.Command
 	var commands []types.Command
-	err := db.DB.Model(&command).Select("DISTINCT(device_ud_id)").Where("status = ?", "NotNow").Scan(&commands).Error
+	err := db.DB.Model(&command).
+		Select("DISTINCT(device_ud_id)").
+		Where("status = ?", "NotNow").
+		Scan(&commands).
+		Error
 	if err != nil {
 		return errors.Wrap(err, "Select NotNow Devices")
 	}
@@ -119,14 +123,23 @@ func processUnconfiguredDevices() error {
 	var awaitingConfigDevices []types.Device
 	var awaitingConfigDevice types.Device
 
-	err := db.DB.Model(&awaitingConfigDevice).Where("awaiting_configuration = ?", true).Scan(&awaitingConfigDevices).Error
+	err := db.DB.Model(&awaitingConfigDevice).
+		Where("awaiting_configuration = ?", true).
+		Scan(&awaitingConfigDevices).
+		Error
 	if err != nil {
 		return errors.Wrap(err, "processUnconfiguredDevices: Scan awaiting config devices")
 	}
 
 	for i := range awaitingConfigDevices {
 		unconfiguredDevice := awaitingConfigDevices[i]
-		DebugLogger(LogHolder{Message: "Running initial tasks due to schedule", DeviceUDID: unconfiguredDevice.UDID, DeviceSerial: unconfiguredDevice.SerialNumber})
+		DebugLogger(
+			LogHolder{
+				Message:      "Running initial tasks due to schedule",
+				DeviceUDID:   unconfiguredDevice.UDID,
+				DeviceSerial: unconfiguredDevice.SerialNumber,
+			},
+		)
 		err := RunInitialTasks(unconfiguredDevice.UDID)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
@@ -165,7 +178,7 @@ func FetchDevicesFromMDM() {
 
 	defer resp.Body.Close()
 
-	responseData, err := ioutil.ReadAll(resp.Body)
+	responseData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
@@ -188,7 +201,10 @@ func FetchDevicesFromMDM() {
 		if newDevice.UDID == "" {
 			continue
 		}
-		err := db.DB.Model(&deviceModel).Where("ud_id = ?", newDevice.UDID).FirstOrCreate(&device).Error
+		err := db.DB.Model(&deviceModel).
+			Where("ud_id = ?", newDevice.UDID).
+			FirstOrCreate(&device).
+			Error
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}

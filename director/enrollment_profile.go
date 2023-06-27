@@ -3,7 +3,7 @@ package director
 import (
 	"crypto/x509"
 	"encoding/base64"
-	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/fullsailor/pkcs7"
@@ -15,20 +15,35 @@ import (
 
 func reinstallEnrollmentProfile(device types.Device) error {
 	enrollmentProfile := utils.EnrollmentProfile()
-	data, err := ioutil.ReadFile(enrollmentProfile)
+	data, err := os.ReadFile(enrollmentProfile)
 	if err != nil {
 		return errors.Wrap(err, "Failed to read enrollment profile")
 	}
 
 	var profile types.DeviceProfile
 
-	InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Pushing new enrollment profile"})
+	InfoLogger(
+		LogHolder{
+			DeviceSerial: device.SerialNumber,
+			DeviceUDID:   device.UDID,
+			Message:      "Pushing new enrollment profile",
+		},
+	)
 
 	if utils.SignedEnrollmentProfile() {
-		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Enrollment Profile pre-signed"})
+		DebugLogger(
+			LogHolder{
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+				Message:      "Enrollment Profile pre-signed",
+			},
+		)
 		pkcs7Data, err := pkcs7.Parse(data)
 		if err != nil {
-			return errors.Wrap(err, "Failed to parse certificate information from signed enrollment profile")
+			return errors.Wrap(
+				err,
+				"Failed to parse certificate information from signed enrollment profile",
+			)
 		}
 
 		for _, cert := range pkcs7Data.Certificates {
@@ -69,7 +84,11 @@ func reinstallEnrollmentProfile(device types.Device) error {
 }
 
 // If we have enabled signing profiles, this function will verify that the certificate used to sign the enrollment profile is the same as we have locally, and if it is not, will reinstall the profile
-func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.ProfileList, signingCert *x509.Certificate) error {
+func ensureCertOnEnrollmentProfile(
+	device types.Device,
+	profileLists []types.ProfileList,
+	signingCert *x509.Certificate,
+) error {
 	// Return early if we don't want to sign
 	if !utils.Sign() {
 		return nil
@@ -86,7 +105,11 @@ func ensureCertOnEnrollmentProfile(device types.Device, profileLists []types.Pro
 					Installed:         true, // You always want an enrollment profile to be installed
 				}
 
-				_, needsReinstall, err := validateProfileInProfileList(profileForVerification, profileLists, signingCert)
+				_, needsReinstall, err := validateProfileInProfileList(
+					profileForVerification,
+					profileLists,
+					signingCert,
+				)
 				if err != nil {
 					return errors.Wrap(err, "validateProfileInProfileList")
 				}

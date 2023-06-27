@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"crypto/subtle"
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
@@ -12,11 +11,14 @@ func BasicAuth(handler http.HandlerFunc) http.HandlerFunc {
 	username := GetBasicAuthUser()
 	password := GetBasicAuthPassword()
 
-	realm := "Please enter your username and password for this site"
+	return basicAuthHandler(handler, username, password)
+}
+
+func basicAuthHandler(handler http.HandlerFunc, username, password string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
-
-		if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(username)) != 1 || subtle.ConstantTimeCompare([]byte(pass), []byte(password)) != 1 {
+		realm := "Please enter your username and password for this site"
+		if !ok || !validateUsernameAndPassword(user, pass, username, password) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`"`)
 			w.WriteHeader(401)
 			log.Error("Unauthorised request")
@@ -26,4 +28,13 @@ func BasicAuth(handler http.HandlerFunc) http.HandlerFunc {
 
 		handler(w, r)
 	}
+}
+
+func validateUsernameAndPassword(
+	requestUsername, requestPassword, desiredUsername, desiredPassword string,
+) bool {
+	if requestUsername == desiredUsername && requestPassword == desiredPassword {
+		return true
+	}
+	return false
 }
