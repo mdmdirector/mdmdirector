@@ -2,6 +2,7 @@ package utils
 
 import (
 	"flag"
+	"os"
 	"strings"
 )
 
@@ -42,7 +43,13 @@ func GetBasicAuthUser() string {
 }
 
 func GetBasicAuthPassword() string {
-	return flag.Lookup("password").Value.(flag.Getter).Get().(string)
+	if flag.Lookup("password") != nil {
+		return flag.Lookup("password").Value.(flag.Getter).Get().(string)
+	} else if os.Getenv("DIRECTOR_PASSWORD") != "" {
+		return os.Getenv("DIRECTOR_PASSWORD")
+	}
+
+	return ""
 }
 
 func DBUsername() string {

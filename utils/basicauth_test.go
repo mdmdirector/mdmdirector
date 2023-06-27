@@ -3,6 +3,7 @@ package utils
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -11,9 +12,10 @@ func TestBasicAuth(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	username := "testuser"
+	username := "mdmdirector"
 	password := "testpass"
-
+	// Set environment variable to password
+	os.Setenv("DIRECTOR_PASSWORD", password)
 	authHandler := BasicAuth(mockHandler)
 	req := httptest.NewRequest("GET", "/", nil)
 
