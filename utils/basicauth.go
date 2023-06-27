@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"crypto/subtle"
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
@@ -34,6 +33,8 @@ func basicAuthHandler(handler http.HandlerFunc, username, password string) http.
 func validateUsernameAndPassword(
 	requestUsername, requestPassword, desiredUsername, desiredPassword string,
 ) bool {
-	return subtle.ConstantTimeCompare([]byte(requestUsername), []byte(desiredUsername)) != 1 ||
-		subtle.ConstantTimeCompare([]byte(requestPassword), []byte(desiredPassword)) != 1
+	if requestUsername == desiredUsername && requestPassword == desiredPassword {
+		return true
+	}
+	return false
 }

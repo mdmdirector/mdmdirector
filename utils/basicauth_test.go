@@ -1,39 +1,64 @@
 package utils
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 )
 
+// Test helper function to create a request with Basic Auth credentials
+func createRequestWithBasicAuth(username, password string) *http.Request {
+	req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+	req.SetBasicAuth(username, password)
+	return req
+}
+
+// Test helper function to create a handler for testing purposes
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Welcome to the protected area!")
+}
+
 func TestBasicAuth(t *testing.T) {
-	mockHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
 
 	username := "mdmdirector"
 	password := "testpass"
 	// Set environment variable to password
 	os.Setenv("DIRECTOR_PASSWORD", password)
-	authHandler := BasicAuth(mockHandler)
-	req := httptest.NewRequest("GET", "/", nil)
+	// Create a test handler with BasicAuth
+	protectedHandler := BasicAuth(testHandler)
 
-	// Test unauthenticated request
+	// Test with valid credentials
+	req := createRequestWithBasicAuth(username, password)
 	rr := httptest.NewRecorder()
-	authHandler.ServeHTTP(rr, req)
+	protectedHandler(rr, req)
 
-	if status := rr.Code; status != http.StatusUnauthorized {
-		t.Errorf("Expected status code %d, got %d", http.StatusUnauthorized, status)
+	if rr.Code != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			rr.Code, http.StatusOK)
 	}
 
-	// Test authenticated request
-	req.SetBasicAuth(username, password)
-	rr = httptest.NewRecorder()
-	authHandler.ServeHTTP(rr, req)
+	expected := "Welcome to the protected area!"
+	if rr.Body.String() != expected {
+		t.Errorf("handler returned unexpected body: got %v want %v",
+			rr.Body.String(), expected)
+	}
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, status)
+	// Test with invalid credentials
+	req = createRequestWithBasicAuth("wronguser", "wrongpass")
+	rr = httptest.NewRecorder()
+	protectedHandler(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			rr.Code, http.StatusUnauthorized)
+	}
+
+	expected = "Unauthorised.\n"
+	if rr.Body.String() != expected {
+		t.Errorf("handler returned unexpected body: got %v want %v",
+			rr.Body.String(), expected)
 	}
 }
 
@@ -42,10 +67,10 @@ func TestValidateUsernameAndPassword(t *testing.T) {
 		requestUsername, requestPassword, desiredUsername, desiredPassword string
 		expectedResult                                                     bool
 	}{
-		{"testuser", "testpass", "testuser", "testpass", false},
-		{"testuser", "wrongpass", "testuser", "testpass", true},
-		{"wronguser", "testpass", "testuser", "testpass", true},
-		{"wronguser", "wrongpass", "testuser", "testpass", true},
+		{"testuser", "testpass", "testuser", "testpass", true},
+		{"testuser", "wrongpass", "testuser", "testpass", false},
+		{"wronguser", "testpass", "testuser", "testpass", false},
+		{"wronguser", "wrongpass", "testuser", "testpass", false},
 	}
 
 	for _, tc := range testCases {
