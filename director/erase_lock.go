@@ -3,7 +3,7 @@ package director
 import (
 	"crypto/rand"
 	intErrors "errors"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -70,7 +70,13 @@ func EraseLockDevice(udid string) error {
 func escrowPin(device types.Device, pin string) error {
 	escrowURL := utils.EscrowURL()
 	if escrowURL == "" {
-		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "No Escrow URL set, returning early"})
+		DebugLogger(
+			LogHolder{
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+				Message:      "No Escrow URL set, returning early",
+			},
+		)
 		return nil
 	}
 	endpoint, err := url.Parse(escrowURL)
@@ -103,7 +109,7 @@ func escrowPin(device types.Device, pin string) error {
 	}
 
 	defer response.Body.Close()
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 
 	if err != nil {
 		return errors.Wrap(err, "escrowPin:"+string(body))
