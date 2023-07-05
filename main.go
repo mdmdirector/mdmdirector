@@ -96,36 +96,171 @@ func main() {
 	var port string
 	var debugMode bool
 	flag.BoolVar(&debugMode, "debug", env.Bool("DEBUG", false), "Enable debug mode")
-	flag.BoolVar(&PushNewBuild, "push-new-build", env.Bool("PUSH_NEW_BUILD", true), "Re-push profiles if the device's build number changes.")
-	flag.StringVar(&port, "port", env.String("DIRECTOR_PORT", "8000"), "Port number to run mdmdirector on.")
+	flag.BoolVar(
+		&PushNewBuild,
+		"push-new-build",
+		env.Bool("PUSH_NEW_BUILD", true),
+		"Re-push profiles if the device's build number changes.",
+	)
+	flag.StringVar(
+		&port,
+		"port",
+		env.String("DIRECTOR_PORT", "8000"),
+		"Port number to run mdmdirector on.",
+	)
 	flag.StringVar(&MicroMDMURL, "micromdmurl", env.String("MICRO_URL", ""), "MicroMDM Server URL")
-	flag.StringVar(&MicroMDMAPIKey, "micromdmapikey", env.String("MICRO_API_KEY", ""), "MicroMDM Server API Key")
-	flag.BoolVar(&Sign, "sign", env.Bool("SIGN", false), "Sign profiles prior to sending to MicroMDM.")
-	flag.StringVar(&KeyPassword, "key-password", env.String("SIGNING_PASSWORD", ""), "Password to encrypt/read the signing key(optional) or p12 file.")
-	flag.StringVar(&KeyPath, "signing-private-key", env.String("SIGNING_KEY", ""), "Path to the signing private key. Don't use with p12 file.")
-	flag.StringVar(&CertPath, "cert", env.String("SIGNING_CERT", ""), "Path to the signing certificate or p12 file.")
-	flag.StringVar(&BasicAuthPass, "password", env.String("DIRECTOR_PASSWORD", ""), "Password used for basic authentication")
-	flag.StringVar(&DBUsername, "db-username", env.String("DB_USERNAME", ""), "The username associated with the Postgres instance")
-	flag.StringVar(&DBPassword, "db-password", env.String("DB_PASSWORD", ""), "The password of the db user account")
-	flag.StringVar(&DBName, "db-name", env.String("DB_NAME", ""), "The name of the Postgres database to use")
-	flag.StringVar(&DBHost, "db-host", env.String("DB_HOST", ""), "The hostname or IP of the Postgres instance")
-	flag.StringVar(&DBPort, "db-port", env.String("DB_PORT", "5432"), "The port of the Postgres instance")
-	flag.StringVar(&RedisHost, "redis-host", env.String("REDIS_HOST", "localhost"), "Redis hostname")
+	flag.StringVar(
+		&MicroMDMAPIKey,
+		"micromdmapikey",
+		env.String("MICRO_API_KEY", ""),
+		"MicroMDM Server API Key",
+	)
+	flag.BoolVar(
+		&Sign,
+		"sign",
+		env.Bool("SIGN", false),
+		"Sign profiles prior to sending to MicroMDM.",
+	)
+	flag.StringVar(
+		&KeyPassword,
+		"key-password",
+		env.String("SIGNING_PASSWORD", ""),
+		"Password to encrypt/read the signing key(optional) or p12 file.",
+	)
+	flag.StringVar(
+		&KeyPath,
+		"signing-private-key",
+		env.String("SIGNING_KEY", ""),
+		"Path to the signing private key. Don't use with p12 file.",
+	)
+	flag.StringVar(
+		&CertPath,
+		"cert",
+		env.String("SIGNING_CERT", ""),
+		"Path to the signing certificate or p12 file.",
+	)
+	flag.StringVar(
+		&BasicAuthPass,
+		"password",
+		env.String("DIRECTOR_PASSWORD", ""),
+		"Password used for basic authentication",
+	)
+	flag.StringVar(
+		&DBUsername,
+		"db-username",
+		env.String("DB_USERNAME", ""),
+		"The username associated with the Postgres instance",
+	)
+	flag.StringVar(
+		&DBPassword,
+		"db-password",
+		env.String("DB_PASSWORD", ""),
+		"The password of the db user account",
+	)
+	flag.StringVar(
+		&DBName,
+		"db-name",
+		env.String("DB_NAME", ""),
+		"The name of the Postgres database to use",
+	)
+	flag.StringVar(
+		&DBHost,
+		"db-host",
+		env.String("DB_HOST", ""),
+		"The hostname or IP of the Postgres instance",
+	)
+	flag.StringVar(
+		&DBPort,
+		"db-port",
+		env.String("DB_PORT", "5432"),
+		"The port of the Postgres instance",
+	)
+	flag.StringVar(
+		&RedisHost,
+		"redis-host",
+		env.String("REDIS_HOST", "localhost"),
+		"Redis hostname",
+	)
 	flag.StringVar(&RedisPort, "redis-port", env.String("REDIS_PORT", "6379"), "Redis port")
-	flag.StringVar(&RedisPassword, "redis-password", env.String("REDIS_PASSWORD", ""), "Redis password")
-	flag.StringVar(&DBSSLMode, "db-sslmode", "disable", "The SSL Mode to use to connect to Postgres")
-	flag.IntVar(&DBMaxConnections, "db-max-connections", 100, "Maximum number of database connections")
-	flag.StringVar(&LogLevel, "loglevel", env.String("LOG_LEVEL", "warn"), "Log level. One of debug, info, warn, error")
-	flag.StringVar(&EscrowURL, "escrowurl", env.String("ESCROW_URL", ""), "HTTP endpoint to escrow erase and unlock PINs to.")
-	flag.BoolVar(&ClearDeviceOnEnroll, "clear-device-on-enroll", env.Bool("CLEAR_DEVICE_ON_ENROLL", false), "Deletes device profiles and install applications when a device enrolls")
-	flag.StringVar(&LogFormat, "log-format", env.String("LOG_FORMAT", "logfmt"), "Format to output logs. Defaults to logfmt. Can be set to logfmt or json.")
-	flag.StringVar(&ScepCertIssuer, "scep-cert-issuer", env.String("SCEP_CERT_ISSUER", "OU=MICROMDM SCEP CA,O=MicroMDM,C=US"), "The issuer of your SCEP certificate")
-	flag.IntVar(&ScepCertMinValidity, "scep-cert-min-validity", env.Int("SCEP_CERT_MIN_VALIDITY", 180), "The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.")
-	flag.StringVar(&EnrollmentProfile, "enrollment-profile", env.String("ENROLLMENT_PROFILE", ""), "Path to enrollment profile.")
-	flag.BoolVar(&SignEnrollmentProfile, "enrollment-profile-signed", env.Bool("ENROLMENT_PROFILE_SIGNED", false), "Is the enrollment profile you are providing already signed")
+	flag.StringVar(
+		&RedisPassword,
+		"redis-password",
+		env.String("REDIS_PASSWORD", ""),
+		"Redis password",
+	)
+	flag.StringVar(
+		&DBSSLMode,
+		"db-sslmode",
+		"disable",
+		"The SSL Mode to use to connect to Postgres",
+	)
+	flag.IntVar(
+		&DBMaxConnections,
+		"db-max-connections",
+		100,
+		"Maximum number of database connections",
+	)
+	flag.StringVar(
+		&LogLevel,
+		"loglevel",
+		env.String("LOG_LEVEL", "warn"),
+		"Log level. One of debug, info, warn, error",
+	)
+	flag.StringVar(
+		&EscrowURL,
+		"escrowurl",
+		env.String("ESCROW_URL", ""),
+		"HTTP endpoint to escrow erase and unlock PINs to.",
+	)
+	flag.BoolVar(
+		&ClearDeviceOnEnroll,
+		"clear-device-on-enroll",
+		env.Bool("CLEAR_DEVICE_ON_ENROLL", false),
+		"Deletes device profiles and install applications when a device enrolls",
+	)
+	flag.StringVar(
+		&LogFormat,
+		"log-format",
+		env.String("LOG_FORMAT", "logfmt"),
+		"Format to output logs. Defaults to logfmt. Can be set to logfmt or json.",
+	)
+	flag.StringVar(
+		&ScepCertIssuer,
+		"scep-cert-issuer",
+		env.String("SCEP_CERT_ISSUER", "OU=MICROMDM SCEP CA,O=MicroMDM,C=US"),
+		"The issuer of your SCEP certificate",
+	)
+	flag.IntVar(
+		&ScepCertMinValidity,
+		"scep-cert-min-validity",
+		env.Int("SCEP_CERT_MIN_VALIDITY", 180),
+		"The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.",
+	)
+	flag.StringVar(
+		&EnrollmentProfile,
+		"enrollment-profile",
+		env.String("ENROLLMENT_PROFILE", ""),
+		"Path to enrollment profile.",
+	)
+	flag.BoolVar(
+		&SignEnrollmentProfile,
+		"enrollment-profile-signed",
+		env.Bool("ENROLMENT_PROFILE_SIGNED", false),
+		"Is the enrollment profile you are providing already signed",
+	)
 	flag.BoolVar(&Prometheus, "prometheus", env.Bool("PROMETHEUS", false), "Enable Prometheus")
-	flag.IntVar(&OnceIn, "once-in", env.Int("ONCE_IN", 60), "Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.")
-	flag.IntVar(&InfoRequestInterval, "info-request-interval", env.Int("INFO_REQUEST_INTERVAL", 360), "Number of minutes to wait between issuing information commands")
+	flag.IntVar(
+		&OnceIn,
+		"once-in",
+		env.Int("ONCE_IN", 60),
+		"Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.",
+	)
+	flag.IntVar(
+		&InfoRequestInterval,
+		"info-request-interval",
+		env.Int("INFO_REQUEST_INTERVAL", 360),
+		"Number of minutes to wait between issuing information commands",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -157,7 +292,8 @@ func main() {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
 
-	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" || DBPort == "" || DBSSLMode == "" {
+	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" || DBPort == "" ||
+		DBSSLMode == "" {
 		log.Fatal("Required database details missing, Exiting.")
 	}
 
@@ -172,14 +308,19 @@ func main() {
 	r.HandleFunc("/profile", utils.BasicAuth(director.GetSharedProfiles)).Methods("GET")
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
-	r.HandleFunc("/device/command/{command}", utils.BasicAuth(director.PostDeviceCommandHandler)).Methods("POST")
-	r.HandleFunc("/device/serial/{serial}", utils.BasicAuth(director.SingleDeviceSerialHandler)).Methods("GET")
+	r.HandleFunc("/device/command/{command}", utils.BasicAuth(director.PostDeviceCommandHandler)).
+		Methods("POST")
+	r.HandleFunc("/device/serial/{serial}", utils.BasicAuth(director.SingleDeviceSerialHandler)).
+		Methods("GET")
 	r.HandleFunc("/device/push/{udid}", utils.BasicAuth(director.PushDeviceHandler)).Methods("GET")
 	r.HandleFunc("/device/{udid}", utils.BasicAuth(director.SingleDeviceHandler)).Methods("GET")
-	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).Methods("POST")
-	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).Methods("GET")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).
+		Methods("POST")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).
+		Methods("GET")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
-	r.HandleFunc("/command/pending/delete", utils.BasicAuth(director.DeletePendingCommands)).Methods("GET")
+	r.HandleFunc("/command/pending/delete", utils.BasicAuth(director.DeletePendingCommands)).
+		Methods("GET")
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
@@ -217,7 +358,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	director.InfoLogger(director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."})
+	director.InfoLogger(
+		director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."},
+	)
 
 	var QueueFactory = redisq.NewFactory()
 
