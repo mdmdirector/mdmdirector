@@ -1,0 +1,13 @@
+#!/bin/bash
+# Erase a device registered in micromdm by a given device by UDID
+# Example:
+#          ./tools/erase_device $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/command/clear_queue"
+jq -n \
+  --arg udid "$1" \
+  '.udids = [$udid]
+  |.value = true
+  '|\
+  curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint" -d@-

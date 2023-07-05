@@ -364,7 +364,7 @@ func clearCommandQueue(device types.Device) error {
 		return err
 	}
 
-	endpoint.Path = path.Join(endpoint.Path, "v1", "command", device.UDID)
+	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
 
 	req, _ := http.NewRequest("DELETE", endpoint.String(), bytes.NewBufferString("{}"))
 	req.SetBasicAuth("micromdm", utils.APIKey())
