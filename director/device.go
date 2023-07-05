@@ -77,19 +77,23 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 func UpdateDeviceBools(newDevice *types.Device) error {
 	var deviceModel types.Device
-	err := db.DB.Model(&deviceModel).Select("is_supervised", "is_device_locator_service_enabled", "is_activation_lock_enabled", "is_do_not_disturb_in_effect", "is_cloud_backup_enabled", "system_integrity_protection_enabled", "app_analytics_enabled", "is_mdm_lost_mode_enabled", "awaiting_configuration", "diagnostic_submission_enabled", "is_multi_user").Where("ud_id = ?", newDevice.UDID).Updates(map[string]interface{}{
-		"is_supervised":                       newDevice.IsSupervised,
-		"is_device_locator_service_enabled":   newDevice.IsDeviceLocatorServiceEnabled,
-		"is_activation_lock_enabled":          newDevice.IsActivationLockEnabled,
-		"is_do_not_disturb_in_effect":         newDevice.IsDoNotDisturbInEffect,
-		"is_cloud_backup_enabled":             newDevice.IsCloudBackupEnabled,
-		"system_integrity_protection_enabled": newDevice.SystemIntegrityProtectionEnabled,
-		"app_analytics_enabled":               newDevice.AppAnalyticsEnabled,
-		"is_mdm_lost_mode_enabled":            newDevice.IsMDMLostModeEnabled,
-		"awaiting_configuration":              newDevice.AwaitingConfiguration,
-		"diagnostic_submission_enabled":       newDevice.DiagnosticSubmissionEnabled,
-		"is_multi_user":                       newDevice.IsMultiUser,
-	}).Error
+	err := db.DB.Model(&deviceModel).
+		Select("is_supervised", "is_device_locator_service_enabled", "is_activation_lock_enabled", "is_do_not_disturb_in_effect", "is_cloud_backup_enabled", "system_integrity_protection_enabled", "app_analytics_enabled", "is_mdm_lost_mode_enabled", "awaiting_configuration", "diagnostic_submission_enabled", "is_multi_user").
+		Where("ud_id = ?", newDevice.UDID).
+		Updates(map[string]interface{}{
+			"is_supervised":                       newDevice.IsSupervised,
+			"is_device_locator_service_enabled":   newDevice.IsDeviceLocatorServiceEnabled,
+			"is_activation_lock_enabled":          newDevice.IsActivationLockEnabled,
+			"is_do_not_disturb_in_effect":         newDevice.IsDoNotDisturbInEffect,
+			"is_cloud_backup_enabled":             newDevice.IsCloudBackupEnabled,
+			"system_integrity_protection_enabled": newDevice.SystemIntegrityProtectionEnabled,
+			"app_analytics_enabled":               newDevice.AppAnalyticsEnabled,
+			"is_mdm_lost_mode_enabled":            newDevice.IsMDMLostModeEnabled,
+			"awaiting_configuration":              newDevice.AwaitingConfiguration,
+			"diagnostic_submission_enabled":       newDevice.DiagnosticSubmissionEnabled,
+			"is_multi_user":                       newDevice.IsMultiUser,
+		}).
+		Error
 	if err != nil {
 		return err
 	}
@@ -107,7 +111,11 @@ func GetDevice(udid string) (types.Device, error) {
 
 	err := db.DB.Model(device).Where("ud_id = ?", udid).First(&device).Scan(&device).Error
 	if err != nil {
-		return device, errors.Wrapf(err, "Couldn't scan to Device model from GetDevice %v", device.UDID)
+		return device, errors.Wrapf(
+			err,
+			"Couldn't scan to Device model from GetDevice %v",
+			device.UDID,
+		)
 	}
 	return device, nil
 }
@@ -120,7 +128,12 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
 
-	err := db.DB.Model(device).Where("serial_number = ?", serial).Order("last_checked_in desc").First(&device).Scan(&device).Error
+	err := db.DB.Model(device).
+		Where("serial_number = ?", serial).
+		Order("last_checked_in desc").
+		First(&device).
+		Scan(&device).
+		Error
 	if err != nil {
 		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
@@ -130,7 +143,15 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 func GetAllDevices() ([]types.Device, error) {
 	var devices []types.Device
 
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Find(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").
+		Preload("SecurityInfo").
+		Preload("SecurityInfo.FirmwarePasswordStatus").
+		Preload("SecurityInfo.ManagementStatus").
+		Preload("SecurityInfo.FirewallSettings").
+		Preload("SecurityInfo.SecureBoot").
+		Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").
+		Find(&devices).
+		Error
 	if err != nil {
 		return devices, errors.Wrap(err, "Get All Devices")
 	}
@@ -140,9 +161,22 @@ func GetAllDevices() ([]types.Device, error) {
 func GetAllDevicesAndAssociations() ([]types.Device, error) {
 	var devices []types.Device
 
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Preload("Certificates").Preload("ProfileList").Find(&devices).Error
+	err := db.DB.Preload("OSUpdateSettings").
+		Preload("SecurityInfo").
+		Preload("SecurityInfo.FirmwarePasswordStatus").
+		Preload("SecurityInfo.ManagementStatus").
+		Preload("SecurityInfo.FirewallSettings").
+		Preload("SecurityInfo.SecureBoot").
+		Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").
+		Preload("Certificates").
+		Preload("ProfileList").
+		Find(&devices).
+		Error
 	if err != nil {
-		return devices, errors.Wrap(err, "Couldn't scan to Device model from GetAllDevicesAndAssociations")
+		return devices, errors.Wrap(
+			err,
+			"Couldn't scan to Device model from GetAllDevicesAndAssociations",
+		)
 	}
 
 	return devices, nil
@@ -156,7 +190,11 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 	err := json.NewDecoder(r.Body).Decode(&out)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(
+			w,
+			http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError,
+		)
 	}
 
 	command := vars["command"]
@@ -168,7 +206,11 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 			device, err := GetDevice(out.DeviceUDIDs[i])
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				http.Error(
+					w,
+					http.StatusText(http.StatusInternalServerError),
+					http.StatusInternalServerError,
+				)
 			}
 			devices = append(devices, device)
 		}
@@ -179,7 +221,11 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 			device, err := GetDeviceSerial(out.SerialNumbers[i])
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				http.Error(
+					w,
+					http.StatusText(http.StatusInternalServerError),
+					http.StatusInternalServerError,
+				)
 			}
 			devices = append(devices, device)
 		}
@@ -188,12 +234,28 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 	for i := range devices {
 		device := devices[i]
 		var deviceModel types.Device
+		if command == "clear_queue" {
+			err = clearCommandQueue(device)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+				http.Error(
+					w,
+					http.StatusText(http.StatusInternalServerError),
+					http.StatusInternalServerError,
+				)
+			}
+			return
+		}
 		if command == "device_lock" {
 			if pin != "" {
-				err := db.DB.Model(&deviceModel).Select("lock", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
-					"lock":       value,
-					"unlock_pin": pin,
-				}).Error
+				err := db.DB.Model(&deviceModel).
+					Select("lock", "unlock_pin").
+					Where("ud_id = ?", device.UDID).
+					Updates(map[string]interface{}{
+						"lock":       value,
+						"unlock_pin": pin,
+					}).
+					Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 				}
@@ -211,10 +273,14 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 		if command == "erase_device" {
 			if pin != "" {
-				err := db.DB.Model(&deviceModel).Select("erase", "unlock_pin").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
-					"erase":      value,
-					"unlock_pin": pin,
-				}).Error
+				err := db.DB.Model(&deviceModel).
+					Select("erase", "unlock_pin").
+					Where("ud_id = ?", device.UDID).
+					Updates(map[string]interface{}{
+						"erase":      value,
+						"unlock_pin": pin,
+					}).
+					Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 				}
@@ -329,7 +395,15 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
+	err := db.DB.Preload("OSUpdateSettings").
+		Preload("SecurityInfo").
+		Preload("SecurityInfo.FirmwarePasswordStatus").
+		Preload("SecurityInfo.ManagementStatus").
+		Preload("Certificates").
+		Preload("ProfileList").
+		Preload("Profiles").
+		First(&device).
+		Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from FetchDeviceModelAndRelations", err)
 	}
@@ -339,7 +413,18 @@ func FetchDeviceModelAndRelations(device types.Device) (types.Device, error) {
 
 func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 	var empty types.Device
-	err := db.DB.Preload("OSUpdateSettings").Preload("SecurityInfo").Preload("SecurityInfo.FirmwarePasswordStatus").Preload("SecurityInfo.ManagementStatus").Preload("SecurityInfo.FirewallSettings").Preload("SecurityInfo.SecureBoot").Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").Preload("Certificates").Preload("ProfileList").Preload("Profiles").First(&device).Error
+	err := db.DB.Preload("OSUpdateSettings").
+		Preload("SecurityInfo").
+		Preload("SecurityInfo.FirmwarePasswordStatus").
+		Preload("SecurityInfo.ManagementStatus").
+		Preload("SecurityInfo.FirewallSettings").
+		Preload("SecurityInfo.SecureBoot").
+		Preload("SecurityInfo.SecureBoot.SecureBootReducedSecurity").
+		Preload("Certificates").
+		Preload("ProfileList").
+		Preload("Profiles").
+		First(&device).
+		Error
 	if err != nil {
 		log.Error("Couldn't scan to Device model from FetchDeviceAndRelations", err)
 	}
@@ -352,7 +437,14 @@ func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
-	InfoLogger(LogHolder{Message: "Requesting DeviceInfo", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
+	InfoLogger(
+		LogHolder{
+			Message:            "Requesting DeviceInfo",
+			DeviceUDID:         device.UDID,
+			DeviceSerial:       device.SerialNumber,
+			CommandRequestType: requestType,
+		},
+	)
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
@@ -367,8 +459,18 @@ func RequestDeviceInformation(device types.Device) error {
 
 func SetTokenUpdate(device types.Device) (types.Device, error) {
 	var deviceModel types.Device
-	DebugLogger(LogHolder{Message: "TokenUpdate Received", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).Error
+	DebugLogger(
+		LogHolder{
+			Message:      "TokenUpdate Received",
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+		},
+	)
+	err := db.DB.Model(&deviceModel).
+		Select("token_update_recieved", "authenticate_recieved").
+		Where("ud_id = ?", device.UDID).
+		Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true}).
+		Error
 	if err != nil {
 		return device, errors.Wrap(err, "Set TokenUpdate")
 	}
@@ -402,9 +504,13 @@ func RequestAllDeviceInfo(device types.Device) error {
 
 	now := time.Now()
 	var deviceModel types.Device
-	err = db.DB.Model(&deviceModel).Select("last_info_requested").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
-		"last_info_requested": now,
-	}).Error
+	err = db.DB.Model(&deviceModel).
+		Select("last_info_requested").
+		Where("ud_id = ?", device.UDID).
+		Updates(map[string]interface{}{
+			"last_info_requested": now,
+		}).
+		Error
 	if err != nil {
 		return err
 	}
