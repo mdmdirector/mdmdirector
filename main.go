@@ -57,6 +57,8 @@ var DBHost string
 // DBPort is used to connect to the database
 var DBPort string
 
+var DBMaxIdleConnections int
+
 var DBMaxConnections int
 
 // DBSSLMode is used to connect to the database
@@ -193,6 +195,12 @@ func main() {
 		"db-sslmode",
 		"disable",
 		"The SSL Mode to use to connect to Postgres",
+	)
+	flag.IntVar(
+		&DBMaxIdleConnections,
+		"db-max-idle-connections",
+		-1,
+		"Maximum number of connections in the idle connection pool",
 	)
 	flag.IntVar(
 		&DBMaxConnections,
