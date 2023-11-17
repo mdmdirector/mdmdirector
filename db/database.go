@@ -67,7 +67,7 @@ func Open() error {
 	}
 
 	// SetMaxIdleConns sets the maximum number of connections in the idle connection pool.
-	if utils.DBMaxIdleConnections() != -1 {}
+	if utils.DBMaxIdleConnections() != -1 {
 		sqlDB.SetMaxIdleConns(utils.DBMaxIdleConnections())
 	}
 
