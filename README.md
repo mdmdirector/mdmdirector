@@ -27,6 +27,7 @@ You must set the `-command-webhook-url` flag on MicroMDM to the URL of your MDMD
 - `-cert /path/to/certificate` - Path to the signing certificate or p12 file.
 - `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls (default "false")
 - `-db-host string` - **(Required)** Hostname or IP of the PostgreSQL instance
+- `-db-max-idle-connections int` - Maximum number of database connections in the idle connection pool (default -1, not set, uses the default for sql Go package)
 - `-db-max-connections int` - Maximum number of database connections (default 100)
 - `-db-name string` - **(Required)** Name of the database to connect to.
 - `-db-password string` - **(Required)** Password of the DB user.
