@@ -1032,6 +1032,11 @@ func validateProfileInProfileList(
 	for i := range profileLists {
 		profileList := profileLists[i]
 
+		// if profile is present in profile list, but shouldn't be installed, just check identifier
+		if profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier && !profileForVerification.Installed {
+			return true, false, nil
+		}
+
 		// Verify the certifacte
 		if utils.Sign() &&
 			profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
