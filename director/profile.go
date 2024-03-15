@@ -154,7 +154,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.DeviceUDIDs) > 0 {
 			// Targeting all devices
 			if out.DeviceUDIDs[0] == "*" {
-				devices, err = GetAllDevices()
+				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(
@@ -197,7 +197,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
 			if out.SerialNumbers[0] == "*" {
-				devices, err = GetAllDevices()
+				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -426,7 +426,8 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	var sharedProfileModel types.SharedProfile
 	var sharedProfiles []types.SharedProfile
-	devices, err := GetAllDevices()
+	var devices []types.Device
+	err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
 	if err != nil {
 		return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not get all devices")
 	}
@@ -699,10 +700,26 @@ func DeleteSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
-	for i := range devices {
-		device := devices[i]
-		for i := range profiles {
-			profileData := profiles[i]
+	for i := range profiles {
+		profileData := profiles[i]
+
+		// get devices that have a device-specific version of this profile
+		var skipProfileDevices []types.DeviceProfile
+		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
+		if err != nil {
+			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+		}
+		skipUDIDs := make(map[string]struct{})
+		for _, deviceProfile := range skipProfileDevices {
+			skipUDIDs[deviceProfile.DeviceUDID] = struct{}{}
+		}
+
+		for i := range devices {
+			device := devices[i]
+			// skip deleting shared profile if device has a device-specific version of this profile
+			if _, ok := skipUDIDs[device.UDID]; ok {
+				continue
+			}
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -767,10 +784,26 @@ func PushSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
-	for i := range devices {
-		device := devices[i]
-		for i := range profiles {
-			profileData := profiles[i]
+	for i := range profiles {
+		profileData := profiles[i]
+
+		// get devices that have a device-specific version of this profile
+		var skipProfileDevices []types.DeviceProfile
+		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
+		if err != nil {
+			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+		}
+		skipUDIDs := make(map[string]struct{})
+		for _, deviceProfile := range skipProfileDevices {
+			skipUDIDs[deviceProfile.DeviceUDID] = struct{}{}
+		}
+
+		for i := range devices {
+			device := devices[i]
+			// skip pushing shared profile if device has a device-specific version of this profile
+			if _, ok := skipUDIDs[device.UDID]; ok {
+				continue
+			}
 			var commandPayload types.CommandPayload
 
 			commandPayload.UDID = device.UDID
@@ -879,6 +912,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load device profiles to install")
 	}
 
+	deviceProfileIDs := make(map[string]struct{}, len(profiles))
 	for i := range profiles {
 		var profileForVerification ProfileForVerification
 		deviceprofile := profiles[i]
@@ -891,6 +925,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profileForVerification.Installed = deviceprofile.Installed
 		profileForVerification.Type = "device"
 		profilesForVerification = append(profilesForVerification, profileForVerification)
+		deviceProfileIDs[profileForVerification.PayloadIdentifier] = struct{}{}
 	}
 
 	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Scan(&sharedProfiles).Error
@@ -901,6 +936,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	for i := range sharedProfiles {
 		var profileForVerification ProfileForVerification
 		sharedProfile := sharedProfiles[i]
+		// don't consider shared profiles that have a device-specific version
+		if _, ok := deviceProfileIDs[sharedProfile.PayloadIdentifier]; ok {
+			continue
+		}
 		profileForVerification.PayloadUUID = sharedProfile.PayloadUUID
 		profileForVerification.PayloadIdentifier = sharedProfile.PayloadIdentifier
 		profileForVerification.HashedPayloadUUID = sharedProfile.HashedPayloadUUID
@@ -1278,8 +1317,20 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
+	// skip shared profiles that have a device-specific version
+	skipProfiles := make(map[string]struct{})
+	for _, p := range profiles {
+		skipProfiles[p.PayloadIdentifier] = struct{}{}
+	}
+	var unskippedSharedProfiles []types.SharedProfile
+	for _, p := range sharedProfiles {
+		if _, ok := skipProfiles[p.PayloadIdentifier]; !ok {
+			unskippedSharedProfiles = append(unskippedSharedProfiles, p)
+		}
+	}
+
 	log.Debugf("Pushing Shared Profiles %v", device.UDID)
-	commands, err = PushSharedProfiles(devices, sharedProfiles)
+	commands, err = PushSharedProfiles(devices, unskippedSharedProfiles)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
