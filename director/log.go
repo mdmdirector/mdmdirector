@@ -113,7 +113,7 @@ func FatalLogger(logholder LogHolder) {
 	logger.Fatal(logholder.Message)
 }
 
-//Leave the below in in case we ever stop checking each struct field individually
+// Leave the below in in case we ever stop checking each struct field individually
 // type hook struct{}
 
 // func (h *hook) Levels() []logrus.Level {

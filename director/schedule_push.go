@@ -72,7 +72,7 @@ func ProcessScheduledCheckinQueue(pushQueue taskq.Queue) {
 	DebugLogger(LogHolder{Message: "Processing items from scheduled checkin Queue"})
 	err := p.Start(ctx)
 	if err != nil {
-		msg := fmt.Errorf("Starting consumer: %v", err.Error())
+		msg := fmt.Errorf("starting consumer: %v", err.Error())
 		ErrorLogger(LogHolder{Message: msg.Error()})
 	}
 }
@@ -137,7 +137,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 	var devices []types.Device
 	var dbDevices []types.Device
 
-	DelaySeconds := getDelay()
+	DelaySeconds := getDelay() // nolint:staticcheck
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {

@@ -69,12 +69,13 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 		device.Active = true
 	}
 
-	if out.Topic == "mdm.Authenticate" {
+	switch out.Topic {
+	case "mdm.Authenticate":
 		err = ResetDevice(device)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
-	} else if out.Topic == "mdm.TokenUpdate" {
+	case "mdm.TokenUpdate":
 		tokenUpdateDevice, err := SetTokenUpdate(device)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -267,7 +268,7 @@ func pushOnNewBuild(udid string, currentBuild string) error {
 	// Only compare if there is actually a build version set
 	var err error
 	if udid == "" {
-		err = fmt.Errorf("Device does not have a udid set %v", udid)
+		err = fmt.Errorf("device does not have a udid set %v", udid)
 		return errors.Wrap(err, "No Device UDID set")
 	}
 

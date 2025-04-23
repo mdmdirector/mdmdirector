@@ -48,7 +48,7 @@ type Device struct {
 	iTunesStoreAccountHash      string
 	iTunesStoreAccountIsActive  bool
 	LastCloudBackupDate         time.Time
-	//MDMOptions                  string
+	// MDMOptions                  string
 	// EthernetMACs []string
 	// OrganizationInfo interface{}
 	PersonalHotspotEnabled bool
