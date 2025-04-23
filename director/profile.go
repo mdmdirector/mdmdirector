@@ -265,7 +265,8 @@ func ProcessDeviceProfiles(
 		profile := profiles[i]
 
 		devices = append(devices, device)
-		if requestType == "post" {
+		switch requestType {
+		case "post":
 			profileDiffers, err := SavedDeviceProfileDiffers(device, profile)
 			if err != nil {
 				return metadata, errors.Wrap(
@@ -301,7 +302,7 @@ func ProcessDeviceProfiles(
 				}
 			}
 
-		} else if requestType == "delete" {
+		case "delete":
 			profilePresent, err := SavedProfileIsPresent(device, profile)
 			if err != nil {
 				return metadata, errors.Wrap(err, "Could not determine if saved profile is present.")
@@ -1092,7 +1093,7 @@ func validateProfileInProfileList(
 					return true, false, errors.Wrap(err, "parse PEM certificate data")
 				}
 				if parsed.Subject.String() == signingCert.Subject.String() &&
-					parsed.NotAfter == signingCert.NotAfter &&
+					parsed.NotAfter.Equal(signingCert.NotAfter) &&
 					parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
 					msg := fmt.Sprintf(
 						"%v Parsed certificate matches local signing certificate",

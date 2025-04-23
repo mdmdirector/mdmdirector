@@ -21,7 +21,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	var oldDevice types.Device
 
 	if newDevice.UDID == "" && device.SerialNumber == "" {
-		err := fmt.Errorf("No device UDID or serial set")
+		err := fmt.Errorf("no device UDID or serial set")
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
 	now := time.Now()
@@ -105,7 +105,7 @@ func GetDevice(udid string) (types.Device, error) {
 	var device types.Device
 
 	if udid == "" {
-		err := fmt.Errorf("No device UDID set")
+		err := fmt.Errorf("no device UDID set")
 		return device, errors.Wrap(err, "GetDevice")
 	}
 
@@ -124,7 +124,7 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 	var device types.Device
 
 	if serial == "" {
-		err := fmt.Errorf("No device Serial passed")
+		err := fmt.Errorf("no device Serial passed")
 		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
 
