@@ -315,13 +315,13 @@ func main() {
 	r.HandleFunc("/profile", utils.BasicAuth(director.DeleteProfileHandler)).Methods("DELETE")
 	r.HandleFunc("/profile", utils.BasicAuth(director.GetSharedProfiles)).Methods("GET")
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
-	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
 	r.HandleFunc("/device/command/{command}", utils.BasicAuth(director.PostDeviceCommandHandler)).
 		Methods("POST")
 	r.HandleFunc("/device/serial/{serial}", utils.BasicAuth(director.SingleDeviceSerialHandler)).
 		Methods("GET")
 	r.HandleFunc("/device/push/{udid}", utils.BasicAuth(director.PushDeviceHandler)).Methods("GET")
 	r.HandleFunc("/device/{udid}", utils.BasicAuth(director.SingleDeviceHandler)).Methods("GET")
+	r.HandleFunc("/device/{udid}/commands", utils.BasicAuth(director.InspectDeviceCommands)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).
 		Methods("POST")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).

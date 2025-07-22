@@ -533,3 +533,26 @@ func PushDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func InspectDeviceCommands(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	udid := vars["udid"]
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: fmt.Sprintf("Request to /device/%s/commands received", udid)})
+
+	device, err := GetDevice(udid)
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := InspectCommandQueue(device)
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(response)
+}
