@@ -2,6 +2,8 @@ package director
 
 import (
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	intErrors "errors"
 	"io"
 	"math/big"
@@ -12,6 +14,7 @@ import (
 
 	"gopkg.in/ajg/form.v1"
 
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -48,6 +51,50 @@ func EraseLockDevice(udid string) error {
 	if requestType == "" {
 		log.Info("Neither lock or erase are set")
 		return nil
+	}
+	// Inspect the devices queue to see if the command is already there
+	deviceQueue, err := InspectCommandQueue(device)
+	if err != nil {
+		return errors.Wrap(err, "EraseLockDevice:InspectCommandQueue")
+	}
+	// We don't care about the command UUID
+	type Command struct {
+		Payload string `json:"payload"`
+	}
+	var queue []*Command
+	err = json.Unmarshal(deviceQueue, &queue)
+	if err != nil {
+		return errors.Wrap(err, "EraseLockDevice:DecodeCommandQueue")
+	}
+	var found bool = false
+	for _, cmd := range queue {
+		// decode the command payload
+		decodedBytes, err := base64.StdEncoding.DecodeString(cmd.Payload)
+		if err != nil {
+			return errors.Wrap(err, "EraseLockDevice:DecodeBase64Payload")
+		}
+		type payload struct {
+			RequestType string `plist:"RequestType"`
+		}
+		var queuePayload payload
+		err = plist.Unmarshal(decodedBytes, queuePayload)
+		if err != nil {
+			return errors.Wrap(err, "EraseLockDevice:DecodePayloadPlist")
+		}
+		// If the command is already in the queue, skip it
+		if queuePayload.RequestType == requestType {
+			log.Infof("Command %v for %v already in queue, skipping", queuePayload, device.UDID)
+			found = true
+			break
+		}
+	}
+	if found {
+		log.Infof("Command %v for %v already in queue, skipping", requestType, device.UDID)
+		return nil
+	} else {
+		log.Infof("Command %v for %v not found in queue, clearing queue", requestType, device.UDID)
+		// Clear the queue for this device
+		clearCommandQueue(device)
 	}
 
 	err = escrowPin(device, pin)
