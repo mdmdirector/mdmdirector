@@ -83,7 +83,7 @@ func EraseLockDevice(udid string) error {
 		}
 		// If the command is already in the queue, skip it
 		if queuePayload.RequestType == requestType {
-			log.Infof("Command %v for %v already in queue, skipping", queuePayload, device.UDID)
+			log.Infof("Command %v for %v already in queue, skipping", queuePayload.RequestType, device.UDID)
 			found = true
 			break
 		}
