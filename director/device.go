@@ -545,8 +545,10 @@ func InspectDeviceCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-
-	response, err := InspectCommandQueue(device)
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	response, err := InspectCommandQueue(client, device)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
