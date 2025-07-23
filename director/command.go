@@ -376,10 +376,7 @@ func clearCommandQueue(device types.Device) error {
 	return resp.Body.Close()
 }
 
-func InspectCommandQueue(device types.Device) ([]byte, error) {
-	var client = &http.Client{
-		Timeout: time.Second * 10,
-	}
+func InspectCommandQueue(client *http.Client, device types.Device) ([]byte, error) {
 
 	endpoint, err := url.Parse(utils.ServerURL())
 	if err != nil {
