@@ -155,7 +155,10 @@ func TestInspectCommandQueue(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 		w.WriteHeader(http.StatusOK)
-		w.Write(body)
+		_, err := w.Write(body)
+		if err != nil {
+			t.Error(err.Error())
+		}
 	}))
 	defer server.Close()
 	// These need to be set due to global variable referencing
