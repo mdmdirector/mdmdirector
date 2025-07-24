@@ -158,6 +158,7 @@ func TestInspectCommandQueue(t *testing.T) {
 		w.Write(body)
 	}))
 	defer server.Close()
+	// These need to be set due to global variable referencing
 	flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
 	flag.String("micromdmapikey", "", "MicroMDM Server API Key")
 	client := server.Client()
