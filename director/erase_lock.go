@@ -2,6 +2,8 @@ package director
 
 import (
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	intErrors "errors"
 	"io"
 	"math/big"
@@ -12,6 +14,7 @@ import (
 
 	"gopkg.in/ajg/form.v1"
 
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -48,6 +51,30 @@ func EraseLockDevice(udid string) error {
 	if requestType == "" {
 		log.Info("Neither lock or erase are set")
 		return nil
+	}
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	// Inspect the devices queue to see if the command is already there
+	deviceQueue, err := InspectCommandQueue(client, device)
+	if err != nil {
+		return errors.Wrap(err, "EraseLockDevice:InspectCommandQueue")
+	}
+
+	ok, err := checkForExistingCommand(deviceQueue, requestType)
+	if err != nil {
+		return errors.Wrap(err, "EraseLockDevice:checkForExistingCommand")
+	}
+	if ok {
+		log.Infof("Command %v for %v already in queue, skipping", requestType, device.UDID)
+		return nil
+	}
+
+	log.Infof("Command %v for %v not found in queue, clearing queue", requestType, device.UDID)
+	// Clear the queue for this device
+	err = clearCommandQueue(device)
+	if err != nil {
+		log.Warnf("ClearQueue failed: %v", err.Error())
 	}
 
 	err = escrowPin(device, pin)
@@ -157,4 +184,44 @@ func generatePin(device types.Device) (string, error) {
 	}
 	// Found a saved one
 	return savedUnlockPin.UnlockPin, nil
+}
+
+func checkForExistingCommand(body []byte, requestType string) (bool, error) {
+
+	// We don't care about the command UUID
+	type Command struct {
+		Payload string `json:"payload"`
+	}
+	type CommandQueue struct {
+		Commands []Command `json:"commands"`
+	}
+	queue := new(CommandQueue)
+	err := json.Unmarshal(body, &queue)
+	if err != nil {
+		return false, errors.Wrap(err, "EraseLockDevice:DecodeCommandQueue")
+	}
+	for _, cmd := range queue.Commands {
+		// decode the command payload
+		decodedBytes, err := base64.StdEncoding.DecodeString(cmd.Payload)
+		if err != nil {
+			return false, errors.Wrap(err, "EraseLockDevice:DecodeBase64Payload")
+		}
+
+		type payload struct {
+			Command struct {
+				RequestType string `plist:"RequestType"`
+			} `plist:"Command"`
+		}
+		cmdPayload := new(payload)
+		err = plist.Unmarshal(decodedBytes, cmdPayload)
+		if err != nil {
+			return false, errors.Wrap(err, "EraseLockDevice:DecodePayloadPlist")
+		}
+
+		// If the command is already in the queue, skip it
+		if cmdPayload.Command.RequestType == requestType {
+			return true, nil
+		}
+	}
+	return false, nil
 }

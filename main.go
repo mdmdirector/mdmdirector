@@ -322,6 +322,7 @@ func main() {
 		Methods("GET")
 	r.HandleFunc("/device/push/{udid}", utils.BasicAuth(director.PushDeviceHandler)).Methods("GET")
 	r.HandleFunc("/device/{udid}", utils.BasicAuth(director.SingleDeviceHandler)).Methods("GET")
+	r.HandleFunc("/device/{udid}/commands", utils.BasicAuth(director.InspectDeviceCommands)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).
 		Methods("POST")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).

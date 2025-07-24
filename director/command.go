@@ -375,3 +375,28 @@ func clearCommandQueue(device types.Device) error {
 
 	return resp.Body.Close()
 }
+
+func InspectCommandQueue(client *http.Client, device types.Device) ([]byte, error) {
+
+	endpoint, err := url.Parse(utils.ServerURL())
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
+	req, _ := http.NewRequest("GET", endpoint.String(), nil)
+	req.SetBasicAuth("micromdm", utils.APIKey())
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, errors.Wrap(err, "failed to read response body")
+	}
+	return buf.Bytes(), nil
+}

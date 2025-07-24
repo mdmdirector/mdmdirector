@@ -1,6 +1,10 @@
 package director
 
 import (
+	"bytes"
+	"flag"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -141,4 +145,39 @@ type mockFlagBuilder struct {
 
 func (m mockFlagBuilder) ClearDeviceOnEnroll() bool {
 	return m.doClear
+}
+
+func TestInspectCommandQueue(t *testing.T) {
+
+	// Mock the HTTP client and response
+	var path string
+	body := []byte(`test`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write(body)
+		if err != nil {
+			t.Error(err.Error())
+		}
+	}))
+	defer server.Close()
+	// These need to be set due to global variable referencing
+	flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
+	flag.String("micromdmapikey", "", "MicroMDM Server API Key")
+	client := server.Client()
+	device := types.Device{
+		UDID: "1234-5678-123456",
+	}
+
+	// Call the function to inspect the command queue
+	haveBody, err := InspectCommandQueue(client, device)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if !bytes.Equal(haveBody, body) {
+		t.Error("Expected body to be equal")
+	}
+	if path != "/v1/commands/1234-5678-123456" {
+		t.Errorf("Expected path to be /v1/commands/1234-5678-123456, got %s", path)
+	}
 }
