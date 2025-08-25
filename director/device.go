@@ -140,7 +140,7 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 	}
 	if device.SerialNumber != serial {
 		err := fmt.Errorf("serial not found: %s", serial)
-		return device, err
+		return device, errors.Wrap(err, "GetDeviceSerial")
 	}
 	return device, nil
 }
@@ -388,12 +388,14 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 
 	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
-		if strings.Contains(err.Error(), "serial not found") {
+		if strings.Contains(err.Error(), "serial not found:") {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			w.WriteHeader(http.StatusNotFound)
+		} else {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusInternalServerError)
 		}
-		ErrorLogger(LogHolder{Message: err.Error()})
-		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	err = SingleDeviceOutput(device, w, r)
