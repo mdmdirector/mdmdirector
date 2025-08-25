@@ -5,6 +5,7 @@ import (
 	intErrors "errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -136,6 +137,10 @@ func GetDeviceSerial(serial string) (types.Device, error) {
 		Error
 	if err != nil {
 		return device, errors.Wrap(err, "GetDeviceSerial")
+	}
+	if device.SerialNumber != serial {
+		err := fmt.Errorf("Serial Not Found: %s", serial)
+		return device, err
 	}
 	return device, nil
 }
@@ -383,6 +388,10 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 
 	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
+		if strings.Contains(err.Error(), "Serial Not Found") {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			w.WriteHeader(http.StatusNotFound)
+		}
 		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
