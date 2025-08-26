@@ -1,0 +1,9 @@
+#!/bin/bash
+# Get device queue commands
+# Example:
+#          ./tools/inspect_queue $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/$1/commands"
+
+curl -u "mdmdirector:$API_TOKEN" -X GET "$SERVER_URL/$endpoint"
