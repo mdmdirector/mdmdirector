@@ -1,6 +1,6 @@
 module github.com/mdmdirector/mdmdirector
 
-go 1.20
+go 1.23.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.0
@@ -56,5 +56,5 @@ require (
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
