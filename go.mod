@@ -14,7 +14,7 @@ require (
 	github.com/micromdm/go4 v0.0.0-20210104222236-8a0936d9e451
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.8.3
 	github.com/stretchr/testify v1.7.1
 	github.com/vmihailenco/taskq/v3 v3.2.8
 	golang.org/x/crypto v0.45.0
