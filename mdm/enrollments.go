@@ -58,7 +58,7 @@ func (c *NanoMDMClient) queryEnrollmentsPage(filter *EnrollmentFilter, limit, of
 		return nil, errors.Wrap(err, "queryEnrollmentsPage: create request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth("nanomdm", c.apiKey)
+	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

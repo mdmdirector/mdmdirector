@@ -35,7 +35,7 @@ func (c *NanoMDMClient) InspectQueue(enrollmentID string) (*QueueResponse, error
 	if err != nil {
 		return nil, errors.Wrap(err, "InspectQueue: create request")
 	}
-	req.SetBasicAuth("nanomdm", c.apiKey)
+	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -79,7 +79,7 @@ func (c *NanoMDMClient) ClearQueue(enrollmentIDs ...string) (*QueueDeleteRespons
 	if err != nil {
 		return nil, errors.Wrap(err, "ClearQueue: create request")
 	}
-	req.SetBasicAuth("nanomdm", c.apiKey)
+	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

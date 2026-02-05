@@ -152,6 +152,7 @@ func FetchDevicesFromMDM() {
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
+		return
 	}
 
 	if resp.StatusCode != 200 {

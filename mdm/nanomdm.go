@@ -21,6 +21,9 @@ const (
 	ServerTypeNanoMDM  ServerType = "nanomdm"
 )
 
+// NanoMDMAuthUsername - username used for Basic Auth with NanoMDM API
+const NanoMDMAuthUsername = "nanomdm"
+
 // ErrClientNotInitialized - when the NanoMDM client hasn't been initialized
 var ErrClientNotInitialized = errors.New("NanoMDM client not initialized")
 
@@ -74,7 +77,7 @@ func (c *NanoMDMClient) buildURL(endpoint string, ids []string, queryParams map[
 
 // doRequest performs an HTTP request and parses the APIResult response
 func (c *NanoMDMClient) doRequest(req *http.Request) (*APIResponse, error) {
-	req.SetBasicAuth("nanomdm", c.apiKey)
+	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"io"
 	"math"
 	"net"
@@ -52,9 +53,40 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	var lastErr error
 	var resp *http.Response
 
+	// Store the original body for potential retries
+	var bodyBytes []byte
+	if req.Body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to read request body")
+		}
+		req.Body.Close()
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+		}
+		req.ContentLength = int64(len(bodyBytes))
+	}
+
 	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(c.calculateBackoff(attempt))
+			waitDuration := c.calculateBackoff(attempt)
+			select {
+			case <-req.Context().Done():
+				// if context is canceled, stop
+				return nil, req.Context().Err()
+			case <-time.After(waitDuration):
+				// wait finished, proceed to retry
+			}
+		}
+
+		// Recreate the body for each attempt
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to recreate request body")
+			}
+			req.Body = body
 		}
 
 		resp, lastErr = c.client.Do(req)
