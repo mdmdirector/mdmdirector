@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -32,74 +32,6 @@ func getDelay() time.Duration {
 	}
 
 	return time.Duration(DelaySeconds)
-}
-
-func RetryCommands() {
-	var delay time.Duration
-	if utils.DebugMode() {
-		delay = 20
-	} else {
-		delay = 120
-	}
-	ticker := time.NewTicker(delay * time.Second)
-	defer ticker.Stop()
-	fn := func() {
-		err := pushNotNow()
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-		}
-	}
-
-	fn()
-
-	for range ticker.C {
-		fn()
-	}
-}
-
-func pushNotNow() error {
-	var command types.Command
-	var commands []types.Command
-	err := db.DB.Model(&command).
-		Select("DISTINCT(device_ud_id)").
-		Where("status = ?", "NotNow").
-		Scan(&commands).
-		Error
-	if err != nil {
-		return errors.Wrap(err, "Select NotNow Devices")
-	}
-
-	client := &http.Client{}
-	for i := range commands {
-		queuedCommand := commands[i]
-		endpoint, err := url.Parse(utils.ServerURL())
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-		}
-		retry := time.Now().Unix() + 3600
-		endpoint.Path = path.Join(endpoint.Path, "push", queuedCommand.DeviceUDID)
-
-		queryString := endpoint.Query()
-		queryString.Set("expiration", strconv.FormatInt(retry, 10))
-		endpoint.RawQuery = queryString.Encode()
-		req, err := http.NewRequest("GET", endpoint.String(), nil)
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-		}
-		req.SetBasicAuth("micromdm", utils.APIKey())
-
-		resp, err := client.Do(req)
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-			continue
-		}
-
-		resp.Body.Close()
-		if utils.Prometheus() {
-			TotalPushes.Inc()
-		}
-	}
-	return nil
 }
 
 func UnconfiguredDevices() {
@@ -151,11 +83,61 @@ func processUnconfiguredDevices() error {
 
 func FetchDevicesFromMDM() {
 	var deviceModel types.Device
+
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		log.Info("Fetching devices from NanoMDM...")
+
+		client, err := mdm.Client()
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			return
+		}
+
+		resp, err := client.GetAllEnrollments(nil)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: errors.Wrap(err, "FetchDevicesFromMDM via NanoMDM").Error()})
+			return
+		}
+
+		for _, enrollment := range resp.Enrollments {
+			if enrollment.ID == "" {
+				continue
+			}
+
+			var device types.Device
+			device.UDID = enrollment.ID
+			device.Active = enrollment.Enabled
+
+			if enrollment.Device != nil {
+				device.SerialNumber = enrollment.Device.SerialNumber
+			}
+
+			if enrollment.Enabled {
+				device.AuthenticateRecieved = true
+				device.TokenUpdateRecieved = true
+				device.InitialTasksRun = true
+			}
+
+			err := db.DB.Model(&deviceModel).
+				Where("ud_id = ?", enrollment.ID).
+				FirstOrCreate(&device).
+				Error
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			}
+		}
+		DevicesFetchedFromMDM = true
+		log.Info("Finished fetching devices from NanoMDM...")
+		return
+	}
+
+	// MicroMDM implementation
 	var devices types.DevicesFromMDM
 	log.Info("Fetching devices from MicroMDM...")
 
 	// Handle Micro having a bad day
-	var client = &http.Client{
+	var httpClient = &http.Client{
 		Timeout: time.Second * 60,
 	}
 
@@ -167,7 +149,7 @@ func FetchDevicesFromMDM() {
 
 	req, _ := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
 	req.SetBasicAuth("micromdm", utils.APIKey())
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
