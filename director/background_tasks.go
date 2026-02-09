@@ -15,6 +15,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+	"gorm.io/gorm/clause"
 )
 
 const MAX = 5
@@ -100,14 +101,16 @@ func FetchDevicesFromMDM() {
 			return
 		}
 
+		var devices []types.Device
 		for _, enrollment := range resp.Enrollments {
 			if enrollment.ID == "" {
 				continue
 			}
 
-			var device types.Device
-			device.UDID = enrollment.ID
-			device.Active = enrollment.Enabled
+			device := types.Device{
+				UDID:   enrollment.ID,
+				Active: enrollment.Enabled,
+			}
 
 			if enrollment.Device != nil {
 				device.SerialNumber = enrollment.Device.SerialNumber
@@ -119,14 +122,46 @@ func FetchDevicesFromMDM() {
 				device.InitialTasksRun = true
 			}
 
-			err := db.DB.Model(&deviceModel).
-				Where("ud_id = ?", enrollment.ID).
-				FirstOrCreate(&device).
-				Error
-			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-			}
+			devices = append(devices, device)
 		}
+
+		// Batch upsert
+		const batchSize = 500
+		totalDevices := len(devices)
+		log.WithFields(log.Fields{
+			"total_devices": totalDevices,
+			"batch_size":    batchSize,
+		}).Info("Starting batch upsert for NanoMDM devices")
+
+		startTime := time.Now()
+		err = db.DB.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "ud_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"active",
+				"serial_number",
+				"authenticate_recieved",
+				"token_update_recieved",
+				"initial_tasks_run",
+			}),
+		}).CreateInBatches(devices, batchSize).Error
+
+		duration := time.Since(startTime)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error":         err.Error(),
+				"duration_ms":   duration.Milliseconds(),
+				"total_devices": totalDevices,
+			}).Error("Failed to batch upsert NanoMDM devices")
+			ErrorLogger(LogHolder{Message: errors.Wrap(err, "batch upsert NanoMDM devices").Error()})
+		} else {
+			log.WithFields(log.Fields{
+				"duration_ms":       duration.Milliseconds(),
+				"total_devices":     totalDevices,
+				"batches_count":     (totalDevices + batchSize - 1) / batchSize,
+				"avg_ms_per_device": float64(duration.Milliseconds()) / float64(totalDevices),
+			}).Info("Completed batch upsert for NanoMDM devices")
+		}
+
 		DevicesFetchedFromMDM = true
 		log.Info("Finished fetching devices from NanoMDM...")
 		return
