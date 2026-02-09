@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 )
@@ -27,30 +28,45 @@ const NanoMDMAuthUsername = "nanomdm"
 // ErrClientNotInitialized - when the NanoMDM client hasn't been initialized
 var ErrClientNotInitialized = errors.New("NanoMDM client not initialized")
 
+type MDMClient interface {
+	Push(enrollmentIDs ...string) (*APIResponse, error)
+	Enqueue(enrollmentIDs []string, payload types.CommandPayload, opts *EnqueueOptions) (*APIResponse, error)
+	InspectQueue(enrollmentID string) (*QueueResponse, error)
+	ClearQueue(enrollmentIDs ...string) (*QueueDeleteResponse, error)
+	QueryEnrollments(filter *EnrollmentFilter, config *PaginationConfig) (*EnrollmentsResponse, error)
+	GetAllEnrollments(config *PaginationConfig) (*EnrollmentsResponse, error)
+}
+
 type NanoMDMClient struct {
 	serverURL string
 	apiKey    string
 	client    *utils.HTTPClient
 }
 
-var nanoClient *NanoMDMClient
+// mdmClient holds the global MDM client instance
+var mdmClient MDMClient
 
 // InitClient initializes the global NanoMDM client.
 func InitClient(serverURL, apiKey string) {
-	nanoClient = &NanoMDMClient{
+	mdmClient = &NanoMDMClient{
 		serverURL: strings.TrimRight(serverURL, "/"),
 		apiKey:    apiKey,
 		client:    utils.NewHTTPClient(60*time.Second, nil),
 	}
 }
 
+// SetClientForTesting allows injecting a mock client for testing
+func SetClientForTesting(client MDMClient) {
+	mdmClient = client
+}
+
 // Client returns the global NanoMDM client instance.
 // Returns ErrClientNotInitialized if InitClient hasn't been called.
-func Client() (*NanoMDMClient, error) {
-	if nanoClient == nil {
+func Client() (MDMClient, error) {
+	if mdmClient == nil {
 		return nil, ErrClientNotInitialized
 	}
-	return nanoClient, nil
+	return mdmClient, nil
 }
 
 // buildURL constructs the API URL with path and optional query params
