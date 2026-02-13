@@ -103,7 +103,7 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Close response body before retry to prevent resource leak
 		if resp != nil {
-			io.Copy(io.Discard, resp.Body)
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 	}

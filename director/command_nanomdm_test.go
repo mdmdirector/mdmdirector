@@ -24,7 +24,7 @@ func setupNanoMDMFlag(t *testing.T) {
 	if flag.Lookup("mdm-server-type") == nil {
 		flag.String("mdm-server-type", "nanomdm", "MDM server type")
 	} else {
-		flag.Set("mdm-server-type", "nanomdm")
+		_ = flag.Set("mdm-server-type", "nanomdm")
 	}
 	// Prometheus flag is required to avoid nil pointer issues
 	if flag.Lookup("prometheus") == nil {
@@ -55,7 +55,8 @@ func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 
 // mockGetDevice sets up DB expectations for GetDevice function
 // GetDevice uses First().Scan() which generates TWO queries
-func mockGetDevice(mockSpy sqlmock.Sqlmock, udid string) {
+func mockGetDevice(mockSpy sqlmock.Sqlmock) {
+	const udid = "test-udid-123"
 	deviceRows1 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
 		AddRow(udid, "C02TEST123")
 	deviceRows2 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
@@ -73,7 +74,7 @@ func mockGetDevice(mockSpy sqlmock.Sqlmock, udid string) {
 }
 
 // mockCreateCommand sets up DB expectations for db.DB.Create(&command)
-func mockCreateCommand(mockSpy sqlmock.Sqlmock, deviceUDID, commandUUID, requestType string) {
+func mockCreateCommand(mockSpy sqlmock.Sqlmock) {
 	mockSpy.ExpectBegin()
 	// Use loose matching - just expect an INSERT into commands and return a row
 	mockSpy.ExpectExec(`INSERT INTO "commands"`).
@@ -114,7 +115,7 @@ func TestSendCommand_NanoMDM_ClientNotInitialized(t *testing.T) {
 	mdm.SetClientForTesting(nil)
 
 	// Mock GetDevice returning a device
-	mockGetDevice(mockSpy, "test-udid-123")
+	mockGetDevice(mockSpy)
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -140,7 +141,7 @@ func TestSendCommand_NanoMDM_EnqueueError(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	mockGetDevice(mockSpy, "test-udid-123")
+	mockGetDevice(mockSpy)
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -172,7 +173,7 @@ func TestSendCommand_NanoMDM_CommandError(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	mockGetDevice(mockSpy, "test-udid-123")
+	mockGetDevice(mockSpy)
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -205,8 +206,8 @@ func TestSendCommand_NanoMDM_PushErrorButCommandQueued(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	mockGetDevice(mockSpy, "test-udid-123")
-	mockCreateCommand(mockSpy, "test-udid-123", "test-command-uuid-456", "DeviceInformation")
+	mockGetDevice(mockSpy)
+	mockCreateCommand(mockSpy)
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -239,8 +240,8 @@ func TestSendCommand_NanoMDM_Success(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	mockGetDevice(mockSpy, "test-udid-123")
-	mockCreateCommand(mockSpy, "test-udid-123", "test-command-uuid-123", "DeviceInformation")
+	mockGetDevice(mockSpy)
+	mockCreateCommand(mockSpy)
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -284,38 +285,51 @@ func TestSendCommand_NanoMDM_DeviceNotFound(t *testing.T) {
 	assert.Len(t, mockClient.EnqueueCalls, 0)
 }
 
-// Test InstallProfile request type
-func TestSendCommand_NanoMDM_InstallProfile(t *testing.T) {
-	setupNanoMDMFlag(t)
-	mockSpy, cleanup := setupMockDB(t)
-	defer cleanup()
+// Test various request types via table-driven subtests
+func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
+	testCases := []struct {
+		name        string
+		requestType string
+		commandUUID string
+	}{
+		{"InstallProfile", "InstallProfile", "profile-install-uuid"},
+		{"RemoveProfile", "RemoveProfile", "profile-remove-uuid"},
+	}
 
-	mockClient := &mocks.MockMDMClient{
-		EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				CommandUUID: "profile-install-uuid",
-				RequestType: payload.RequestType,
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushResult: "success"},
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupNanoMDMFlag(t)
+			mockSpy, cleanup := setupMockDB(t)
+			defer cleanup()
+
+			mockClient := &mocks.MockMDMClient{
+				EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
+					return &mdm.APIResponse{
+						CommandUUID: tc.commandUUID,
+						RequestType: payload.RequestType,
+						Status: map[string]mdm.EnrollmentStatus{
+							enrollmentIDs[0]: {PushResult: "success"},
+						},
+					}, nil
 				},
-			}, nil
-		},
+			}
+			mdm.SetClientForTesting(mockClient)
+			defer mdm.SetClientForTesting(nil)
+
+			mockGetDevice(mockSpy)
+			mockCreateCommand(mockSpy)
+
+			payload := types.CommandPayload{
+				UDID:        "test-udid-123",
+				RequestType: tc.requestType,
+			}
+			command, err := SendCommand(payload)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.requestType, command.RequestType)
+			assert.Equal(t, tc.commandUUID, command.CommandUUID)
+		})
 	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
-
-	mockGetDevice(mockSpy, "test-udid-123")
-	mockCreateCommand(mockSpy, "test-udid-123", "profile-install-uuid", "InstallProfile")
-
-	payload := types.CommandPayload{
-		UDID:        "test-udid-123",
-		RequestType: "InstallProfile",
-	}
-	command, err := SendCommand(payload)
-
-	require.NoError(t, err)
-	assert.Equal(t, "InstallProfile", command.RequestType)
-	assert.Equal(t, "profile-install-uuid", command.CommandUUID)
 }
 
 // PushDevice Tests
@@ -586,23 +600,10 @@ func TestFetchDevicesFromMDM_NanoMDM_Success(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	// Mock DB expectations for FirstOrCreate (2 devices)
-	// First device
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WithArgs("device-udid-1").
-		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
+	// Mock DB expectations for CreateInBatches with ON CONFLICT
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mockSpy.ExpectCommit()
-
-	// Second device
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WithArgs("device-udid-2").
-		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`INSERT INTO "devices"`).
-		WillReturnResult(sqlmock.NewResult(2, 1))
+		WillReturnResult(sqlmock.NewResult(2, 2))
 	mockSpy.ExpectCommit()
 
 	FetchDevicesFromMDM()
@@ -704,9 +705,7 @@ func TestFetchDevicesFromMDM_NanoMDM_SkipsEmptyID(t *testing.T) {
 	defer mdm.SetClientForTesting(nil)
 
 	// Only expect DB call for the valid device (not the empty ID one)
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WithArgs("valid-device-udid").
-		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
+	// CreateInBatches wraps in a transaction
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -752,21 +751,10 @@ func TestFetchDevicesFromMDM_NanoMDM_SetsDeviceFields(t *testing.T) {
 	mdm.SetClientForTesting(mockClient)
 	defer mdm.SetClientForTesting(nil)
 
-	// Mock DB expectations for both devices
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WithArgs("enabled-device").
-		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
+	// Mock DB expectations for CreateInBatches with ON CONFLICT (both devices in one batch)
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mockSpy.ExpectCommit()
-
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WithArgs("disabled-device").
-		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`INSERT INTO "devices"`).
-		WillReturnResult(sqlmock.NewResult(2, 1))
+		WillReturnResult(sqlmock.NewResult(2, 2))
 	mockSpy.ExpectCommit()
 
 	FetchDevicesFromMDM()

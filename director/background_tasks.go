@@ -133,6 +133,12 @@ func FetchDevicesFromMDM() {
 			"batch_size":    batchSize,
 		}).Info("Starting batch upsert for NanoMDM devices")
 
+		if totalDevices == 0 {
+			DevicesFetchedFromMDM = true
+			InfoLogger(LogHolder{Message: "Finished fetching devices from NanoMDM..."})
+			return
+		}
+
 		startTime := time.Now()
 		err = db.DB.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "ud_id"}},

@@ -153,7 +153,7 @@ func TestNanoMDMClient_Push(t *testing.T) {
 				},
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -170,7 +170,7 @@ func TestNanoMDMClient_Push(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedPath = r.URL.Path
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(APIResponse{})
+			_ = json.NewEncoder(w).Encode(APIResponse{})
 		}))
 		defer server.Close()
 
@@ -195,7 +195,7 @@ func TestNanoMDMClient_Push(t *testing.T) {
 				PushError: "invalid enrollment ID",
 			}
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -222,7 +222,7 @@ func TestNanoMDMClient_Enqueue(t *testing.T) {
 				RequestType: "DeviceInformation",
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -248,7 +248,7 @@ func TestNanoMDMClient_Enqueue(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedQuery = r.URL.RawQuery
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(APIResponse{})
+			_ = json.NewEncoder(w).Encode(APIResponse{})
 		}))
 		defer server.Close()
 
@@ -282,7 +282,7 @@ func TestNanoMDMClient_InspectQueue(t *testing.T) {
 				},
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -300,7 +300,7 @@ func TestNanoMDMClient_InspectQueue(t *testing.T) {
 				Error: "device not found",
 			}
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -351,7 +351,7 @@ func TestNanoMDMClient_ClearQueue(t *testing.T) {
 				},
 			}
 			w.WriteHeader(http.StatusMultiStatus)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -385,7 +385,7 @@ func TestNanoMDMClient_QueryEnrollments(t *testing.T) {
 				},
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -407,7 +407,7 @@ func TestNanoMDMClient_QueryEnrollments(t *testing.T) {
 				Enrollments: []Enrollment{}, // Empty to stop pagination
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -430,7 +430,7 @@ func TestNanoMDMClient_GetAllEnrollments(t *testing.T) {
 				},
 			}
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 
@@ -448,7 +448,7 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			capturedAuth = r.Header.Get("Authorization")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(APIResponse{})
+			_ = json.NewEncoder(w).Encode(APIResponse{})
 		}))
 		defer server.Close()
 
@@ -463,7 +463,7 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 	t.Run("handles invalid JSON response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("not valid json"))
+			_, _ = w.Write([]byte("not valid json"))
 		}))
 		defer server.Close()
 
@@ -481,7 +481,7 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 				CommandError: "bad request error",
 			}
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		}))
 		defer server.Close()
 

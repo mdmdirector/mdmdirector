@@ -148,6 +148,10 @@ func (m mockFlagBuilder) ClearDeviceOnEnroll() bool {
 }
 
 func TestInspectCommandQueue(t *testing.T) {
+	// Ensure we use the microMDM code path (flag may be set to nanomdm by other tests)
+	if flag.Lookup("mdm-server-type") != nil {
+		_ = flag.Set("mdm-server-type", "micromdm")
+	}
 
 	// Mock the HTTP client and response
 	var path string
