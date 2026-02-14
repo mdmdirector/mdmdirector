@@ -627,24 +627,11 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 				},
 			)
 
-			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					log.Errorf("loading signing certificate and private key: %v", err)
-				}
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
-				if err != nil {
-					log.Errorf("signing profile with the specified key: %v", err)
-				}
-
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
-			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				log.Errorf("signing profile for push: %v", err)
 			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			commandPayload.UDID = device.UDID
 
@@ -821,24 +808,11 @@ func PushSharedProfiles(
 				},
 			)
 
-			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-				}
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
-				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-				}
-
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
-			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
 			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
@@ -1195,6 +1169,25 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func signIfRequired(mobileconfigData []byte) ([]byte, error) {
+	if !utils.Sign() {
+		return mobileconfigData, nil
+	}
+	priv, cert, err := loadSigningKey(
+		utils.KeyPassword(),
+		utils.KeyPath(),
+		utils.CertPath(),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "loading signing key")
+	}
+	signed, err := SignProfile(priv, cert, mobileconfigData)
+	if err != nil {
+		return nil, errors.Wrap(err, "signing profile")
+	}
+	return signed, nil
+}
+
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
 func SignProfile(
 	key crypto.PrivateKey,
@@ -1344,4 +1337,54 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	}
 
 	return pushedCommands, nil
+}
+
+func ProfileDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	udid := vars["udid"]
+	profileIdentifier := vars["profileIdentifier"]
+
+	// Verify UDID matches X-Enrollment-ID header set by NanoMDM Auth Proxy
+	enrollmentID := r.Header.Get("X-Enrollment-ID")
+	if enrollmentID != udid {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var mobileconfigData []byte
+
+	// Try device-specific profile first
+	var deviceProfile types.DeviceProfile
+	err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", udid, profileIdentifier).First(&deviceProfile).Error
+	if err == nil {
+		if !deviceProfile.Installed {
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+		mobileconfigData = deviceProfile.MobileconfigData
+	} else {
+		// Try shared profile
+		var sharedProfile types.SharedProfile
+		err = db.DB.Where("payload_identifier = ?", profileIdentifier).First(&sharedProfile).Error
+		if err == nil {
+			if !sharedProfile.Installed {
+				http.Error(w, "Not Found", http.StatusNotFound)
+				return
+			}
+			mobileconfigData = sharedProfile.MobileconfigData
+		} else {
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+	}
+
+	responseData, err := signIfRequired(mobileconfigData)
+	if err != nil {
+		log.Errorf("profile download signing: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-apple-aspen-config")
+	_, _ = w.Write(responseData)
 }
