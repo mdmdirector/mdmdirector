@@ -8,7 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/mdm"
-	"github.com/mdmdirector/mdmdirector/mocks"
+	"github.com/mdmdirector/mdmdirector/mdm/mocks"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
