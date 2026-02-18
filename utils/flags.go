@@ -136,6 +136,14 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+func MDMServerType() string {
+	f := flag.Lookup("mdm-server-type")
+	if f == nil {
+		return "micromdm" // Default to micromdm if flag not defined (e.g., in tests)
+	}
+	return f.Value.(flag.Getter).Get().(string)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.

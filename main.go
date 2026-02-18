@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/director"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -93,6 +94,9 @@ var RedisPassword string
 var OnceIn int
 
 var InfoRequestInterval int
+
+// MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
+var MDMServerType string
 
 func main() {
 	var port string
@@ -269,6 +273,12 @@ func main() {
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
 	)
+	flag.StringVar(
+		&MDMServerType,
+		"mdm-server-type",
+		env.String("MDM_SERVER_TYPE", "micromdm"),
+		"MDM server type: micromdm or nanomdm",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -307,6 +317,14 @@ func main() {
 
 	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
+	}
+
+	// Initialize NanoMDM client only if configured to use NanoMDM
+	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
+		mdm.InitClient(MicroMDMURL, MicroMDMAPIKey)
+		director.InfoLogger(director.LogHolder{Message: "NanoMDM client initialized"})
+	} else {
+		director.InfoLogger(director.LogHolder{Message: "Using MicroMDM (default)"})
 	}
 
 	r := mux.NewRouter()

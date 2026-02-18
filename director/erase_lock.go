@@ -52,11 +52,9 @@ func EraseLockDevice(udid string) error {
 		log.Info("Neither lock or erase are set")
 		return nil
 	}
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
+
 	// Inspect the devices queue to see if the command is already there
-	deviceQueue, err := InspectCommandQueue(client, device)
+	deviceQueue, err := InspectCommandQueue(device)
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:InspectCommandQueue")
 	}
