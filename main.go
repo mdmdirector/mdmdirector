@@ -94,6 +94,21 @@ var OnceIn int
 
 var InfoRequestInterval int
 
+// AcmeCertIssuer is the issuer of the ACME certificate
+var AcmeCertIssuer string
+
+// AcmeCertMinValidity is the minimum number of days before ACME cert expiry to trigger re-enrollment
+var AcmeCertMinValidity int
+
+// MDMEnrollURL is the base URL of the MDMEnroll service
+var MDMEnrollURL string
+
+// MDMEnrollReEnrollPath is the path to the re-enrollment endpoint
+var MDMEnrollReEnrollPath string
+
+// MDMEnrollAPIToken is the Bearer token for the MDMEnroll re-enrollment endpoint
+var MDMEnrollAPIToken string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -245,6 +260,18 @@ func main() {
 		"The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.",
 	)
 	flag.StringVar(
+		&AcmeCertIssuer,
+		"acme-cert-issuer",
+		env.String("ACME_CERT_ISSUER", ""),
+		"The issuer of your ACME certificate. When set, ACME cert expiry will also be checked.",
+	)
+	flag.IntVar(
+		&AcmeCertMinValidity,
+		"acme-cert-min-validity",
+		env.Int("ACME_CERT_MIN_VALIDITY", 180),
+		"The number of days at which the ACME certificate has remaining before the enrollment profile is re-sent.",
+	)
+	flag.StringVar(
 		&EnrollmentProfile,
 		"enrollment-profile",
 		env.String("ENROLLMENT_PROFILE", ""),
@@ -268,6 +295,24 @@ func main() {
 		"info-request-interval",
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
+	)
+	flag.StringVar(
+		&MDMEnrollURL,
+		"mdmenroll-url",
+		env.String("MDMENROLL_URL", ""),
+		"Base URL of the MDMEnroll service for fetching enrollment profiles.",
+	)
+	flag.StringVar(
+		&MDMEnrollReEnrollPath,
+		"mdmenroll-reenroll-path",
+		env.String("MDMENROLL_REENROLL_PATH", "/mdm/reenroll"),
+		"Path to the MDMEnroll re-enrollment endpoint.",
+	)
+	flag.StringVar(
+		&MDMEnrollAPIToken,
+		"mdmenroll-api-token",
+		env.String("MDMENROLL_API_TOKEN", ""),
+		"Bearer token for the MDMEnroll re-enrollment endpoint.",
 	)
 	flag.Parse()
 
@@ -307,6 +352,18 @@ func main() {
 
 	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
+	}
+
+	if MDMEnrollURL != "" {
+		if MDMEnrollAPIToken == "" {
+			log.Fatal("MDMENROLL_API_TOKEN is required when MDMENROLL_URL is set. Exiting.")
+		}
+		log.Infof("Using MDMEnroll re-enrollment endpoint at %s%s", MDMEnrollURL, MDMEnrollReEnrollPath)
+		if !Sign {
+			log.Warn("Profile signing is disabled but required for MDMEnroll MachineInfo header construction.")
+		}
+	} else if EnrollmentProfile != "" {
+		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
 	}
 
 	r := mux.NewRouter()

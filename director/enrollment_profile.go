@@ -14,10 +14,26 @@ import (
 )
 
 func reinstallEnrollmentProfile(device types.Device) error {
-	enrollmentProfile := utils.EnrollmentProfile()
-	data, err := os.ReadFile(enrollmentProfile)
-	if err != nil {
-		return errors.Wrap(err, "Failed to read enrollment profile")
+	var profileBytes []byte
+	var err error
+
+	if utils.UseMDMEnrollForReEnrollment() {
+		InfoLogger(LogHolder{
+			DeviceSerial: device.SerialNumber,
+			DeviceUDID:   device.UDID,
+			Message:      "Fetching enrollment profile from MDMEnroll",
+		})
+
+		profileBytes, err = fetchEnrollmentProfileFromMDMEnroll(device)
+		if err != nil {
+			return errors.Wrap(err, "Failed to fetch enrollment profile from MDMEnroll")
+		}
+	} else {
+		enrollmentProfile := utils.EnrollmentProfile()
+		profileBytes, err = os.ReadFile(enrollmentProfile)
+		if err != nil {
+			return errors.Wrap(err, "Failed to read enrollment profile")
+		}
 	}
 
 	var profile types.DeviceProfile
@@ -38,7 +54,7 @@ func reinstallEnrollmentProfile(device types.Device) error {
 				Message:      "Enrollment Profile pre-signed",
 			},
 		)
-		pkcs7Data, err := pkcs7.Parse(data)
+		pkcs7Data, err := pkcs7.Parse(profileBytes)
 		if err != nil {
 			return errors.Wrap(
 				err,
@@ -60,7 +76,7 @@ func reinstallEnrollmentProfile(device types.Device) error {
 		}
 		var commandPayload types.CommandPayload
 		commandPayload.RequestType = "InstallProfile"
-		commandPayload.Payload = base64.StdEncoding.EncodeToString(data)
+		commandPayload.Payload = base64.StdEncoding.EncodeToString(profileBytes)
 		commandPayload.UDID = device.UDID
 
 		_, err = SendCommand(commandPayload)
@@ -69,18 +85,30 @@ func reinstallEnrollmentProfile(device types.Device) error {
 		}
 	} else {
 		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Signing Enrollment Profile"})
-		err = plist.Unmarshal(data, &profile)
+		err = plist.Unmarshal(profileBytes, &profile)
 		if err != nil {
 			return errors.Wrap(err, "Failed to unmarshal enrollment profile to struct")
 		}
 
-		profile.MobileconfigData = data
+		profile.MobileconfigData = profileBytes
 		_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
 		if err != nil {
 			return errors.Wrap(err, "Failed to push enrollment profile")
 		}
 	}
 	return nil
+}
+
+// getEnrollmentProfile returns enrollment profile among list of device profiles
+func getEnrollmentProfile(profileLists []types.ProfileList) (types.ProfileList, bool) {
+	for _, profile := range profileLists {
+		for _, content := range profile.PayloadContent {
+			if content.PayloadType == "com.apple.mdm" {
+				return profile, true
+			}
+		}
+	}
+	return types.ProfileList{}, false
 }
 
 // ensureCertOnEnrollmentProfile verifies that the certificate used to sign the
@@ -95,37 +123,32 @@ func ensureCertOnEnrollmentProfile(
 		return nil
 	}
 
-	for i := range profileLists {
-		for j := range profileLists[i].PayloadContent {
-			if profileLists[i].PayloadContent[j].PayloadType != "com.apple.mdm" {
-				continue
-			}
+	enrollmentProfile, found := getEnrollmentProfile(profileLists)
+	if !found {
+		InfoLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      "No enrollment profile (com.apple.mdm) found in device ProfileList",
+		})
+		return nil
+	}
 
-			certMatched, err := signingCertMatches(profileLists[i].SignerCertificates, signingCert)
-			if err != nil {
-				return errors.Wrap(err, "signingCertMatches")
-			}
+	certMatched, err := signingCertMatches(enrollmentProfile.SignerCertificates, signingCert)
+	if err != nil {
+		return errors.Wrap(err, "signingCertMatches")
+	}
 
-			if !certMatched {
-				InfoLogger(LogHolder{
-					DeviceUDID:   device.UDID,
-					DeviceSerial: device.SerialNumber,
-					Message:      "Enrollment profile signing certificate does not match local certificate, reinstalling",
-				})
-				err = reinstallEnrollmentProfile(device)
-				if err != nil {
-					return errors.Wrap(err, "reinstallEnrollmentProfile")
-				}
-			}
-
-			return nil
+	if !certMatched {
+		InfoLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      "Enrollment profile signing certificate does not match local certificate, reinstalling",
+		})
+		err = reinstallEnrollmentProfile(device)
+		if err != nil {
+			return errors.Wrap(err, "reinstallEnrollmentProfile")
 		}
 	}
 
-	InfoLogger(LogHolder{
-		DeviceUDID:   device.UDID,
-		DeviceSerial: device.SerialNumber,
-		Message:      "No enrollment profile (com.apple.mdm) found in device ProfileList",
-	})
 	return nil
 }
