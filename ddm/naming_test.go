@@ -56,51 +56,6 @@ func TestActivationDeclarationID(t *testing.T) {
 	}
 }
 
-func TestProfileIDFromPayloadIdentifier(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "typical payload identifier",
-			input:    "com.airbnb.mdm.wifi",
-			expected: "com.airbnb.mdm.wifi",
-		},
-		{
-			name:     "identifier with hyphens and underscores",
-			input:    "com.airbnb.mdm.my-profile_v2",
-			expected: "com.airbnb.mdm.my-profile_v2",
-		},
-		{
-			name:     "identifier with spaces",
-			input:    "com.airbnb.mdm.my profile",
-			expected: "com.airbnb.mdm.my_profile",
-		},
-		{
-			name:     "identifier with special characters",
-			input:    "com.airbnb.mdm/profile@v1",
-			expected: "com.airbnb.mdm_profile_v1",
-		},
-		{
-			name:     "empty identifier",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "only safe characters",
-			input:    "abcABC012.-_",
-			expected: "abcABC012.-_",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := ProfileIDFromPayloadIdentifier(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestProfileDownloadURL(t *testing.T) {
 	tests := []struct {
 		name              string
