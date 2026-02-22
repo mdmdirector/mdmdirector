@@ -109,6 +109,9 @@ var MDMEnrollReEnrollPath string
 // MDMEnrollAPIToken is the Bearer token for the MDMEnroll re-enrollment endpoint
 var MDMEnrollAPIToken string
 
+// EnableReEnrollViaMdmEnroll enables re-enrollment via the MDMEnroll service
+var EnableReEnrollViaMdmEnroll bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -314,6 +317,12 @@ func main() {
 		env.String("MDMENROLL_API_TOKEN", ""),
 		"Bearer token for the MDMEnroll re-enrollment endpoint.",
 	)
+	flag.BoolVar(
+		&EnableReEnrollViaMdmEnroll,
+		"enable-reenroll-via-mdmenroll",
+		env.Bool("ENABLE_REENROLL_VIA_MDMENROLL", false),
+		"Enable re-enrollment via the MDMEnroll service.",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -354,9 +363,12 @@ func main() {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
-	if MDMEnrollURL != "" {
+	if EnableReEnrollViaMdmEnroll {
+		if MDMEnrollURL == "" {
+			log.Fatal("MDMENROLL_URL is required when --enable-reenroll-via-mdmenroll is set. Exiting.")
+		}
 		if MDMEnrollAPIToken == "" {
-			log.Fatal("MDMENROLL_API_TOKEN is required when MDMENROLL_URL is set. Exiting.")
+			log.Fatal("MDMENROLL_API_TOKEN is required when --enable-reenroll-via-mdmenroll is set. Exiting.")
 		}
 		log.Infof("Using MDMEnroll re-enrollment endpoint at %s%s", MDMEnrollURL, MDMEnrollReEnrollPath)
 		if !Sign {

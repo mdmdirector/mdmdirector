@@ -148,8 +148,12 @@ func MDMEnrollAPIToken() string {
 	return flag.Lookup("mdmenroll-api-token").Value.(flag.Getter).Get().(string)
 }
 
+func EnableReEnrollViaMdmEnroll() bool {
+	return flag.Lookup("enable-reenroll-via-mdmenroll").Value.(flag.Getter).Get().(bool)
+}
+
 func UseMDMEnrollForReEnrollment() bool {
-	return MDMEnrollURL() != ""
+	return EnableReEnrollViaMdmEnroll()
 }
 
 func AcmeCertIssuer() string {
