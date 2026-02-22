@@ -1060,6 +1060,22 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	return nil
 }
 
+// signingCertMatches checks whether any of the signer certificates match the local signing certificate
+func signingCertMatches(signerCertificates [][]byte, signingCert *x509.Certificate) (bool, error) {
+	for _, cert := range signerCertificates {
+		parsed, err := x509.ParseCertificate(cert)
+		if err != nil {
+			return false, errors.Wrap(err, "parse signer certificate")
+		}
+		if parsed.Subject.String() == signingCert.Subject.String() &&
+			parsed.NotAfter.Equal(signingCert.NotAfter) &&
+			parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Checks if a) if the certificate used to sign the profile returned by ProfileList matches the one we have locally (if we are signing profiles), b) if the certificate returned by ProfileList has the same hashed payload as the one we have locally and c) if the profile is present, but we should remove it
 // Returned bool #1 represents whether the profile is currently installed installed
 // Returned bool #2 represents whether the profile needs to be reinstalled
@@ -1077,7 +1093,7 @@ func validateProfileInProfileList(
 			return true, false, nil
 		}
 
-		// Verify the certifacte
+		// Verify the certificate
 		if utils.Sign() &&
 			profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
 			InfoLogger(
@@ -1086,25 +1102,17 @@ func validateProfileInProfileList(
 					Message:           "Verifying signing certificate for profile",
 				},
 			)
-			certMatched := false
-			for _, cert := range profileList.SignerCertificates {
-				parsed, err := x509.ParseCertificate(cert)
-				if err != nil {
-					return true, false, errors.Wrap(err, "parse PEM certificate data")
-				}
-				if parsed.Subject.String() == signingCert.Subject.String() &&
-					parsed.NotAfter.Equal(signingCert.NotAfter) &&
-					parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
-					msg := fmt.Sprintf(
-						"%v Parsed certificate matches local signing certificate",
-						signingCert.Subject.String(),
-					)
-					InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
-					certMatched = true
-					break
-				}
+			certMatched, err := signingCertMatches(profileList.SignerCertificates, signingCert)
+			if err != nil {
+				return true, false, errors.Wrap(err, "signingCertMatches")
 			}
-			if !certMatched {
+			if certMatched {
+				msg := fmt.Sprintf(
+					"%v Parsed certificate matches local signing certificate",
+					signingCert.Subject.String(),
+				)
+				InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+			} else {
 				msg := fmt.Sprintf(
 					"%v No certificates found matching local certificates",
 					signingCert.Subject.String(),

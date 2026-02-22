@@ -136,6 +136,34 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+func MDMEnrollURL() string {
+	return strings.TrimRight(flag.Lookup("mdmenroll-url").Value.(flag.Getter).Get().(string), "/")
+}
+
+func MDMEnrollReEnrollPath() string {
+	return flag.Lookup("mdmenroll-reenroll-path").Value.(flag.Getter).Get().(string)
+}
+
+func MDMEnrollAPIToken() string {
+	return flag.Lookup("mdmenroll-api-token").Value.(flag.Getter).Get().(string)
+}
+
+func EnableReEnrollViaMdmEnroll() bool {
+	return flag.Lookup("enable-reenroll-via-mdmenroll").Value.(flag.Getter).Get().(bool)
+}
+
+func UseMDMEnrollForReEnrollment() bool {
+	return EnableReEnrollViaMdmEnroll()
+}
+
+func AcmeCertIssuer() string {
+	return flag.Lookup("acme-cert-issuer").Value.(flag.Getter).Get().(string)
+}
+
+func AcmeCertMinValidity() int {
+	return flag.Lookup("acme-cert-min-validity").Value.(flag.Getter).Get().(int)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.
