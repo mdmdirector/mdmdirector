@@ -635,10 +635,12 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 				)
 				if err != nil {
 					log.Errorf("loading signing certificate and private key: %v", err)
+					continue
 				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
 					log.Errorf("signing profile with the specified key: %v", err)
+					continue
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
@@ -651,6 +653,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 			command, err := SendCommand(commandPayload)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 
@@ -708,7 +711,8 @@ func DeleteSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			log.Errorf("DeleteSharedProfiles: could not query device-specific profiles: %v", err)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -737,7 +741,8 @@ func DeleteSharedProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteSharedProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -771,7 +776,8 @@ func DeleteDeviceProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteDeviceProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -792,7 +798,8 @@ func PushSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			log.Errorf("PushSharedProfiles: could not query device-specific profiles: %v", err)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -828,11 +835,13 @@ func PushSharedProfiles(
 					utils.CertPath(),
 				)
 				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+					log.Errorf("loading signing certificate and private key: %v", err)
+					continue
 				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+					log.Errorf("signing profile with the specified key: %v", err)
+					continue
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
@@ -842,7 +851,8 @@ func PushSharedProfiles(
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 
 			pushedCommands = append(pushedCommands, command)
