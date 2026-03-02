@@ -136,6 +136,26 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+func EnrollWebhookURL() string {
+	return strings.TrimRight(flag.Lookup("enroll-webhook-url").Value.(flag.Getter).Get().(string), "/")
+}
+
+func EnrollWebhookToken() string {
+	return flag.Lookup("enroll-webhook-token").Value.(flag.Getter).Get().(string)
+}
+
+func EnableReEnrollViaWebhook() bool {
+	return flag.Lookup("enable-reenroll-via-webhook").Value.(flag.Getter).Get().(bool)
+}
+
+func AcmeCertIssuer() string {
+	return flag.Lookup("acme-cert-issuer").Value.(flag.Getter).Get().(string)
+}
+
+func AcmeCertMinValidity() int {
+	return flag.Lookup("acme-cert-min-validity").Value.(flag.Getter).Get().(int)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.
