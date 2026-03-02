@@ -17,16 +17,16 @@ func reinstallEnrollmentProfile(device types.Device) error {
 	var profileBytes []byte
 	var err error
 
-	if utils.UseMDMEnrollForReEnrollment() {
+	if utils.EnableReEnrollViaWebhook() {
 		InfoLogger(LogHolder{
 			DeviceSerial: device.SerialNumber,
 			DeviceUDID:   device.UDID,
-			Message:      "Fetching enrollment profile from MDMEnroll",
+			Message:      "Fetching enrollment profile from webhook",
 		})
 
-		profileBytes, err = fetchEnrollmentProfileFromMDMEnroll(device)
+		profileBytes, err = fetchEnrollmentProfileFromWebhook(device)
 		if err != nil {
-			return errors.Wrap(err, "Failed to fetch enrollment profile from MDMEnroll")
+			return errors.Wrap(err, "Failed to fetch enrollment profile from webhook")
 		}
 	} else {
 		enrollmentProfile := utils.EnrollmentProfile()

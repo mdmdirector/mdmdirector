@@ -100,17 +100,14 @@ var AcmeCertIssuer string
 // AcmeCertMinValidity is the minimum number of days before ACME cert expiry to trigger re-enrollment
 var AcmeCertMinValidity int
 
-// MDMEnrollURL is the base URL of the MDMEnroll service
-var MDMEnrollURL string
+// EnrollWebhookURL is the full URL of the enrollment profile webhook endpoint
+var EnrollWebhookURL string
 
-// MDMEnrollReEnrollPath is the path to the re-enrollment endpoint
-var MDMEnrollReEnrollPath string
+// EnrollWebhookToken is the Bearer token for the enrollment profile webhook
+var EnrollWebhookToken string
 
-// MDMEnrollAPIToken is the Bearer token for the MDMEnroll re-enrollment endpoint
-var MDMEnrollAPIToken string
-
-// EnableReEnrollViaMdmEnroll enables re-enrollment via the MDMEnroll service
-var EnableReEnrollViaMdmEnroll bool
+// EnableReEnrollViaWebhook enables fetching enrollment profiles via a remote webhook for re-enrollment
+var EnableReEnrollViaWebhook bool
 
 func main() {
 	var port string
@@ -300,28 +297,22 @@ func main() {
 		"Number of minutes to wait between issuing information commands",
 	)
 	flag.StringVar(
-		&MDMEnrollURL,
-		"mdmenroll-url",
-		env.String("MDMENROLL_URL", ""),
-		"Base URL of the MDMEnroll service for fetching enrollment profiles.",
+		&EnrollWebhookURL,
+		"enroll-webhook-url",
+		env.String("ENROLL_WEBHOOK_URL", ""),
+		"URL of the enrollment profile webhook endpoint",
 	)
 	flag.StringVar(
-		&MDMEnrollReEnrollPath,
-		"mdmenroll-reenroll-path",
-		env.String("MDMENROLL_REENROLL_PATH", "/mdm/reenroll"),
-		"Path to the MDMEnroll re-enrollment endpoint.",
-	)
-	flag.StringVar(
-		&MDMEnrollAPIToken,
-		"mdmenroll-api-token",
-		env.String("MDMENROLL_API_TOKEN", ""),
-		"Bearer token for the MDMEnroll re-enrollment endpoint.",
+		&EnrollWebhookToken,
+		"enroll-webhook-token",
+		env.String("ENROLL_WEBHOOK_TOKEN", ""),
+		"Bearer token for the enrollment profile webhook",
 	)
 	flag.BoolVar(
-		&EnableReEnrollViaMdmEnroll,
-		"enable-reenroll-via-mdmenroll",
-		env.Bool("ENABLE_REENROLL_VIA_MDMENROLL", false),
-		"Enable re-enrollment via the MDMEnroll service.",
+		&EnableReEnrollViaWebhook,
+		"enable-reenroll-via-webhook",
+		env.Bool("ENABLE_REENROLL_VIA_WEBHOOK", false),
+		"Enable fetching the enrollment profile from a remote webhook for re-enrollment",
 	)
 	flag.Parse()
 
@@ -363,16 +354,16 @@ func main() {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
-	if EnableReEnrollViaMdmEnroll {
-		if MDMEnrollURL == "" {
-			log.Fatal("MDMENROLL_URL is required when --enable-reenroll-via-mdmenroll is set. Exiting.")
+	if EnableReEnrollViaWebhook {
+		if EnrollWebhookURL == "" {
+			log.Fatal("ENROLL_WEBHOOK_URL is required when --enable-reenroll-via-webhook is set")
 		}
-		if MDMEnrollAPIToken == "" {
-			log.Fatal("MDMENROLL_API_TOKEN is required when --enable-reenroll-via-mdmenroll is set. Exiting.")
+		if EnrollWebhookToken == "" {
+			log.Fatal("ENROLL_WEBHOOK_TOKEN is required when --enable-reenroll-via-webhook is set")
 		}
-		log.Infof("Using MDMEnroll re-enrollment endpoint at %s%s", MDMEnrollURL, MDMEnrollReEnrollPath)
+		log.Infof("Using enrollment profile webhook at %s", EnrollWebhookURL)
 		if !Sign {
-			log.Warn("Profile signing is disabled but required for MDMEnroll MachineInfo header construction.")
+			log.Warn("Profile signing is disabled but is required for MachineInfo header construction")
 		}
 	} else if EnrollmentProfile != "" {
 		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)

@@ -136,24 +136,16 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
-func MDMEnrollURL() string {
-	return strings.TrimRight(flag.Lookup("mdmenroll-url").Value.(flag.Getter).Get().(string), "/")
+func EnrollWebhookURL() string {
+	return strings.TrimRight(flag.Lookup("enroll-webhook-url").Value.(flag.Getter).Get().(string), "/")
 }
 
-func MDMEnrollReEnrollPath() string {
-	return flag.Lookup("mdmenroll-reenroll-path").Value.(flag.Getter).Get().(string)
+func EnrollWebhookToken() string {
+	return flag.Lookup("enroll-webhook-token").Value.(flag.Getter).Get().(string)
 }
 
-func MDMEnrollAPIToken() string {
-	return flag.Lookup("mdmenroll-api-token").Value.(flag.Getter).Get().(string)
-}
-
-func EnableReEnrollViaMdmEnroll() bool {
-	return flag.Lookup("enable-reenroll-via-mdmenroll").Value.(flag.Getter).Get().(bool)
-}
-
-func UseMDMEnrollForReEnrollment() bool {
-	return EnableReEnrollViaMdmEnroll()
+func EnableReEnrollViaWebhook() bool {
+	return flag.Lookup("enable-reenroll-via-webhook").Value.(flag.Getter).Get().(bool)
 }
 
 func AcmeCertIssuer() string {

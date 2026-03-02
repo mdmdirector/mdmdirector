@@ -72,7 +72,7 @@ func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, er
 
 // validateEnrollmentCertExpiry triggers re-enrollment if any SCEP or ACME enrollment cert is nearing expiry
 func validateEnrollmentCertExpiry(certList []types.CertificateList, device types.Device) error {
-	if !utils.UseMDMEnrollForReEnrollment() {
+	if !utils.EnableReEnrollViaWebhook() {
 		enrollmentProfile := utils.EnrollmentProfile()
 		if enrollmentProfile == "" {
 			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No enrollment profile set, not continuing with enrollment cert expiry check"})

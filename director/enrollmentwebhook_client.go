@@ -47,16 +47,16 @@ func buildMachineInfoHeader(device types.Device) (string, error) {
 	return base64.StdEncoding.EncodeToString(plistBytes), nil
 }
 
-// fetchEnrollmentProfileFromMDMEnroll gets enrollment profile from MDMEnroll's re-enroll endpoint
-func fetchEnrollmentProfileFromMDMEnroll(device types.Device) ([]byte, error) {
-	url := utils.MDMEnrollURL() + utils.MDMEnrollReEnrollPath()
+// fetchEnrollmentProfileFromWebhook gets enrollment profile from the enrollment profile webhook endpoint
+func fetchEnrollmentProfileFromWebhook(device types.Device) ([]byte, error) {
+	url := utils.EnrollWebhookURL()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "create MDMEnroll request")
+		return nil, errors.Wrap(err, "create enrollment profile webhook request")
 	}
 
-	req.Header.Set("Authorization", "Bearer "+utils.MDMEnrollAPIToken())
+	req.Header.Set("Authorization", "Bearer "+utils.EnrollWebhookToken())
 
 	headerValue, err := buildMachineInfoHeader(device)
 	if err != nil {
@@ -67,27 +67,27 @@ func fetchEnrollmentProfileFromMDMEnroll(device types.Device) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "MDMEnroll request failed")
+		return nil, errors.Wrap(err, "enrollment profile webhook request failed")
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "read MDMEnroll response body")
+		return nil, errors.Wrap(err, "read enrollment profile webhook response body")
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("MDMEnroll returned status %d: %s", resp.StatusCode, string(body))
+		return nil, errors.Errorf("enrollment profile webhook returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	if len(body) == 0 {
-		return nil, errors.New("MDMEnroll returned empty enrollment profile")
+		return nil, errors.New("enrollment profile webhook returned empty enrollment profile")
 	}
 
 	InfoLogger(LogHolder{
 		DeviceUDID:   device.UDID,
 		DeviceSerial: device.SerialNumber,
-		Message:      "Successfully fetched enrollment profile from MDMEnroll",
+		Message:      "Successfully fetched enrollment profile from webhook",
 	})
 	return body, nil
 }
