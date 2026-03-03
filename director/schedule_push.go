@@ -155,6 +155,13 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 
 	}
 
+	if len(devices) == 0 {
+		InfoLogger(LogHolder{Message: "No devices enrolled, sleeping 1 minute before next checkin"})
+		time.Sleep(time.Minute)
+		InfoLogger(LogHolder{Message: "Completed scheduling pushes", Metric: "0"})
+		return nil
+	}
+
 	DebugLogger(LogHolder{
 		Message: "Pushing to all in debug mode",
 	})
