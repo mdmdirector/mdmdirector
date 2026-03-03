@@ -22,8 +22,11 @@ func (c *NanoMDMClient) Push(enrollmentIDs ...string) (*APIResponse, error) {
 		return nil, errors.Wrap(err, "Push: create request")
 	}
 
-	result, err := c.doRequest(req)
+	result, status, err := doRequest[APIResponse](c, req)
 	if err != nil {
+		return result, errors.Wrap(err, "Push")
+	}
+	if err := apiResponseError(result, status); err != nil {
 		return result, errors.Wrap(err, "Push")
 	}
 

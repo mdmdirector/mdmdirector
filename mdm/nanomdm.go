@@ -97,37 +97,45 @@ func (c *NanoMDMClient) buildURL(endpoint string, ids []string, queryParams map[
 	return u.String(), nil
 }
 
-// doRequest performs an HTTP request and parses the APIResult response
-func (c *NanoMDMClient) doRequest(req *http.Request) (*APIResponse, error) {
+// doRequest executes req with Basic Auth, reads the body, and unmarshals JSON into T
+func doRequest[T any](c *NanoMDMClient, req *http.Request) (*T, int, error) {
 	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "execute request")
+		return nil, 0, errors.Wrap(err, "execute request")
 	}
 	defer resp.Body.Close()
 
+	// 204 No Content - no body to parse
+	if resp.StatusCode == http.StatusNoContent {
+		return new(T), resp.StatusCode, nil
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "read response body")
+		return nil, resp.StatusCode, errors.Wrap(err, "read response body")
 	}
 
-	var result APIResponse
+	var result T
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.Wrapf(err, "decode response: %s", string(body))
+		return nil, resp.StatusCode, errors.Wrapf(err, "decode response: %s", string(body))
 	}
 
-	// 500 means all operations failed
-	if resp.StatusCode == http.StatusInternalServerError {
-		errMsg := result.PushError
-		if result.CommandError != "" {
-			errMsg = result.CommandError
-		}
-		if errMsg == "" {
-			errMsg = "server error"
-		}
-		return &result, errors.New(errMsg)
-	}
+	return &result, resp.StatusCode, nil
+}
 
-	return &result, nil
+// apiResponseError returns an error if the APIResponse signals a server-side failure (HTTP 500)
+func apiResponseError(result *APIResponse, status int) error {
+	if status != http.StatusInternalServerError {
+		return nil
+	}
+	errMsg := result.PushError
+	if result.CommandError != "" {
+		errMsg = result.CommandError
+	}
+	if errMsg == "" {
+		errMsg = "server error"
+	}
+	return errors.New(errMsg)
 }

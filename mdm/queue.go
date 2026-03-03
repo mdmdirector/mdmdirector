@@ -1,8 +1,6 @@
 package mdm
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -35,33 +33,21 @@ func (c *NanoMDMClient) InspectQueue(enrollmentID string) (*QueueResponse, error
 	if err != nil {
 		return nil, errors.Wrap(err, "InspectQueue: create request")
 	}
-	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
-	resp, err := c.client.Do(req)
+	result, status, err := doRequest[QueueResponse](c, req)
 	if err != nil {
-		return nil, errors.Wrap(err, "InspectQueue: execute request")
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "InspectQueue: read response")
+		return result, errors.Wrap(err, "InspectQueue")
 	}
 
-	var result QueueResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.Wrapf(err, "InspectQueue: decode response: %s", string(body))
-	}
-
-	if resp.StatusCode != http.StatusOK {
+	if status != http.StatusOK {
 		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "unexpected status code"
 		}
-		return &result, errors.Errorf("InspectQueue: %s (status %d)", errMsg, resp.StatusCode)
+		return result, errors.Errorf("InspectQueue: %s (status %d)", errMsg, status)
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // ClearQueue clears all queued MDM commands for one or more device IDs
@@ -79,38 +65,20 @@ func (c *NanoMDMClient) ClearQueue(enrollmentIDs ...string) (*QueueDeleteRespons
 	if err != nil {
 		return nil, errors.Wrap(err, "ClearQueue: create request")
 	}
-	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
-	resp, err := c.client.Do(req)
+	result, status, err := doRequest[QueueDeleteResponse](c, req)
 	if err != nil {
-		return nil, errors.Wrap(err, "ClearQueue: execute request")
-	}
-	defer resp.Body.Close()
-
-	// 204 means success with no content
-	if resp.StatusCode == http.StatusNoContent {
-		return &QueueDeleteResponse{}, nil
+		return nil, errors.Wrap(err, "ClearQueue")
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "ClearQueue: read response")
-	}
-
-	var result QueueDeleteResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.Wrapf(err, "ClearQueue: decode response: %s", string(body))
-	}
-
-	// 500 means all operations failed
-	if resp.StatusCode == http.StatusInternalServerError {
+	if status == http.StatusInternalServerError {
 		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "all operations failed"
 		}
-		return &result, errors.New(errMsg)
+		return result, errors.New(errMsg)
 	}
 
-	// 207 means partial success - return result without error so caller can inspect Status
-	return &result, nil
+	// 204 = empty queue (doRequest returns new(T)), 207 = partial success — both returned without error
+	return result, nil
 }

@@ -59,8 +59,11 @@ func (c *NanoMDMClient) enqueueRaw(enrollmentIDs []string, plistData []byte, opt
 	}
 	req.Header.Set("Content-Type", "application/xml")
 
-	result, err := c.doRequest(req)
+	result, status, err := doRequest[APIResponse](c, req)
 	if err != nil {
+		return result, errors.Wrap(err, "Enqueue")
+	}
+	if err := apiResponseError(result, status); err != nil {
 		return result, errors.Wrap(err, "Enqueue")
 	}
 

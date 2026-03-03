@@ -3,7 +3,6 @@ package mdm
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -58,33 +57,21 @@ func (c *NanoMDMClient) queryEnrollmentsPage(filter *EnrollmentFilter, limit, of
 		return nil, errors.Wrap(err, "queryEnrollmentsPage: create request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(NanoMDMAuthUsername, c.apiKey)
 
-	resp, err := c.client.Do(req)
+	result, status, err := doRequest[EnrollmentsResponse](c, req)
 	if err != nil {
-		return nil, errors.Wrap(err, "queryEnrollmentsPage: execute request")
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "queryEnrollmentsPage: read response")
+		return result, errors.Wrap(err, "queryEnrollmentsPage")
 	}
 
-	var result EnrollmentsResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.Wrapf(err, "queryEnrollmentsPage: decode response: %s", string(body))
-	}
-
-	if resp.StatusCode != http.StatusOK {
+	if status != http.StatusOK {
 		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "unexpected status code"
 		}
-		return &result, errors.Errorf("queryEnrollmentsPage: %s (status %d)", errMsg, resp.StatusCode)
+		return result, errors.Errorf("queryEnrollmentsPage: %s (status %d)", errMsg, status)
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // pageResult result from a single page fetch

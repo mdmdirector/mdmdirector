@@ -412,7 +412,7 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 		client := createTestClient(server.URL, "my-secret-key")
 
 		req, _ := http.NewRequest(http.MethodGet, server.URL+"/v1/push/test", nil)
-		_, err := client.doRequest(req)
+		_, _, err := doRequest[APIResponse](client, req)
 		require.NoError(t, err)
 		assert.Contains(t, capturedAuth, "Basic")
 	})
@@ -427,7 +427,7 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 		client := createTestClient(server.URL, "test-key")
 
 		req, _ := http.NewRequest(http.MethodGet, server.URL+"/test", nil)
-		_, err := client.doRequest(req)
+		_, _, err := doRequest[APIResponse](client, req)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "decode response")
 	})
@@ -445,8 +445,9 @@ func TestNanoMDMClient_DoRequest(t *testing.T) {
 		client := createTestClient(server.URL, "test-key")
 
 		req, _ := http.NewRequest(http.MethodGet, server.URL+"/test", nil)
-		result, err := client.doRequest(req)
-		require.NoError(t, err) // 400 is not a server error
+		result, status, err := doRequest[APIResponse](client, req)
+		require.NoError(t, err) // 400 is not a transport/decode error
+		assert.Equal(t, http.StatusBadRequest, status)
 		assert.NotNil(t, result)
 		assert.Equal(t, "bad request error", result.CommandError)
 	})
