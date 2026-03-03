@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 )
@@ -28,45 +27,52 @@ const NanoMDMAuthUsername = "nanomdm"
 // ErrClientNotInitialized - when the NanoMDM client hasn't been initialized
 var ErrClientNotInitialized = errors.New("NanoMDM client not initialized")
 
-type MDMClient interface {
-	Push(enrollmentIDs ...string) (*APIResponse, error)
-	Enqueue(enrollmentIDs []string, payload types.CommandPayload, opts *EnqueueOptions) (*APIResponse, error)
-	InspectQueue(enrollmentID string) (*QueueResponse, error)
-	ClearQueue(enrollmentIDs ...string) (*QueueDeleteResponse, error)
-	QueryEnrollments(filter *EnrollmentFilter, config *PaginationConfig) (*EnrollmentsResponse, error)
-	GetAllEnrollments(config *PaginationConfig) (*EnrollmentsResponse, error)
-}
-
+// NanoMDMClient is a client for the NanoMDM API
 type NanoMDMClient struct {
 	serverURL string
 	apiKey    string
 	client    *utils.HTTPClient
 }
 
-// mdmClient holds the global MDM client instance
-var mdmClient MDMClient
+// nanoMDMClient holds the global NanoMDM client instance
+var nanoMDMClient *NanoMDMClient
 
-// InitClient initializes the global NanoMDM client.
-func InitClient(serverURL, apiKey string) {
-	mdmClient = &NanoMDMClient{
+// ClientOption configures a NanoMDMClient
+type ClientOption func(*NanoMDMClient)
+
+// WithMaxRetries sets the maximum number of HTTP retries
+func WithMaxRetries(n int) ClientOption {
+	return func(c *NanoMDMClient) {
+		cfg := utils.DefaultRetryConfig()
+		cfg.MaxRetries = n
+		c.client = utils.NewHTTPClient(60*time.Second, &cfg)
+	}
+}
+
+// NewClient creates a new NanoMDMClient
+func NewClient(serverURL, apiKey string, opts ...ClientOption) *NanoMDMClient {
+	c := &NanoMDMClient{
 		serverURL: strings.TrimRight(serverURL, "/"),
 		apiKey:    apiKey,
 		client:    utils.NewHTTPClient(60*time.Second, nil),
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
-// SetClientForTesting allows injecting a mock client for testing
-func SetClientForTesting(client MDMClient) {
-	mdmClient = client
+// InitClient initializes the global NanoMDM client.
+func InitClient(serverURL, apiKey string) {
+	nanoMDMClient = NewClient(serverURL, apiKey)
 }
 
-// Client returns the global NanoMDM client instance.
-// Returns ErrClientNotInitialized if InitClient hasn't been called.
-func Client() (MDMClient, error) {
-	if mdmClient == nil {
+// Client returns the global NanoMDM client instance
+func Client() (*NanoMDMClient, error) {
+	if nanoMDMClient == nil {
 		return nil, ErrClientNotInitialized
 	}
-	return mdmClient, nil
+	return nanoMDMClient, nil
 }
 
 // buildURL constructs the API URL with path and optional query params

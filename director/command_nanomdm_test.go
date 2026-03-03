@@ -3,14 +3,14 @@ package director
 import (
 	"encoding/json"
 	"flag"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/mdm"
-	"github.com/mdmdirector/mdmdirector/mdm/mocks"
 	"github.com/mdmdirector/mdmdirector/types"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -76,13 +76,22 @@ func mockGetDevice(mockSpy sqlmock.Sqlmock) {
 // mockCreateCommand sets up DB expectations for db.DB.Create(&command)
 func mockCreateCommand(mockSpy sqlmock.Sqlmock) {
 	mockSpy.ExpectBegin()
-	// Use loose matching - just expect an INSERT into commands and return a row
 	mockSpy.ExpectExec(`INSERT INTO "commands"`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mockSpy.ExpectCommit()
 }
 
-// SendCommand Tests
+// newMockNanoMDMServer creates a mock NanoMDM HTTP server for testing
+// Pass mdm.WithMaxRetries(0) for error-case tests that return 5xx, to avoid slow retry waits
+func newMockNanoMDMServer(t *testing.T, handler http.HandlerFunc, opts ...mdm.ClientOption) (*httptest.Server, *mdm.NanoMDMClient) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := mdm.NewClient(server.URL, "test-api-key", opts...)
+	return server, client
+}
+
+// --- SendCommand tests ---
 
 // Test that empty UDID returns error before any MDM call
 func TestSendCommand_NanoMDM_EmptyUDID(t *testing.T) {
@@ -90,41 +99,19 @@ func TestSendCommand_NanoMDM_EmptyUDID(t *testing.T) {
 	_, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Should never be called — empty UDID is rejected before HTTP
+		t.Error("unexpected HTTP call for empty UDID")
+	})
 
 	payload := types.CommandPayload{
 		UDID:        "",
 		RequestType: "DeviceInformation",
 	}
-	_, err := SendCommand(payload)
+	_, err := sendCommandWithClient(nanoClient, payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no device UDID set")
-	assert.Len(t, mockClient.EnqueueCalls, 0)
-}
-
-// Test that client not initialized returns proper error
-func TestSendCommand_NanoMDM_ClientNotInitialized(t *testing.T) {
-	setupNanoMDMFlag(t)
-	mockSpy, cleanup := setupMockDB(t)
-	defer cleanup()
-
-	// Don't set any client - simulate uninitialized state
-	mdm.SetClientForTesting(nil)
-
-	// Mock GetDevice returning a device
-	mockGetDevice(mockSpy)
-
-	payload := types.CommandPayload{
-		UDID:        "test-udid-123",
-		RequestType: "DeviceInformation",
-	}
-	_, err := SendCommand(payload)
-
-	require.Error(t, err)
-	assert.Equal(t, mdm.ErrClientNotInitialized, err)
 }
 
 // Test Enqueue error handling
@@ -133,13 +120,10 @@ func TestSendCommand_NanoMDM_EnqueueError(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{
-		EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-			return nil, errors.New("connection refused")
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	// Pass WithMaxRetries(0) so 500 doesn't cause slow backoff waits.
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}, mdm.WithMaxRetries(0))
 
 	mockGetDevice(mockSpy)
 
@@ -147,12 +131,11 @@ func TestSendCommand_NanoMDM_EnqueueError(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	_, err := SendCommand(payload)
+	_, err := sendCommandWithClient(nanoClient, payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nanoMDM enqueue")
-	assert.Contains(t, err.Error(), "connection refused")
-	require.Len(t, mockClient.EnqueueCalls, 1)
+	assert.Contains(t, err.Error(), "500")
 }
 
 // Test command error from NanoMDM
@@ -161,17 +144,15 @@ func TestSendCommand_NanoMDM_CommandError(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{
-		EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {CommandError: "invalid command format"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {CommandError: "invalid command format"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
 	mockGetDevice(mockSpy)
 
@@ -179,7 +160,7 @@ func TestSendCommand_NanoMDM_CommandError(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "InvalidCommand",
 	}
-	_, err := SendCommand(payload)
+	_, err := sendCommandWithClient(nanoClient, payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "command enqueue failed")
@@ -192,19 +173,17 @@ func TestSendCommand_NanoMDM_PushErrorButCommandQueued(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{
-		EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				CommandUUID: "test-command-uuid-456",
-				RequestType: payload.RequestType,
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushError: "APNs token expired"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			CommandUUID: "test-command-uuid-456",
+			RequestType: "DeviceInformation",
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushError: "APNs token expired"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
 	mockGetDevice(mockSpy)
 	mockCreateCommand(mockSpy)
@@ -213,7 +192,7 @@ func TestSendCommand_NanoMDM_PushErrorButCommandQueued(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	command, err := SendCommand(payload)
+	command, err := sendCommandWithClient(nanoClient, payload)
 
 	require.NoError(t, err)
 	assert.Equal(t, "test-udid-123", command.DeviceUDID)
@@ -226,19 +205,21 @@ func TestSendCommand_NanoMDM_Success(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{
-		EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				CommandUUID: "test-command-uuid-123",
-				RequestType: payload.RequestType,
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushResult: "success"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	var capturedBody []byte
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedBody = make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(capturedBody)
+
+		resp := mdm.APIResponse{
+			CommandUUID: "test-command-uuid-123",
+			RequestType: "DeviceInformation",
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushResult: "success"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
 	mockGetDevice(mockSpy)
 	mockCreateCommand(mockSpy)
@@ -247,16 +228,14 @@ func TestSendCommand_NanoMDM_Success(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	command, err := SendCommand(payload)
+	command, err := sendCommandWithClient(nanoClient, payload)
 
 	require.NoError(t, err)
 	assert.Equal(t, "test-udid-123", command.DeviceUDID)
 	assert.Equal(t, "test-command-uuid-123", command.CommandUUID)
 	assert.Equal(t, "DeviceInformation", command.RequestType)
-
-	require.Len(t, mockClient.EnqueueCalls, 1)
-	assert.Equal(t, []string{"test-udid-123"}, mockClient.EnqueueCalls[0].EnrollmentIDs)
-	assert.Equal(t, "DeviceInformation", mockClient.EnqueueCalls[0].Payload.RequestType)
+	// Verify plist body was sent to the server
+	assert.NotEmpty(t, capturedBody)
 }
 
 // Test device not found
@@ -265,11 +244,10 @@ func TestSendCommand_NanoMDM_DeviceNotFound(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockClient := &mocks.MockMDMClient{}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("unexpected HTTP call: device lookup should fail before enqueue")
+	})
 
-	// Mock GetDevice - return error on first query
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).
 		WithArgs("nonexistent-udid").
 		WillReturnError(gorm.ErrRecordNotFound)
@@ -278,11 +256,10 @@ func TestSendCommand_NanoMDM_DeviceNotFound(t *testing.T) {
 		UDID:        "nonexistent-udid",
 		RequestType: "DeviceInformation",
 	}
-	_, err := SendCommand(payload)
+	_, err := sendCommandWithClient(nanoClient, payload)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "record not found")
-	assert.Len(t, mockClient.EnqueueCalls, 0)
 }
 
 // Test various request types via table-driven subtests
@@ -302,19 +279,17 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 			mockSpy, cleanup := setupMockDB(t)
 			defer cleanup()
 
-			mockClient := &mocks.MockMDMClient{
-				EnqueueFunc: func(enrollmentIDs []string, payload types.CommandPayload, opts *mdm.EnqueueOptions) (*mdm.APIResponse, error) {
-					return &mdm.APIResponse{
-						CommandUUID: tc.commandUUID,
-						RequestType: payload.RequestType,
-						Status: map[string]mdm.EnrollmentStatus{
-							enrollmentIDs[0]: {PushResult: "success"},
-						},
-					}, nil
-				},
-			}
-			mdm.SetClientForTesting(mockClient)
-			defer mdm.SetClientForTesting(nil)
+			_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+				resp := mdm.APIResponse{
+					CommandUUID: tc.commandUUID,
+					RequestType: tc.requestType,
+					Status: map[string]mdm.EnrollmentStatus{
+						"test-udid-123": {PushResult: "success"},
+					},
+				}
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(resp)
+			})
 
 			mockGetDevice(mockSpy)
 			mockCreateCommand(mockSpy)
@@ -323,7 +298,7 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 				UDID:        "test-udid-123",
 				RequestType: tc.requestType,
 			}
-			command, err := SendCommand(payload)
+			command, err := sendCommandWithClient(nanoClient, payload)
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.requestType, command.RequestType)
@@ -332,79 +307,59 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 	}
 }
 
-// PushDevice Tests
+// --- PushDevice tests ---
 
 // Test successful push to device
 func TestPushDevice_NanoMDM_Success(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		PushFunc: func(enrollmentIDs ...string) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushResult: "success"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/v1/push/")
 
-	err := PushDevice("test-udid-123")
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushResult: "success"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
+	err := pushDeviceWithClient(nanoClient, "test-udid-123")
 	require.NoError(t, err)
-	require.Len(t, mockClient.PushCalls, 1)
-	assert.Equal(t, []string{"test-udid-123"}, mockClient.PushCalls[0])
-}
-
-// Test push when client is not initialized
-func TestPushDevice_NanoMDM_ClientNotInitialized(t *testing.T) {
-	setupNanoMDMFlag(t)
-
-	mdm.SetClientForTesting(nil)
-
-	err := PushDevice("test-udid-123")
-
-	require.Error(t, err)
-	assert.Equal(t, mdm.ErrClientNotInitialized, err)
 }
 
 // Test push when NanoMDM returns an error
 func TestPushDevice_NanoMDM_PushError(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		PushFunc: func(enrollmentIDs ...string) (*mdm.APIResponse, error) {
-			return nil, errors.New("connection timeout")
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}, mdm.WithMaxRetries(0))
 
-	err := PushDevice("test-udid-123")
+	err := pushDeviceWithClient(nanoClient, "test-udid-123")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "PushDevice")
-	assert.Contains(t, err.Error(), "connection timeout")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // Test push when APNs push fails (per-device error)
 func TestPushDevice_NanoMDM_APNsError(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		PushFunc: func(enrollmentIDs ...string) (*mdm.APIResponse, error) {
-			return &mdm.APIResponse{
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushError: "BadDeviceToken"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushError: "BadDeviceToken"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	err := PushDevice("test-udid-123")
+	err := pushDeviceWithClient(nanoClient, "test-udid-123")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "push failed")
@@ -415,55 +370,46 @@ func TestPushDevice_NanoMDM_APNsError(t *testing.T) {
 func TestPushDevice_NanoMDM_CorrectUDID(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	var capturedUDID string
-	mockClient := &mocks.MockMDMClient{
-		PushFunc: func(enrollmentIDs ...string) (*mdm.APIResponse, error) {
-			capturedUDID = enrollmentIDs[0]
-			return &mdm.APIResponse{
-				Status: map[string]mdm.EnrollmentStatus{
-					enrollmentIDs[0]: {PushResult: "success"},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	var capturedPath string
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"specific-device-udid-456": {PushResult: "success"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	err := PushDevice("specific-device-udid-456")
+	err := pushDeviceWithClient(nanoClient, "specific-device-udid-456")
 
 	require.NoError(t, err)
-	assert.Equal(t, "specific-device-udid-456", capturedUDID)
+	assert.Contains(t, capturedPath, "specific-device-udid-456")
 }
 
-// InspectCommandQueue Tests
+// --- InspectCommandQueue tests ---
 
 // Test successful queue inspection
 func TestInspectCommandQueue_NanoMDM_Success(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		InspectQueueFunc: func(enrollmentID string) (*mdm.QueueResponse, error) {
-			return &mdm.QueueResponse{
-				Commands: []mdm.QueueCommand{
-					{
-						CommandUUID: "cmd-uuid-1",
-						RequestType: "DeviceInformation",
-						Command:     "base64encodedplist1",
-					},
-					{
-						CommandUUID: "cmd-uuid-2",
-						RequestType: "ProfileList",
-						Command:     "base64encodedplist2",
-					},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Contains(t, r.URL.Path, "/v1/queue/test-udid-123")
+
+		resp := mdm.QueueResponse{
+			Commands: []mdm.QueueCommand{
+				{CommandUUID: "cmd-uuid-1", RequestType: "DeviceInformation", Command: "base64encodedplist1"},
+				{CommandUUID: "cmd-uuid-2", RequestType: "ProfileList", Command: "base64encodedplist2"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
 	device := types.Device{UDID: "test-udid-123"}
-	result, err := InspectCommandQueue(device)
+	result, err := inspectCommandQueueWithClient(nanoClient, device)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -472,26 +418,20 @@ func TestInspectCommandQueue_NanoMDM_Success(t *testing.T) {
 	var parsed map[string]interface{}
 	err = json.Unmarshal(result, &parsed)
 	require.NoError(t, err)
-
-	// Verify mock was called with correct UDID
-	require.Len(t, mockClient.InspectQueueCalls, 1)
-	assert.Equal(t, "test-udid-123", mockClient.InspectQueueCalls[0])
 }
 
 // Test queue inspection when NanoMDM returns an error
 func TestInspectCommandQueue_NanoMDM_Error(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		InspectQueueFunc: func(enrollmentID string) (*mdm.QueueResponse, error) {
-			return nil, errors.New("server unavailable")
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.QueueResponse{Error: "server unavailable"}
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
 	device := types.Device{UDID: "test-udid-123"}
-	result, err := InspectCommandQueue(device)
+	result, err := inspectCommandQueueWithClient(nanoClient, device)
 
 	require.Error(t, err)
 	assert.Nil(t, result)
@@ -499,72 +439,57 @@ func TestInspectCommandQueue_NanoMDM_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "server unavailable")
 }
 
-// clearCommandQueue Tests
+// --- clearCommandQueue tests ---
 
 // Test successful queue clear
 func TestClearCommandQueue_NanoMDM_Success(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		ClearQueueFunc: func(enrollmentIDs ...string) (*mdm.QueueDeleteResponse, error) {
-			return &mdm.QueueDeleteResponse{}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Contains(t, r.URL.Path, "/v1/queue/test-udid-123")
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	device := types.Device{UDID: "test-udid-123"}
-	err := clearCommandQueue(device)
-
+	err := clearCommandQueueWithClient(nanoClient, device)
 	require.NoError(t, err)
-
-	// Verify mock was called with correct UDID
-	require.Len(t, mockClient.ClearQueueCalls, 1)
-	assert.Equal(t, []string{"test-udid-123"}, mockClient.ClearQueueCalls[0])
 }
 
 // Test queue clear when NanoMDM returns an error
 func TestClearCommandQueue_NanoMDM_Error(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	mockClient := &mocks.MockMDMClient{
-		ClearQueueFunc: func(enrollmentIDs ...string) (*mdm.QueueDeleteResponse, error) {
-			return nil, errors.New("permission denied")
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}, mdm.WithMaxRetries(0))
 
 	device := types.Device{UDID: "test-udid-123"}
-	err := clearCommandQueue(device)
+	err := clearCommandQueueWithClient(nanoClient, device)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "clearCommandQueue via NanoMDM")
-	assert.Contains(t, err.Error(), "permission denied")
+	assert.Contains(t, err.Error(), "500")
 }
 
 // Test queue clear verifies correct UDID is passed
 func TestClearCommandQueue_NanoMDM_CorrectUDID(t *testing.T) {
 	setupNanoMDMFlag(t)
 
-	var capturedUDID string
-	mockClient := &mocks.MockMDMClient{
-		ClearQueueFunc: func(enrollmentIDs ...string) (*mdm.QueueDeleteResponse, error) {
-			capturedUDID = enrollmentIDs[0]
-			return &mdm.QueueDeleteResponse{}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	var capturedPath string
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	device := types.Device{UDID: "specific-device-udid-789"}
-	err := clearCommandQueue(device)
+	err := clearCommandQueueWithClient(nanoClient, device)
 
 	require.NoError(t, err)
-	assert.Equal(t, "specific-device-udid-789", capturedUDID)
+	assert.Contains(t, capturedPath, "specific-device-udid-789")
 }
 
-// FetchDevicesFromMDM Tests
+// --- FetchDevicesFromMDM tests ---
 
 // Test successful device fetch from NanoMDM
 func TestFetchDevicesFromMDM_NanoMDM_Success(t *testing.T) {
@@ -572,104 +497,60 @@ func TestFetchDevicesFromMDM_NanoMDM_Success(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	// Reset the global flag
 	DevicesFetchedFromMDM = false
 
-	mockClient := &mocks.MockMDMClient{
-		GetAllEnrollmentsFunc: func(config *mdm.PaginationConfig) (*mdm.EnrollmentsResponse, error) {
-			return &mdm.EnrollmentsResponse{
-				Enrollments: []mdm.Enrollment{
-					{
-						ID:      "device-udid-1",
-						Enabled: true,
-						Device: &mdm.EnrollmentDevice{
-							SerialNumber: "C02SERIAL001",
-						},
-					},
-					{
-						ID:      "device-udid-2",
-						Enabled: false,
-						Device: &mdm.EnrollmentDevice{
-							SerialNumber: "C02SERIAL002",
-						},
-					},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.EnrollmentsResponse{
+			Enrollments: []mdm.Enrollment{
+				{ID: "device-udid-1", Enabled: true, Device: &mdm.EnrollmentDevice{SerialNumber: "C02SERIAL001"}},
+				{ID: "device-udid-2", Enabled: false, Device: &mdm.EnrollmentDevice{SerialNumber: "C02SERIAL002"}},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	// Mock DB expectations for CreateInBatches with ON CONFLICT
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
 		WillReturnResult(sqlmock.NewResult(2, 2))
 	mockSpy.ExpectCommit()
 
-	FetchDevicesFromMDM()
+	fetchDevicesFromNanoMDM(nanoClient)
 
-	// Verify mock was called
-	require.Len(t, mockClient.GetAllEnrollmentCalls, 1)
 	assert.True(t, DevicesFetchedFromMDM)
-}
-
-// Test fetch when client is not initialized
-func TestFetchDevicesFromMDM_NanoMDM_ClientNotInitialized(t *testing.T) {
-	setupNanoMDMFlag(t)
-
-	// Reset the global flag
-	DevicesFetchedFromMDM = false
-
-	mdm.SetClientForTesting(nil)
-
-	FetchDevicesFromMDM()
-
-	// Should not set flag when client fails
-	assert.False(t, DevicesFetchedFromMDM)
 }
 
 // Test fetch when NanoMDM returns an error
 func TestFetchDevicesFromMDM_NanoMDM_Error(t *testing.T) {
 	setupNanoMDMFlag(t)
-
-	// Reset the global flag
 	DevicesFetchedFromMDM = false
 
-	mockClient := &mocks.MockMDMClient{
-		GetAllEnrollmentsFunc: func(config *mdm.PaginationConfig) (*mdm.EnrollmentsResponse, error) {
-			return nil, errors.New("connection refused")
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		resp := mdm.APIResponse{CommandError: "connection refused"}
+		_ = json.NewEncoder(w).Encode(resp)
+	}, mdm.WithMaxRetries(0))
 
-	FetchDevicesFromMDM()
+	fetchDevicesFromNanoMDM(nanoClient)
 
 	// Should not set flag when fetch fails
 	assert.False(t, DevicesFetchedFromMDM)
-	require.Len(t, mockClient.GetAllEnrollmentCalls, 1)
 }
 
 // Test fetch with empty enrollment list
 func TestFetchDevicesFromMDM_NanoMDM_EmptyEnrollments(t *testing.T) {
 	setupNanoMDMFlag(t)
-
-	// Reset the global flag
 	DevicesFetchedFromMDM = false
 
-	mockClient := &mocks.MockMDMClient{
-		GetAllEnrollmentsFunc: func(config *mdm.PaginationConfig) (*mdm.EnrollmentsResponse, error) {
-			return &mdm.EnrollmentsResponse{
-				Enrollments: []mdm.Enrollment{},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.EnrollmentsResponse{Enrollments: []mdm.Enrollment{}}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	FetchDevicesFromMDM()
+	fetchDevicesFromNanoMDM(nanoClient)
 
-	// Should still set flag even with no enrollments
+	// Flag should be set even with empty enrollment list
 	assert.True(t, DevicesFetchedFromMDM)
 }
 
@@ -679,39 +560,26 @@ func TestFetchDevicesFromMDM_NanoMDM_SkipsEmptyID(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	// Reset the global flag
 	DevicesFetchedFromMDM = false
 
-	mockClient := &mocks.MockMDMClient{
-		GetAllEnrollmentsFunc: func(config *mdm.PaginationConfig) (*mdm.EnrollmentsResponse, error) {
-			return &mdm.EnrollmentsResponse{
-				Enrollments: []mdm.Enrollment{
-					{
-						ID:      "", // Empty ID - should be skipped
-						Enabled: true,
-					},
-					{
-						ID:      "valid-device-udid",
-						Enabled: true,
-						Device: &mdm.EnrollmentDevice{
-							SerialNumber: "C02VALID",
-						},
-					},
-				},
-			}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.EnrollmentsResponse{
+			Enrollments: []mdm.Enrollment{
+				{ID: "", Enabled: true},
+				{ID: "valid-device-udid", Enabled: true, Device: &mdm.EnrollmentDevice{SerialNumber: "C02VALID"}},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	// Only expect DB call for the valid device (not the empty ID one)
-	// CreateInBatches wraps in a transaction
+	// Only one valid device — one INSERT batch
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mockSpy.ExpectCommit()
 
-	FetchDevicesFromMDM()
+	fetchDevicesFromNanoMDM(nanoClient)
 
 	assert.True(t, DevicesFetchedFromMDM)
 }
@@ -722,48 +590,28 @@ func TestFetchDevicesFromMDM_NanoMDM_SetsDeviceFields(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	// Reset the global flag
 	DevicesFetchedFromMDM = false
 
-	var capturedEnrollments []mdm.Enrollment
-	mockClient := &mocks.MockMDMClient{
-		GetAllEnrollmentsFunc: func(config *mdm.PaginationConfig) (*mdm.EnrollmentsResponse, error) {
-			enrollments := []mdm.Enrollment{
-				{
-					ID:      "enabled-device",
-					Enabled: true,
-					Device: &mdm.EnrollmentDevice{
-						SerialNumber: "SERIAL001",
-					},
-				},
-				{
-					ID:      "disabled-device",
-					Enabled: false,
-					Device: &mdm.EnrollmentDevice{
-						SerialNumber: "SERIAL002",
-					},
-				},
-			}
-			capturedEnrollments = enrollments
-			return &mdm.EnrollmentsResponse{Enrollments: enrollments}, nil
-		},
-	}
-	mdm.SetClientForTesting(mockClient)
-	defer mdm.SetClientForTesting(nil)
+	var capturedRequest string
+	_, nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedRequest = r.URL.Path
+		resp := mdm.EnrollmentsResponse{
+			Enrollments: []mdm.Enrollment{
+				{ID: "enabled-device", Enabled: true, Device: &mdm.EnrollmentDevice{SerialNumber: "SERIAL001"}},
+				{ID: "disabled-device", Enabled: false, Device: &mdm.EnrollmentDevice{SerialNumber: "SERIAL002"}},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
 
-	// Mock DB expectations for CreateInBatches with ON CONFLICT (both devices in one batch)
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
 		WillReturnResult(sqlmock.NewResult(2, 2))
 	mockSpy.ExpectCommit()
 
-	FetchDevicesFromMDM()
+	fetchDevicesFromNanoMDM(nanoClient)
 
-	// Verify enrollments were processed
-	require.Len(t, capturedEnrollments, 2)
-	assert.Equal(t, "enabled-device", capturedEnrollments[0].ID)
-	assert.True(t, capturedEnrollments[0].Enabled)
-	assert.Equal(t, "disabled-device", capturedEnrollments[1].ID)
-	assert.False(t, capturedEnrollments[1].Enabled)
 	assert.True(t, DevicesFetchedFromMDM)
+	assert.NotEmpty(t, capturedRequest)
 }

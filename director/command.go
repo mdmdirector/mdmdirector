@@ -21,6 +21,15 @@ import (
 )
 
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		nanoClient, err := mdm.Client()
+		if err != nil {
+			return types.Command{}, err
+		}
+		return sendCommandWithClient(nanoClient, commandPayload)
+	}
+
 	var command types.Command
 	var commandResponse types.CommandResponse
 	device, err := GetDevice(commandPayload.UDID)
@@ -36,60 +45,6 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 			CommandRequestType: commandPayload.RequestType,
 		},
 	)
-
-	// Use NanoMDM client if enabled
-	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
-		client, err := mdm.Client()
-		if err != nil {
-			return command, err
-		}
-
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending command to device via NanoMDM"})
-
-		resp, err := client.Enqueue([]string{commandPayload.UDID}, commandPayload, nil)
-		if err != nil {
-			return command, errors.Wrap(err, "nanoMDM enqueue")
-		}
-
-		// Check per-device errors
-		pushErr, cmdErr := resp.ErrorsForID(commandPayload.UDID)
-		if cmdErr != "" {
-			return command, errors.Errorf("command enqueue failed: %s", cmdErr)
-		}
-
-		if pushErr != "" {
-			ErrorLogger(LogHolder{
-				Message:      fmt.Sprintf("Push notification failed, command queued: %s", pushErr),
-				DeviceUDID:   device.UDID,
-				DeviceSerial: device.SerialNumber,
-			})
-		}
-
-		command.DeviceUDID = commandPayload.UDID
-		command.CommandUUID = resp.CommandUUID
-		command.RequestType = resp.RequestType
-
-		InfoLogger(LogHolder{
-			Message:            "Sent Command",
-			DeviceUDID:         device.UDID,
-			DeviceSerial:       device.SerialNumber,
-			CommandRequestType: commandPayload.RequestType,
-			CommandUUID:        command.CommandUUID,
-		})
-
-		db.DB.Create(&command)
-
-		if utils.Prometheus() {
-			if commandPayload.RequestType == "InstallProfile" {
-				ProfilesPushed.Inc()
-			}
-			if commandPayload.RequestType == "InstallApplication" {
-				InstallApplicationsPushed.Inc()
-			}
-		}
-
-		return command, nil
-	}
 
 	// MicroMDM implementation
 	jsonStr, err := json.Marshal(commandPayload)
@@ -134,6 +89,68 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 			ProfilesPushed.Inc()
 		}
 
+		if commandPayload.RequestType == "InstallApplication" {
+			InstallApplicationsPushed.Inc()
+		}
+	}
+
+	return command, nil
+}
+
+// sendCommandWithClient sends a command via NanoMDM using the provided client
+func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.CommandPayload) (types.Command, error) {
+	var command types.Command
+
+	device, err := GetDevice(commandPayload.UDID)
+	if err != nil {
+		return command, err
+	}
+
+	InfoLogger(LogHolder{
+		Message:            "Sending Command",
+		DeviceUDID:         device.UDID,
+		DeviceSerial:       device.SerialNumber,
+		CommandRequestType: commandPayload.RequestType,
+	})
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending command to device via NanoMDM"})
+
+	resp, err := nanoClient.Enqueue([]string{commandPayload.UDID}, commandPayload, nil)
+	if err != nil {
+		return command, errors.Wrap(err, "nanoMDM enqueue")
+	}
+
+	// Check per-device errors
+	pushErr, cmdErr := resp.ErrorsForID(commandPayload.UDID)
+	if cmdErr != "" {
+		return command, errors.Errorf("command enqueue failed: %s", cmdErr)
+	}
+
+	if pushErr != "" {
+		ErrorLogger(LogHolder{
+			Message:      fmt.Sprintf("Push notification failed, command queued: %s", pushErr),
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+		})
+	}
+
+	command.DeviceUDID = commandPayload.UDID
+	command.CommandUUID = resp.CommandUUID
+	command.RequestType = resp.RequestType
+
+	InfoLogger(LogHolder{
+		Message:            "Sent Command",
+		DeviceUDID:         device.UDID,
+		DeviceSerial:       device.SerialNumber,
+		CommandRequestType: commandPayload.RequestType,
+		CommandUUID:        command.CommandUUID,
+	})
+
+	db.DB.Create(&command)
+
+	if utils.Prometheus() {
+		if commandPayload.RequestType == "InstallProfile" {
+			ProfilesPushed.Inc()
+		}
 		if commandPayload.RequestType == "InstallApplication" {
 			InstallApplicationsPushed.Inc()
 		}
@@ -414,16 +431,11 @@ func ExpireCommands() error {
 func clearCommandQueue(device types.Device) error {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
-		client, err := mdm.Client()
+		nanoClient, err := mdm.Client()
 		if err != nil {
 			return err
 		}
-
-		_, err = client.ClearQueue(device.UDID)
-		if err != nil {
-			return errors.Wrap(err, "clearCommandQueue via NanoMDM")
-		}
-		return nil
+		return clearCommandQueueWithClient(nanoClient, device)
 	}
 
 	// MicroMDM implementation
@@ -451,27 +463,11 @@ func clearCommandQueue(device types.Device) error {
 func InspectCommandQueue(device types.Device) ([]byte, error) {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
-		client, err := mdm.Client()
+		nanoClient, err := mdm.Client()
 		if err != nil {
 			return nil, err
 		}
-
-		resp, err := client.InspectQueue(device.UDID)
-		if err != nil {
-			return nil, errors.Wrap(err, "InspectCommandQueue via NanoMDM")
-		}
-
-		// Convert nanoMDM response to microMDM-compatible format
-		unified, err := mdm.ConvertToUnifiedResponse(resp)
-		if err != nil {
-			return nil, errors.Wrap(err, "InspectCommandQueue: convert response")
-		}
-
-		jsonData, err := json.Marshal(unified)
-		if err != nil {
-			return nil, errors.Wrap(err, "InspectCommandQueue: marshal response")
-		}
-		return jsonData, nil
+		return inspectCommandQueueWithClient(nanoClient, device)
 	}
 
 	// MicroMDM implementation
@@ -500,4 +496,33 @@ func InspectCommandQueue(device types.Device) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to read response body")
 	}
 	return buf.Bytes(), nil
+}
+
+// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client
+func clearCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) error {
+	_, err := nanoClient.ClearQueue(device.UDID)
+	if err != nil {
+		return errors.Wrap(err, "clearCommandQueue via NanoMDM")
+	}
+	return nil
+}
+
+// inspectCommandQueueWithClient inspects the NanoMDM command queue using the provided client
+func inspectCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) ([]byte, error) {
+	resp, err := nanoClient.InspectQueue(device.UDID)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue via NanoMDM")
+	}
+
+	// Convert nanoMDM response to microMDM-compatible format
+	unified, err := mdm.ConvertToUnifiedResponse(resp)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue: convert response")
+	}
+
+	jsonData, err := json.Marshal(unified)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue: marshal response")
+	}
+	return jsonData, nil
 }

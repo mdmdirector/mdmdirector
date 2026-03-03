@@ -83,97 +83,22 @@ func processUnconfiguredDevices() error {
 }
 
 func FetchDevicesFromMDM() {
-	var deviceModel types.Device
-
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
 		log.Info("Fetching devices from NanoMDM...")
 
-		client, err := mdm.Client()
+		nanoClient, err := mdm.Client()
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 			return
 		}
 
-		resp, err := client.GetAllEnrollments(nil)
-		if err != nil {
-			ErrorLogger(LogHolder{Message: errors.Wrap(err, "FetchDevicesFromMDM via NanoMDM").Error()})
-			return
-		}
-
-		var devices []types.Device
-		for _, enrollment := range resp.Enrollments {
-			if enrollment.ID == "" {
-				continue
-			}
-
-			device := types.Device{
-				UDID:   enrollment.ID,
-				Active: enrollment.Enabled,
-			}
-
-			if enrollment.Device != nil {
-				device.SerialNumber = enrollment.Device.SerialNumber
-			}
-
-			if enrollment.Enabled {
-				device.AuthenticateRecieved = true
-				device.TokenUpdateRecieved = true
-				device.InitialTasksRun = true
-			}
-
-			devices = append(devices, device)
-		}
-
-		// Batch upsert
-		const batchSize = 500
-		totalDevices := len(devices)
-		log.WithFields(log.Fields{
-			"total_devices": totalDevices,
-			"batch_size":    batchSize,
-		}).Info("Starting batch upsert for NanoMDM devices")
-
-		if totalDevices == 0 {
-			DevicesFetchedFromMDM = true
-			InfoLogger(LogHolder{Message: "Finished fetching devices from NanoMDM..."})
-			return
-		}
-
-		startTime := time.Now()
-		err = db.DB.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "ud_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"active",
-				"serial_number",
-				"authenticate_recieved",
-				"token_update_recieved",
-				"initial_tasks_run",
-			}),
-		}).CreateInBatches(devices, batchSize).Error
-
-		duration := time.Since(startTime)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error":         err.Error(),
-				"duration_ms":   duration.Milliseconds(),
-				"total_devices": totalDevices,
-			}).Error("Failed to batch upsert NanoMDM devices")
-			ErrorLogger(LogHolder{Message: errors.Wrap(err, "batch upsert NanoMDM devices").Error()})
-		} else {
-			log.WithFields(log.Fields{
-				"duration_ms":       duration.Milliseconds(),
-				"total_devices":     totalDevices,
-				"batches_count":     (totalDevices + batchSize - 1) / batchSize,
-				"avg_ms_per_device": float64(duration.Milliseconds()) / float64(totalDevices),
-			}).Info("Completed batch upsert for NanoMDM devices")
-		}
-
-		DevicesFetchedFromMDM = true
-		log.Info("Finished fetching devices from NanoMDM...")
+		fetchDevicesFromNanoMDM(nanoClient)
 		return
 	}
 
 	// MicroMDM implementation
+	var deviceModel types.Device
 	var devices types.DevicesFromMDM
 	log.Info("Fetching devices from MicroMDM...")
 
@@ -232,8 +157,86 @@ func FetchDevicesFromMDM() {
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
-
 	}
 	DevicesFetchedFromMDM = true
 	log.Info("Finished fetching devices from MicroMDM...")
+}
+
+// fetchDevicesFromNanoMDM fetches all enrollments from NanoMDM and upserts them into the DB
+func fetchDevicesFromNanoMDM(nanoClient *mdm.NanoMDMClient) {
+	resp, err := nanoClient.GetAllEnrollments(nil)
+	if err != nil {
+		ErrorLogger(LogHolder{Message: errors.Wrap(err, "FetchDevicesFromMDM via NanoMDM").Error()})
+		return
+	}
+
+	var devices []types.Device
+	for _, enrollment := range resp.Enrollments {
+		if enrollment.ID == "" {
+			continue
+		}
+
+		device := types.Device{
+			UDID:   enrollment.ID,
+			Active: enrollment.Enabled,
+		}
+
+		if enrollment.Device != nil {
+			device.SerialNumber = enrollment.Device.SerialNumber
+		}
+
+		if enrollment.Enabled {
+			device.AuthenticateRecieved = true
+			device.TokenUpdateRecieved = true
+			device.InitialTasksRun = true
+		}
+
+		devices = append(devices, device)
+	}
+
+	// Batch upsert
+	const batchSize = 500
+	totalDevices := len(devices)
+	log.WithFields(log.Fields{
+		"total_devices": totalDevices,
+		"batch_size":    batchSize,
+	}).Info("Starting batch upsert for NanoMDM devices")
+
+	if totalDevices == 0 {
+		DevicesFetchedFromMDM = true
+		InfoLogger(LogHolder{Message: "Finished fetching devices from NanoMDM..."})
+		return
+	}
+
+	startTime := time.Now()
+	err = db.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "ud_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"active",
+			"serial_number",
+			"authenticate_recieved",
+			"token_update_recieved",
+			"initial_tasks_run",
+		}),
+	}).CreateInBatches(devices, batchSize).Error
+
+	duration := time.Since(startTime)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error":         err.Error(),
+			"duration_ms":   duration.Milliseconds(),
+			"total_devices": totalDevices,
+		}).Error("Failed to batch upsert NanoMDM devices")
+		ErrorLogger(LogHolder{Message: errors.Wrap(err, "batch upsert NanoMDM devices").Error()})
+	} else {
+		log.WithFields(log.Fields{
+			"duration_ms":       duration.Milliseconds(),
+			"total_devices":     totalDevices,
+			"batches_count":     (totalDevices + batchSize - 1) / batchSize,
+			"avg_ms_per_device": float64(duration.Milliseconds()) / float64(totalDevices),
+		}).Info("Completed batch upsert for NanoMDM devices")
+	}
+
+	DevicesFetchedFromMDM = true
+	log.Info("Finished fetching devices from NanoMDM...")
 }

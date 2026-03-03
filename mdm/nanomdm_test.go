@@ -15,66 +15,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testMockClient - inline mock for testing SetClientForTesting
-type testMockClient struct{}
-
-func (m *testMockClient) Push(enrollmentIDs ...string) (*APIResponse, error) {
-	return &APIResponse{}, nil
-}
-func (m *testMockClient) Enqueue(enrollmentIDs []string, payload types.CommandPayload, opts *EnqueueOptions) (*APIResponse, error) {
-	return &APIResponse{}, nil
-}
-func (m *testMockClient) InspectQueue(enrollmentID string) (*QueueResponse, error) {
-	return &QueueResponse{}, nil
-}
-func (m *testMockClient) ClearQueue(enrollmentIDs ...string) (*QueueDeleteResponse, error) {
-	return &QueueDeleteResponse{}, nil
-}
-func (m *testMockClient) QueryEnrollments(filter *EnrollmentFilter, config *PaginationConfig) (*EnrollmentsResponse, error) {
-	return &EnrollmentsResponse{}, nil
-}
-func (m *testMockClient) GetAllEnrollments(config *PaginationConfig) (*EnrollmentsResponse, error) {
-	return &EnrollmentsResponse{}, nil
-}
-
 func TestClient(t *testing.T) {
 	t.Run("returns error when not initialized", func(t *testing.T) {
-		mdmClient = nil
+		nanoMDMClient = nil
 		client, err := Client()
 		assert.Nil(t, client)
 		assert.Equal(t, ErrClientNotInitialized, err)
 	})
 
-	t.Run("returns client when initialized", func(t *testing.T) {
+	t.Run("returns NanoMDMClient when initialized", func(t *testing.T) {
 		InitClient("https://nano.example.com", "test-key")
 
 		client, err := Client()
 		require.NoError(t, err)
 		assert.NotNil(t, client)
-	})
-}
 
-func TestSetClientForTesting(t *testing.T) {
-	t.Run("allows injecting mock client", func(t *testing.T) {
-		// Reset first
-		mdmClient = nil
-
-		mock := &testMockClient{}
-		SetClientForTesting(mock)
-
-		client, err := Client()
-		require.NoError(t, err)
-		assert.Equal(t, mock, client)
-	})
-
-	t.Run("allows resetting client to nil", func(t *testing.T) {
-		InitClient("https://nano.example.com", "test-key")
-
-		SetClientForTesting(nil)
-
-		client, err := Client()
-		assert.Nil(t, client)
-		assert.Equal(t, ErrClientNotInitialized, err)
+		// Verify it is the concrete type
+		var _ *NanoMDMClient = client
 	})
 }
 

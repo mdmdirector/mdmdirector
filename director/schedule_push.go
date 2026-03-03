@@ -247,24 +247,11 @@ func deviceNeedsPush(device types.Device) bool {
 func PushDevice(udid string) error {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
-		client, err := mdm.Client()
+		nanoClient, err := mdm.Client()
 		if err != nil {
 			return err
 		}
-
-		InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sending push to device via NanoMDM"})
-		resp, err := client.Push(udid)
-		if err != nil {
-			return errors.Wrap(err, "PushDevice")
-		}
-
-		pushErr, _ := resp.ErrorsForID(udid)
-		if pushErr != "" {
-			return errors.Errorf("push failed: %s", pushErr)
-		}
-
-		InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device via NanoMDM"})
-		return nil
+		return pushDeviceWithClient(nanoClient, udid)
 	}
 
 	// MicroMDM implementation
@@ -304,5 +291,23 @@ func PushDevice(udid string) error {
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sent push to device"})
 
+	return nil
+}
+
+// pushDeviceWithClient sends a push notification via NanoMDM using the provided client
+func pushDeviceWithClient(nanoClient *mdm.NanoMDMClient, udid string) error {
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sending push to device via NanoMDM"})
+
+	resp, err := nanoClient.Push(udid)
+	if err != nil {
+		return errors.Wrap(err, "PushDevice")
+	}
+
+	pushErr, _ := resp.ErrorsForID(udid)
+	if pushErr != "" {
+		return errors.Errorf("push failed: %s", pushErr)
+	}
+
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device via NanoMDM"})
 	return nil
 }
