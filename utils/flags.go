@@ -136,6 +136,14 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+func NanoMDMURL() string {
+	return strings.TrimRight(flag.Lookup("nanomdm-url").Value.(flag.Getter).Get().(string), "/")
+}
+
+func UseDDM() bool {
+	return flag.Lookup("use-ddm").Value.(flag.Getter).Get().(bool)
+}
+
 // Code for testing goes down here
 // flags *can* be overwritten by using os.Args, but they cannot be parsed more than once or it results in a crash.
 // So, instead we inject an interface layer between the calling code that is swapped out during unit tests.
