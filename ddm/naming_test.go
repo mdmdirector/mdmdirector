@@ -56,6 +56,62 @@ func TestActivationDeclarationID(t *testing.T) {
 	}
 }
 
+func TestPackageDeclarationID(t *testing.T) {
+	tests := []struct {
+		name        string
+		udid        string
+		packageUUID string
+		expected    string
+	}{
+		{
+			name:        "basic identifiers",
+			udid:        "ABCD-1234",
+			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
+			expected:    "biz.airbnb.ABCD-1234.package.550e8400-e29b-41d4-a716-446655440000",
+		},
+		{
+			name:        "uuid-style udid",
+			udid:        "00000000-0000-0000-0000-000000000001",
+			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
+			expected:    "biz.airbnb.00000000-0000-0000-0000-000000000001.package.550e8400-e29b-41d4-a716-446655440000",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := PackageDeclarationID(tt.udid, tt.packageUUID)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestPackageActivationDeclarationID(t *testing.T) {
+	tests := []struct {
+		name        string
+		udid        string
+		packageUUID string
+		expected    string
+	}{
+		{
+			name:        "basic identifiers",
+			udid:        "ABCD-1234",
+			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
+			expected:    "biz.airbnb.ABCD-1234.package_activation.550e8400-e29b-41d4-a716-446655440000",
+		},
+		{
+			name:        "uuid-style udid",
+			udid:        "00000000-0000-0000-0000-000000000001",
+			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
+			expected:    "biz.airbnb.00000000-0000-0000-0000-000000000001.package_activation.550e8400-e29b-41d4-a716-446655440000",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := PackageActivationDeclarationID(tt.udid, tt.packageUUID)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestProfileDownloadURL(t *testing.T) {
 	tests := []struct {
 		name              string

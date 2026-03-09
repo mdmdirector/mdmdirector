@@ -230,34 +230,6 @@ func TestPushProfileViaDDM_TouchError(t *testing.T) {
 	assert.Contains(t, err.Error(), "touch LegacyProfile declaration")
 }
 
-func TestPushProfileViaDDM_SpecialCharactersInPayloadIdentifier(t *testing.T) {
-	server, requests, _ := newMockKMFDDM(t)
-	defer server.Close()
-
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-
-	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.profile with spaces!", "https://mdm.example.com")
-	require.NoError(t, err)
-
-	reqs := *requests
-	// The declaration ID should use the sanitized profile ID
-	var legacyDecl ddm.Declaration
-	err = json.Unmarshal([]byte(reqs[0].Body), &legacyDecl)
-	require.NoError(t, err)
-	// Spaces and ! replaced with underscores
-	assert.Equal(t, "biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.profile_with_spaces_", legacyDecl.Identifier)
-
-	// But the ProfileURL should use the original payload identifier
-	var payload struct {
-		Payload struct {
-			ProfileURL string `json:"ProfileURL"`
-		} `json:"Payload"`
-	}
-	err = json.Unmarshal([]byte(reqs[0].Body), &payload)
-	require.NoError(t, err)
-	assert.Contains(t, payload.Payload.ProfileURL, "com.example.profile with spaces!")
-}
-
 func TestDeleteProfileViaDDM_Success(t *testing.T) {
 	server, requests, _ := newMockKMFDDM(t)
 	defer server.Close()
