@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -140,6 +142,10 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 }
 
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
+	if utils.UseDDMPackages() {
+		return nil, PushApplicationsViaDDM(devices, installApplication.ManifestURL)
+	}
+
 	var sentCommands []types.Command
 	for i := range devices {
 		device := devices[i]
@@ -190,6 +196,10 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 }
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
+	if utils.UseDDMPackages() {
+		return nil, PushSharedApplicationsViaDDM(devices, installSharedApplication.ManifestURL)
+	}
+
 	var sentCommands []types.Command
 	for i := range devices {
 		device := devices[i]
@@ -216,6 +226,10 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
+	if utils.UseDDMPackages() {
+		return nil, installBootstrapPackagesViaDDM(device)
+	}
+
 	var sharedInstallApplication types.SharedInstallApplication
 	var deviceInstallApplication types.DeviceInstallApplication
 	var sharedInstallApplications []types.SharedInstallApplication
@@ -258,6 +272,43 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 	}
 
 	return sentCommands, nil
+}
+
+func installBootstrapPackagesViaDDM(device types.Device) error {
+	client, err := ddm.Client()
+	if err != nil {
+		return err
+	}
+
+	var sharedInstallApplications []types.SharedInstallApplication
+	if err := db.DB.Find(&sharedInstallApplications).Error; err != nil {
+		return errors.Wrap(err, "installBootstrapPackagesViaDDM: querying shared apps")
+	}
+
+	for _, sharedApp := range sharedInstallApplications {
+		log.Debugf("InstallApplication via DDM (shared): %v", sharedApp)
+		app := types.DeviceInstallApplication{
+			ID:          sharedApp.ID,
+			ManifestURL: sharedApp.ManifestURL,
+		}
+		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+			return errors.Wrapf(err, "installBootstrapPackagesViaDDM: pushing shared app %s", sharedApp.ManifestURL)
+		}
+	}
+
+	var deviceInstallApplications []types.DeviceInstallApplication
+	if err := db.DB.Where("device_ud_id = ?", device.UDID).Find(&deviceInstallApplications).Error; err != nil {
+		return errors.Wrap(err, "installBootstrapPackagesViaDDM: querying device apps")
+	}
+
+	for _, app := range deviceInstallApplications {
+		log.Debugf("InstallApplication via DDM (device): %v", app)
+		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+			return errors.Wrapf(err, "installBootstrapPackagesViaDDM: pushing device app %s", app.ManifestURL)
+		}
+	}
+
+	return nil
 }
 
 func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {

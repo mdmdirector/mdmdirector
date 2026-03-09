@@ -40,194 +40,179 @@ func profileListDataJSON(profileListData types.ProfileListData) ([]byte, error) 
 
 func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.PostPayload
-
-	err := json.NewDecoder(r.Body).Decode(&out)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
+		return
 	}
-
-	var device types.Device
 
 	if out.CheckinEvent != nil {
-		err = plist.Unmarshal(out.CheckinEvent.RawPayload, &device)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-	} else if out.AcknowledgeEvent != nil {
-		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &device)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-	}
-
-	if out.Topic == "mdm.CheckOut" {
-		err = ResetDevice(device)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-	} else {
-		device.Active = true
-	}
-
-	switch out.Topic {
-	case "mdm.Authenticate":
-		err = ResetDevice(device)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-	case "mdm.TokenUpdate":
-		tokenUpdateDevice, err := SetTokenUpdate(device)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-
-		if !tokenUpdateDevice.InitialTasksRun {
-			_, err := UpdateDevice(device)
-			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-			}
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks due to device update"})
-			err = RunInitialTasks(device.UDID)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-			return
-		}
-	}
-	oldUDID := device.UDID
-	oldBuild := device.BuildVersion
-	if device.UDID == "" {
-		log.Error(out)
-		log.Fatal("No device UDID set")
-	}
-	updatedDevice, err := UpdateDevice(device)
-	if err != nil {
-		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-	}
-
-	if !updatedDevice.InitialTasksRun && updatedDevice.TokenUpdateRecieved {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks due to device update"})
-		err = RunInitialTasks(device.UDID)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		if err := handleCheckinEvent(out.Topic, out.CheckinEvent); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 		return
 	}
 
-	if utils.PushOnNewBuild() {
-		err = pushOnNewBuild(oldUDID, oldBuild)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-	}
-
 	if out.AcknowledgeEvent != nil {
-
-		var payloadDict map[string]interface{}
-		err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &payloadDict)
-		if err != nil {
-			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-		}
-
-		if out.AcknowledgeEvent.CommandUUID != "" {
-			err = UpdateCommand(out.AcknowledgeEvent, device, payloadDict)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-		}
-
-		if out.AcknowledgeEvent.Status == "Idle" {
-			RequestDeviceUpdate(device)
-			return
-		}
-
-		// Is this a ProfileList response?
-		_, ok := payloadDict["ProfileList"]
-		if ok {
-			lh := LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"}
-			InfoLogger(lh)
-			var profileListData types.ProfileListData
-			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &profileListData)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-				return
-			}
-			jsonBlob, err := profileListDataJSON(profileListData)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			} else {
-				DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "ProfileList Data", Metric: string(jsonBlob)})
-			}
-
-			err = VerifyMDMProfiles(profileListData, device)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-
-			if err == nil {
-				plErr := device.UpdateLastProfileList()
-				if plErr != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: plErr.Error()})
-				}
-			}
-		}
-
-		_, ok = payloadDict["SecurityInfo"]
-		if ok {
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received SecurityInfo payload"})
-			var securityInfoData types.SecurityInfoData
-			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &securityInfoData)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-			err = SaveSecurityInfo(securityInfoData, device)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-		}
-
-		_, ok = payloadDict["CertificateList"]
-		if ok {
-			var certificateListData types.CertificateListData
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received CertificateList payload"})
-			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &certificateListData)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-			err = processCertificateList(certificateListData, device)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-
-			if err == nil {
-				clErr := device.UpdateLastCertificateList()
-				if clErr != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: clErr.Error()})
-				}
-			}
-		}
-
-		_, ok = payloadDict["QueryResponses"]
-		if ok {
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received DeviceInformation.QueryResponses payload"})
-			var deviceInformationQueryResponses types.DeviceInformationQueryResponses
-			err = plist.Unmarshal(out.AcknowledgeEvent.RawPayload, &deviceInformationQueryResponses)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-			_, err = UpdateDevice(deviceInformationQueryResponses.QueryResponses)
-			if err != nil {
-				ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-			}
-
-			if err == nil {
-				diErr := device.UpdateLastDeviceInfo()
-				if diErr != nil {
-					ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: diErr.Error()})
-				}
-			}
+		if err := handleAcknowledgeEvent(out.AcknowledgeEvent); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
+}
+
+func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
+	var device types.Device
+	if err := plist.Unmarshal(event.RawPayload, &device); err != nil {
+		return errors.Wrap(err, "handleCheckinEvent:plist.Unmarshal")
+	}
+
+	if topic == "mdm.CheckOut" {
+		if err := ResetDevice(device); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+		return nil
+	}
+
+	device.Active = true
+	oldBuild := device.BuildVersion
+
+	switch topic {
+	case "mdm.Authenticate":
+		if err := ResetDevice(device); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+	case "mdm.TokenUpdate":
+		if _, err := SetTokenUpdate(device); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+	}
+
+	currentDevice, err := UpdateDevice(device)
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
+	}
+
+	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})
+		if err := RunInitialTasks(device.UDID); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+		return nil
+	}
+
+	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
+		if err := SendDeviceConfigured(*currentDevice); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+	}
+
+	if utils.PushOnNewBuild() {
+		if err := pushOnNewBuild(device.UDID, oldBuild); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+	}
+
+	return nil
+}
+
+func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
+	var device types.Device
+	if err := plist.Unmarshal(event.RawPayload, &device); err != nil {
+		return errors.Wrap(err, "handleAcknowledgeEvent:plist.Unmarshal")
+	}
+
+	var payloadDict map[string]interface{}
+	if err := plist.Unmarshal(event.RawPayload, &payloadDict); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
+	}
+
+	device.Active = true
+	if _, err := UpdateDevice(device); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
+	}
+
+	if event.CommandUUID != "" {
+		if err := UpdateCommand(event, device, payloadDict); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
+	}
+
+	if event.Status == "Idle" {
+		RequestDeviceUpdate(device)
+		return nil
+	}
+
+	if err := processAcknowledgePayload(event, device, payloadDict); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
+	}
+	return nil
+}
+
+func processAcknowledgePayload(event *types.AcknowledgeEvent, device types.Device, payloadDict map[string]interface{}) error {
+	if _, ok := payloadDict["ProfileList"]; ok {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received ProfileList payload"})
+		var profileListData types.ProfileListData
+		if err := plist.Unmarshal(event.RawPayload, &profileListData); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:ProfileList:plist.Unmarshal")
+		}
+
+		jsonBlob, err := profileListDataJSON(profileListData)
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
+		} else {
+			DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "ProfileList Data", Metric: string(jsonBlob)})
+		}
+
+		if err := VerifyMDMProfiles(profileListData, device); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:VerifyMDMProfiles")
+		}
+		return device.UpdateLastProfileList()
+	}
+
+	if _, ok := payloadDict["SecurityInfo"]; ok {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received SecurityInfo payload"})
+		var securityInfoData types.SecurityInfoData
+		if err := plist.Unmarshal(event.RawPayload, &securityInfoData); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:SecurityInfo:plist.Unmarshal")
+		}
+		return SaveSecurityInfo(securityInfoData, device)
+	}
+
+	if _, ok := payloadDict["CertificateList"]; ok {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received CertificateList payload"})
+		var certificateListData types.CertificateListData
+		if err := plist.Unmarshal(event.RawPayload, &certificateListData); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:CertificateList:plist.Unmarshal")
+		}
+		if err := processCertificateList(certificateListData, device); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:processCertificateList")
+		}
+		return device.UpdateLastCertificateList()
+	}
+
+	if _, ok := payloadDict["QueryResponses"]; ok {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Received DeviceInformation.QueryResponses payload"})
+		var deviceInformationQueryResponses types.DeviceInformationQueryResponses
+		if err := plist.Unmarshal(event.RawPayload, &deviceInformationQueryResponses); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:QueryResponses:plist.Unmarshal")
+		}
+		if _, err := UpdateDevice(deviceInformationQueryResponses.QueryResponses); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:UpdateDeviceInfo")
+		}
+		return device.UpdateLastDeviceInfo()
+	}
+
+	return nil
 }
 
 func RequestDeviceUpdate(device types.Device) {

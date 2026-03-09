@@ -75,7 +75,9 @@ func reinstallEnrollmentProfile(device types.Device) error {
 		}
 
 		profile.MobileconfigData = data
-		_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
+
+		// enrollment profile cannot be installed using DDM
+		_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile}, false)
 		if err != nil {
 			return errors.Wrap(err, "Failed to push enrollment profile")
 		}
