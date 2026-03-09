@@ -107,6 +107,9 @@ var NanoMDMURL string
 // UseDDM controls whether profile management uses DDM instead of InstallProfile
 var UseDDM bool
 
+// UseDDMPackages controls whether package installation uses DDM instead of InstallApplication commands
+var UseDDMPackages bool
+
 func main() {
 	var port string
 	var debugMode bool
@@ -305,6 +308,12 @@ func main() {
 		"use-ddm",
 		env.Bool("USE_DDM", false),
 		"Enable DDM profile management via KMFDDM instead of InstallProfile commands",
+	)
+	flag.BoolVar(
+		&UseDDMPackages,
+		"use-ddm-packages",
+		env.Bool("USE_DDM_PACKAGES", false),
+		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
 	)
 	flag.Parse()
 

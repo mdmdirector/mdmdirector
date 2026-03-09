@@ -4,6 +4,7 @@ package ddm
 const (
 	TypeLegacyProfile    = "com.apple.configuration.legacy"
 	TypeActivationSimple = "com.apple.activation.simple"
+	TypePackage          = "com.apple.configuration.management.package"
 )
 
 // Declaration represents a KMFDDM declaration object
@@ -23,4 +24,9 @@ type LegacyProfilePayload struct {
 // ActivationSimplePayload is the Payload for a com.apple.activation.simple declaration
 type ActivationSimplePayload struct {
 	StandardConfigurations []string `json:"StandardConfigurations"`
+}
+
+// PackagePayload is the Payload for a com.apple.configuration.management.package declaration
+type PackagePayload struct {
+	ManifestURL string `json:"ManifestURL"`
 }

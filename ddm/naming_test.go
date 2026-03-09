@@ -50,7 +50,7 @@ func TestActivationDeclarationID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ActivationDeclarationID(tt.udid, tt.profileID)
+			result := ProfileActivationDeclarationID(tt.udid, tt.profileID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
