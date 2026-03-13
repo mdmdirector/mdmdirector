@@ -609,6 +609,21 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
+	var priv crypto.PrivateKey
+	var pub *x509.Certificate
+	if utils.Sign() {
+		var err error
+		priv, pub, err = loadSigningKey(
+			utils.KeyPassword(),
+			utils.KeyPath(),
+			utils.CertPath(),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "loading signing certificate and private key")
+		}
+	}
+
 	for i := range devices {
 		device := devices[i]
 		for i := range profiles {
@@ -628,17 +643,12 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 			)
 
 			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					log.Errorf("loading signing certificate and private key: %v", err)
-				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
-					log.Errorf("signing profile with the specified key: %v", err)
+					wrappedErr := fmt.Errorf("device %s profile %s: signing profile: %w", device.UDID, profileData.PayloadIdentifier, err)
+					log.Errorf("%v", wrappedErr)
+					errs = append(errs, wrappedErr)
+					continue
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
@@ -650,14 +660,17 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func SaveSharedProfiles(profiles []types.SharedProfile) error {
@@ -708,7 +721,8 @@ func DeleteSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			log.Errorf("DeleteSharedProfiles: could not query device-specific profiles: %v", err)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -737,7 +751,8 @@ func DeleteSharedProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteSharedProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -771,7 +786,8 @@ func DeleteDeviceProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteDeviceProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -785,6 +801,21 @@ func PushSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
+	var priv crypto.PrivateKey
+	var pub *x509.Certificate
+	if utils.Sign() {
+		var err error
+		priv, pub, err = loadSigningKey(
+			utils.KeyPassword(),
+			utils.KeyPath(),
+			utils.CertPath(),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "loading signing certificate and private key")
+		}
+	}
+
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -792,7 +823,10 @@ func PushSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("PushSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -822,17 +856,12 @@ func PushSharedProfiles(
 			)
 
 			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-				}
 				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
 				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+					wrappedErr := fmt.Errorf("device %s profile %s: signing profile: %w", device.UDID, profileData.PayloadIdentifier, err)
+					log.Errorf("%v", wrappedErr)
+					errs = append(errs, wrappedErr)
+					continue
 				}
 
 				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
@@ -842,14 +871,17 @@ func PushSharedProfiles(
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 type ProfileForVerification struct {
