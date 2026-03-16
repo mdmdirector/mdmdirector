@@ -566,6 +566,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error {
+	var errs []error
 	for i := range devices {
 		device := devices[i]
 		if device.UDID == "" {
@@ -580,7 +581,10 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 			err := db.DB.Save(&profileData).Error
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.Wrap(err, "Save incoming profile")
+					wrappedErr := fmt.Errorf("device %s profile %s: save incoming profile: %w", device.UDID, profileData.PayloadIdentifier, err)
+					log.Errorf("%v", wrappedErr)
+					errs = append(errs, wrappedErr)
+					continue
 				}
 			}
 
@@ -599,12 +603,15 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 				}).
 				Error
 			if err != nil {
-				return errors.Wrap(err, "Update boolean on profile")
+				wrappedErr := fmt.Errorf("device %s profile %s: update installed bool: %w", device.UDID, profileData.PayloadIdentifier, err)
+				log.Errorf("%v", wrappedErr)
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 		}
 	}
-	return nil
+	return intErrors.Join(errs...)
 }
 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
@@ -679,6 +686,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 		return nil
 	}
 
+	var errs []error
 	for _, profileData := range profiles {
 		if profileData.PayloadIdentifier != "" {
 			err := db.DB.Model(&profile).
@@ -686,27 +694,25 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 				Delete(&profile).
 				Error
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-				return errors.Wrap(err, "Deleting shared profiles")
+				wrappedErr := fmt.Errorf("profile %s: delete shared profile: %w", profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 		}
 	}
 
-	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
 		// utils.PrintStruct(profileData)
-		err := tx2.Create(&profileData).Error
+		err := db.DB.Model(&profile).Create(&profileData).Error
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			wrappedErr := fmt.Errorf("profile %s: create shared profile: %w", profileData.PayloadIdentifier, err)
+			ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+			errs = append(errs, wrappedErr)
 		}
 	}
 
-	err := tx2.Error
-	if err != nil {
-		return errors.Wrap(err, "Saving shared profiles")
-	}
-	// db.DB.Create(&profiles)
-	return nil
+	return intErrors.Join(errs...)
 }
 
 func DeleteSharedProfiles(
