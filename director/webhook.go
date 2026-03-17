@@ -59,6 +59,29 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// reconcileDeviceState handles post-enrollment lifecycle transitions after any device event
+// Returns (true, nil) if RunInitialTasks was triggered — caller must return immediately
+// Returns (false, err) if SendDeviceConfigured failed — caller must propagate the error
+func reconcileDeviceState(device types.Device, currentDevice *types.Device) (bool, error) {
+	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})
+		if err := RunInitialTasks(device.UDID); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return true, err
+		}
+		return true, nil
+	}
+
+	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
+		if err := SendDeviceConfigured(*currentDevice); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
 func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 	var device types.Device
 	if err := plist.Unmarshal(event.RawPayload, &device); err != nil {
@@ -95,20 +118,8 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return err
 	}
 
-	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})
-		if err := RunInitialTasks(device.UDID); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return err
-		}
-		return nil
-	}
-
-	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
-		if err := SendDeviceConfigured(*currentDevice); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return err
-		}
+	if done, err := reconcileDeviceState(device, currentDevice); done || err != nil {
+		return err
 	}
 
 	if utils.PushOnNewBuild() {
@@ -134,9 +145,22 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	}
 
 	device.Active = true
-	if _, err := UpdateDevice(device); err != nil {
+	currentDevice, err := UpdateDevice(device)
+	if err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 		return err
+	}
+
+	if done, err := reconcileDeviceState(device, currentDevice); done || err != nil {
+		return err
+	}
+
+	oldBuild := device.BuildVersion
+	if utils.PushOnNewBuild() {
+		if err := pushOnNewBuild(device.UDID, oldBuild); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			return err
+		}
 	}
 
 	if event.CommandUUID != "" {
