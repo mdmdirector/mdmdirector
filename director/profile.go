@@ -29,6 +29,20 @@ import (
 	"gorm.io/gorm"
 )
 
+var signingPrivKey crypto.PrivateKey
+var signingCert *x509.Certificate
+
+// InitSigningKey loads the signing key and certificate at startup
+func InitSigningKey() error {
+	var err error
+	signingPrivKey, signingCert, err = loadSigningKey(
+		utils.KeyPassword(),
+		utils.KeyPath(),
+		utils.CertPath(),
+	)
+	return err
+}
+
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	var sharedProfiles []types.SharedProfile
@@ -617,19 +631,6 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
 	var errs []error
-	var priv crypto.PrivateKey
-	var pub *x509.Certificate
-	if utils.Sign() {
-		var err error
-		priv, pub, err = loadSigningKey(
-			utils.KeyPassword(),
-			utils.KeyPath(),
-			utils.CertPath(),
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "loading signing certificate and private key")
-		}
-	}
 
 	for i := range devices {
 		device := devices[i]
@@ -650,7 +651,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 			)
 
 			if utils.Sign() {
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
+				signed, err := SignProfile(signingPrivKey, signingCert, profileData.MobileconfigData)
 				if err != nil {
 					wrappedErr := fmt.Errorf("device %s profile %s: signing profile: %w", device.UDID, profileData.PayloadIdentifier, err)
 					log.Errorf("%v", wrappedErr)
@@ -808,19 +809,6 @@ func PushSharedProfiles(
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
 	var errs []error
-	var priv crypto.PrivateKey
-	var pub *x509.Certificate
-	if utils.Sign() {
-		var err error
-		priv, pub, err = loadSigningKey(
-			utils.KeyPassword(),
-			utils.KeyPath(),
-			utils.CertPath(),
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "loading signing certificate and private key")
-		}
-	}
 
 	for i := range profiles {
 		profileData := profiles[i]
@@ -862,7 +850,7 @@ func PushSharedProfiles(
 			)
 
 			if utils.Sign() {
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
+				signed, err := SignProfile(signingPrivKey, signingCert, profileData.MobileconfigData)
 				if err != nil {
 					wrappedErr := fmt.Errorf("device %s profile %s: signing profile: %w", device.UDID, profileData.PayloadIdentifier, err)
 					log.Errorf("%v", wrappedErr)
@@ -989,13 +977,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
-	_, cert, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
-	if err != nil {
-		log.Errorf("loading signing certificate and private key: %v", err)
-	}
-
 	// ensure certificate matches on enrollment profile
-	err = ensureCertOnEnrollmentProfile(device, profileLists, cert)
+	err = ensureCertOnEnrollmentProfile(device, profileLists, signingCert)
 	if err != nil {
 		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
 	}
@@ -1005,7 +988,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		isInstalled, needsReinstall, err := validateProfileInProfileList(
 			profileForVerification,
 			profileLists,
-			cert,
+			signingCert,
 		)
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")

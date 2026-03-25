@@ -309,6 +309,12 @@ func main() {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
+	if utils.Sign() {
+		if err := director.InitSigningKey(); err != nil {
+			log.Fatalf("Failed to load signing key: %v", err)
+		}
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/webhook", director.WebhookHandler).Methods("POST")
 	r.HandleFunc("/profile", utils.BasicAuth(director.PostProfileHandler)).Methods("POST")
