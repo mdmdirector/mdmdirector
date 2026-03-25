@@ -1339,43 +1339,53 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	return pushedCommands, nil
 }
 
+func findMobileconfigData(udid, profileIdentifier string) ([]byte, error) {
+	var deviceProfile types.DeviceProfile
+	err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", udid, profileIdentifier).First(&deviceProfile).Error
+	if err == nil {
+		if !deviceProfile.Installed {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return deviceProfile.MobileconfigData, nil
+	}
+	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("device profile lookup: %w", err)
+	}
+
+	var sharedProfile types.SharedProfile
+	err = db.DB.Where("payload_identifier = ?", profileIdentifier).First(&sharedProfile).Error
+	if err == nil {
+		if !sharedProfile.Installed {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return sharedProfile.MobileconfigData, nil
+	}
+	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("shared profile lookup: %w", err)
+	}
+
+	return nil, gorm.ErrRecordNotFound
+}
+
 func ProfileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	udid := vars["udid"]
 	profileIdentifier := vars["profileIdentifier"]
 
-	// Verify UDID matches X-Enrollment-ID header set by NanoMDM Auth Proxy
-	enrollmentID := r.Header.Get("X-Enrollment-ID")
-	if enrollmentID != udid {
+	if r.Header.Get("X-Enrollment-ID") != udid {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	var mobileconfigData []byte
-
-	// Try device-specific profile first
-	var deviceProfile types.DeviceProfile
-	err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", udid, profileIdentifier).First(&deviceProfile).Error
-	if err == nil {
-		if !deviceProfile.Installed {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
-		mobileconfigData = deviceProfile.MobileconfigData
-	} else {
-		// Try shared profile
-		var sharedProfile types.SharedProfile
-		err = db.DB.Where("payload_identifier = ?", profileIdentifier).First(&sharedProfile).Error
-		if err == nil {
-			if !sharedProfile.Installed {
-				http.Error(w, "Not Found", http.StatusNotFound)
-				return
-			}
-			mobileconfigData = sharedProfile.MobileconfigData
-		} else {
-			http.Error(w, "Not Found", http.StatusNotFound)
-			return
-		}
+	mobileconfigData, err := findMobileconfigData(udid, profileIdentifier)
+	if intErrors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Errorf("profile download lookup: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 
 	responseData, err := signIfRequired(mobileconfigData)
