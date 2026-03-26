@@ -22,8 +22,8 @@ type RetryConfig struct {
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxRetries:    3,
-		MaxBackoff:    30 * time.Second,
-		BackoffFactor: 2.0,
+		MaxBackoff:    20 * time.Second,
+		BackoffFactor: 1.5,
 	}
 }
 
@@ -98,12 +98,14 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 
 		// Non-retryable error
 		if lastErr != nil && !isRetryableError(lastErr) {
+			if resp != nil {
+				resp.Body.Close()
+			}
 			return nil, errors.Wrap(lastErr, "non-retryable error")
 		}
 
 		// Close response body before retry to prevent resource leak
 		if resp != nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 	}
