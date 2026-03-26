@@ -107,6 +107,9 @@ var NanoMDMURL string
 // UseDDM controls whether profile management uses DDM instead of InstallProfile
 var UseDDM bool
 
+// DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
+var DDMDeclarationPrefix string
+
 func main() {
 	var port string
 	var debugMode bool
@@ -306,6 +309,12 @@ func main() {
 		env.Bool("USE_DDM", false),
 		"Enable DDM profile management via KMFDDM instead of InstallProfile commands",
 	)
+	flag.StringVar(
+		&DDMDeclarationPrefix,
+		"ddm-declaration-prefix",
+		env.String("DDM_DECLARATION_PREFIX", ""),
+		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -355,6 +364,9 @@ func main() {
 		}
 		if NanoMDMURL == "" {
 			log.Fatal("NanoMDM URL is required when DDM is enabled. Exiting.")
+		}
+		if DDMDeclarationPrefix == "" {
+			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
 		}
 		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
 	}

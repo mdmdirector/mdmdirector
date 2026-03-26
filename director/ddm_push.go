@@ -11,8 +11,8 @@ import (
 
 // PushProfileViaDDM pushes a single profile via DDM declarations
 func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
-	legacyDeclID := ddm.LegacyProfileDeclarationID(udid, payloadIdentifier)
-	activationDeclID := ddm.ActivationDeclarationID(udid, payloadIdentifier)
+	legacyDeclID := ddm.LegacyProfileDeclarationID(utils.DDMDeclarationPrefix(), udid, payloadIdentifier)
+	activationDeclID := ddm.ActivationDeclarationID(utils.DDMDeclarationPrefix(), udid, payloadIdentifier)
 	profileURL := ddm.ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier)
 
 	// Step 1: PUT LegacyProfile declaration (noNotify=true)
