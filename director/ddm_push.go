@@ -29,7 +29,7 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT LegacyProfile declaration for %s on %s", payloadIdentifier, udid)
 	}
 
-	// If unchanged (204), touch to force reinstall
+	// If unchanged (304), touch to force reinstall
 	if !legacyChanged {
 		if err := client.TouchDeclaration(legacyDeclID, true); err != nil {
 			return errors.Wrapf(err, "PushProfileViaDDM: touch LegacyProfile declaration for %s on %s", payloadIdentifier, udid)
@@ -50,7 +50,7 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT ActivationSimple declaration for %s on %s", payloadIdentifier, udid)
 	}
 
-	// If unchanged (204), touch to force reinstall
+	// If unchanged (304), touch to force reinstall
 	if !activationChanged {
 		if err := client.TouchDeclaration(activationDeclID, true); err != nil {
 			return errors.Wrapf(err, "PushProfileViaDDM: touch ActivationSimple declaration for %s on %s", payloadIdentifier, udid)

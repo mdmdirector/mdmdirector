@@ -85,8 +85,8 @@ func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	server, requests, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	// Override PUT declarations to return 204 (unchanged)
-	statusOverrides["PUT /v1/declarations"] = http.StatusNoContent
+	// Override PUT declarations to return 304 (unchanged)
+	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
 	app := newTestApp("https://example.com/app.plist")
@@ -94,7 +94,7 @@ func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	err := PushApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.NoError(t, err)
 
-	// When declarations are unchanged (204), touch calls should be made.
+	// When declarations are unchanged (304), touch calls should be made.
 	// Expected: PUT decl (package), POST touch (package), PUT decl (activation),
 	// POST touch (activation), PUT set-decl (package), PUT set-decl (activation),
 	// PUT enrollment-set
@@ -197,8 +197,8 @@ func TestPushApplicationViaDDM_TouchError(t *testing.T) {
 	server, _, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	// Declarations return 204 (unchanged) so touch is called
-	statusOverrides["PUT /v1/declarations"] = http.StatusNoContent
+	// Declarations return 304 (unchanged) so touch is called
+	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 	// Touch returns 500
 	statusOverrides["POST /v1/declarations/"+testPackageID+"/touch"] = http.StatusInternalServerError
 
