@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -28,7 +29,7 @@ func InitClient(baseURL, apiKey string) {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		username:   KMFDDMAuthUsername,
 		apiKey:     apiKey,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 20 * time.Second},
 	}
 }
 

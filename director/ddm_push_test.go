@@ -2,14 +2,21 @@ package director
 
 import (
 	"encoding/json"
+	"flag"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	flag.String("ddm-declaration-prefix", "biz.airbnb", "DDM declaration prefix")
+	os.Exit(m.Run())
+}
 
 // requestLog records HTTP requests made to the mock KMFDDM server.
 type requestLog struct {
