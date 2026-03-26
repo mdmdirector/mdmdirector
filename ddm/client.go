@@ -94,8 +94,8 @@ func (c *KMFDDMClient) doRequest(method, urlPath string, queryParams url.Values,
 }
 
 // PutDeclaration stores a declaration in KMFDDM (creating or overwriting)
-// Returns changed=true when the declaration was new or modified (HTTP 304),
-// changed=false when unchanged (HTTP 204)
+// Returns changed=true when the declaration was new or modified (HTTP 204),
+// changed=false when unchanged (HTTP 304)
 func (c *KMFDDMClient) PutDeclaration(declaration Declaration, noNotify bool) (changed bool, err error) {
 	body, err := json.Marshal(declaration)
 	if err != nil {
@@ -114,9 +114,9 @@ func (c *KMFDDMClient) PutDeclaration(declaration Declaration, noNotify bool) (c
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusNotModified: // 304 = changed/new in KMFDDM
+	case http.StatusNoContent: // 204 = changed/new in KMFDDM
 		return true, nil
-	case http.StatusNoContent: // 204 = unchanged in KMFDDM
+	case http.StatusNotModified: // 304 = unchanged in KMFDDM
 		return false, nil
 	default:
 		respBody, _ := io.ReadAll(resp.Body)

@@ -28,7 +28,7 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT Package declaration for %s on %s", app.ManifestURL, udid)
 	}
 
-	// If unchanged (204), touch to force reinstall
+	// If unchanged (304), touch to force reinstall
 	if !packageChanged {
 		if err := client.TouchDeclaration(packageDeclID, true); err != nil {
 			return errors.Wrapf(err, "PushApplicationViaDDM: touch Package declaration for %s on %s", app.ManifestURL, udid)
@@ -49,7 +49,7 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT ActivationSimple declaration for %s on %s", app.ManifestURL, udid)
 	}
 
-	// If unchanged (204), touch to force reinstall
+	// If unchanged (304), touch to force reinstall
 	if !activationChanged {
 		if err := client.TouchDeclaration(activationDeclID, true); err != nil {
 			return errors.Wrapf(err, "PushApplicationViaDDM: touch ActivationSimple declaration for %s on %s", app.ManifestURL, udid)

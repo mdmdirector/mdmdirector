@@ -32,8 +32,8 @@ func TestPutDeclaration_Changed(t *testing.T) {
 		assert.Equal(t, "test.declaration.id", decl.Identifier)
 		assert.Equal(t, TypeLegacyProfile, decl.Type)
 
-		// 304 = changed/new in KMFDDM
-		w.WriteHeader(http.StatusNotModified)
+		// 204 = changed/new in KMFDDM
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
@@ -53,8 +53,8 @@ func TestPutDeclaration_Changed(t *testing.T) {
 
 func TestPutDeclaration_Unchanged(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 204 = unchanged in KMFDDM
-		w.WriteHeader(http.StatusNoContent)
+		// 304 = unchanged in KMFDDM
+		w.WriteHeader(http.StatusNotModified)
 	}))
 	defer server.Close()
 
@@ -74,7 +74,7 @@ func TestPutDeclaration_NoNotifyFalse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// nonotify should not be in query params
 		assert.Empty(t, r.URL.Query().Get("nonotify"))
-		w.WriteHeader(http.StatusNotModified)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
