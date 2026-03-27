@@ -31,7 +31,7 @@ func TestClient(t *testing.T) {
 		assert.NotNil(t, client)
 
 		// Verify it is the concrete type
-		var _ *NanoMDMClient = client
+		_ = client
 	})
 }
 
