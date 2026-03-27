@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -49,12 +50,18 @@ func ScheduledCheckin(pushQueue taskq.Queue, onceIn time.Duration) {
 	var wg sync.WaitGroup
 	sem := make(chan int, 1)
 
+	minInterval := time.Minute
+
 	fn := func(sem chan int, wg *sync.WaitGroup) {
 		defer wg.Done()
+		start := time.Now()
 		log.Info("Running scheduled checkin")
 		err := processScheduledCheckin(pushQueue, task, onceIn)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+		if elapsed := time.Since(start); elapsed < minInterval {
+			time.Sleep(minInterval - elapsed)
 		}
 		<-sem
 	}
@@ -142,6 +149,11 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
 		return errors.Wrap(err, "PushAll: Scan devices")
+	}
+
+	if len(dbDevices) == 0 {
+		InfoLogger(LogHolder{Message: "No enrolled devices, skipping push scheduling"})
+		return nil
 	}
 
 	for i := range dbDevices {
@@ -244,6 +256,16 @@ func deviceNeedsPush(device types.Device) bool {
 }
 
 func PushDevice(udid string) error {
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		nanoClient, err := mdm.Client()
+		if err != nil {
+			return err
+		}
+		return pushDeviceWithClient(nanoClient, udid)
+	}
+
+	// MicroMDM implementation
 	device := types.Device{UDID: udid}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending push to device"})
 	now := time.Now()
@@ -280,5 +302,23 @@ func PushDevice(udid string) error {
 
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sent push to device"})
 
+	return nil
+}
+
+// pushDeviceWithClient sends a push notification via NanoMDM using the provided client
+func pushDeviceWithClient(nanoClient *mdm.NanoMDMClient, udid string) error {
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sending push to device via NanoMDM"})
+
+	resp, err := nanoClient.Push(udid)
+	if err != nil {
+		return errors.Wrap(err, "PushDevice")
+	}
+
+	pushErr, _ := resp.ErrorsForID(udid)
+	if pushErr != "" {
+		return errors.Errorf("push failed: %s", pushErr)
+	}
+
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device via NanoMDM"})
 	return nil
 }

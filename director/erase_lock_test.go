@@ -1,7 +1,15 @@
 package director
 
 import (
+	"flag"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
 )
 
 const testBodyDeviceLock = `{
@@ -31,4 +39,97 @@ func TestCheckForExistingCommands(t *testing.T) {
 		t.Errorf("Expected EraseDevice command to not be found")
 	}
 
+}
+
+// registerEscrowFlag ensures the escrowurl flag is registered exactly once.
+// The flag is normally registered in main(), which does not run during tests.
+func registerEscrowFlag() {
+	if flag.Lookup("escrowurl") == nil {
+		flag.String("escrowurl", "", "")
+	}
+}
+
+func TestEscrowPinSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	registerEscrowFlag()
+	flag.Set("escrowurl", server.URL) //nolint:errcheck
+	defer flag.Set("escrowurl", "")   //nolint:errcheck
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	device := types.Device{UDID: "test-udid", SerialNumber: "test-serial"}
+
+	err := escrowPin(device, "123456")
+	assert.NoError(t, err)
+
+	var found bool
+	for _, entry := range hook.Entries {
+		if entry.Level == logrus.InfoLevel && entry.Message == "Successfully escrowed pin" {
+			found = true
+			assert.Equal(t, "test-udid", entry.Data["device_udid"])
+			assert.Equal(t, "test-serial", entry.Data["device_serial"])
+		}
+	}
+	assert.True(t, found, "expected info log 'Successfully escrowed pin'")
+}
+
+func TestEscrowPinServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal server error")) //nolint:errcheck
+	}))
+	defer server.Close()
+
+	registerEscrowFlag()
+	flag.Set("escrowurl", server.URL) //nolint:errcheck
+	defer flag.Set("escrowurl", "")   //nolint:errcheck
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	device := types.Device{UDID: "test-udid", SerialNumber: "test-serial"}
+
+	err := escrowPin(device, "123456")
+	assert.Error(t, err)
+
+	var found bool
+	for _, entry := range hook.Entries {
+		if entry.Level == logrus.ErrorLevel {
+			found = true
+			assert.Equal(t, "test-udid", entry.Data["device_udid"])
+			assert.Equal(t, "test-serial", entry.Data["device_serial"])
+			assert.Contains(t, entry.Message, "500")
+		}
+	}
+	assert.True(t, found, "expected error log for server error response")
+}
+
+func TestEscrowPinNoURL(t *testing.T) {
+	registerEscrowFlag()
+	flag.Set("escrowurl", "") //nolint:errcheck
+
+	originalLevel := logrus.GetLevel()
+	logrus.SetLevel(logrus.DebugLevel)
+	defer logrus.SetLevel(originalLevel)
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	device := types.Device{UDID: "test-udid", SerialNumber: "test-serial"}
+
+	err := escrowPin(device, "123456")
+	assert.NoError(t, err)
+
+	var found bool
+	for _, entry := range hook.Entries {
+		if entry.Level == logrus.DebugLevel && entry.Message == "No Escrow URL set, returning early" {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected debug log 'No Escrow URL set, returning early'")
 }
