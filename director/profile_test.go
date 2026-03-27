@@ -238,9 +238,9 @@ func TestValidateProfileInProfileList(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if test.signCheck {
-				flag.Set("sign", "true")
+				_ = flag.Set("sign", "true")
 			} else {
-				flag.Set("sign", "false")
+				_ = flag.Set("sign", "false")
 			}
 			var s *x509.Certificate
 			if test.signCheck {
@@ -288,7 +288,7 @@ func serveProfileDownload(rr *httptest.ResponseRecorder, req *http.Request) {
 }
 
 func TestProfileDownloadHandler_EnrollmentIDMismatch(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	rr, req := newProfileDownloadRequest("device-udid-123", "com.example.profile", "different-udid-456")
 	serveProfileDownload(rr, req)
 
@@ -296,7 +296,7 @@ func TestProfileDownloadHandler_EnrollmentIDMismatch(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_MissingEnrollmentID(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	rr, req := newProfileDownloadRequest("device-udid-123", "com.example.profile", "")
 	serveProfileDownload(rr, req)
 
@@ -304,7 +304,7 @@ func TestProfileDownloadHandler_MissingEnrollmentID(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_DeviceProfileFound(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
@@ -329,7 +329,7 @@ func TestProfileDownloadHandler_DeviceProfileFound(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_DeviceProfileNotInstalled(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
@@ -350,7 +350,7 @@ func TestProfileDownloadHandler_DeviceProfileNotInstalled(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_SharedProfileFallback(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
@@ -361,7 +361,7 @@ func TestProfileDownloadHandler_SharedProfileFallback(t *testing.T) {
 
 	// Device profile not found
 	mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1 AND payload_identifier = \$2`).
-		WithArgs("device-udid-123", "com.example.shared").
+		WithArgs("device-udid-124", "com.example.shared").
 		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier", "device_ud_id", "installed", "mobileconfig_data"}))
 
 	// Shared profile found
@@ -372,7 +372,7 @@ func TestProfileDownloadHandler_SharedProfileFallback(t *testing.T) {
 				AddRow("00000000-0000-0000-0000-000000000001", "com.example.shared", true, profileData),
 		)
 
-	rr, req := newProfileDownloadRequest("device-udid-123", "com.example.shared", "device-udid-123")
+	rr, req := newProfileDownloadRequest("device-udid-124", "com.example.shared", "device-udid-124")
 	serveProfileDownload(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -381,7 +381,7 @@ func TestProfileDownloadHandler_SharedProfileFallback(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_SharedProfileNotInstalled(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
@@ -408,7 +408,7 @@ func TestProfileDownloadHandler_SharedProfileNotInstalled(t *testing.T) {
 }
 
 func TestProfileDownloadHandler_NoProfileFound(t *testing.T) {
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 	postgresMock, mockSpy, _ := sqlmock.New()
 	defer postgresMock.Close()
 
@@ -433,7 +433,7 @@ func TestProfileDownloadHandler_NoProfileFound(t *testing.T) {
 
 func TestSignIfRequired_SigningDisabled(t *testing.T) {
 	// Ensure sign flag is false
-	flag.Set("sign", "false")
+	_ = flag.Set("sign", "false")
 
 	data := []byte("test mobileconfig data")
 	result, err := signIfRequired(data)
