@@ -318,8 +318,8 @@ func main() {
 		"ddm-declaration-prefix",
 		env.String("DDM_DECLARATION_PREFIX", ""),
 		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
-  ),
-  flag.StringVar(
+	)
+	flag.StringVar(
 		&MDMServerType,
 		"mdm-server-type",
 		env.String("MDM_SERVER_TYPE", "micromdm"),
@@ -379,8 +379,8 @@ func main() {
 			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
 		}
 		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
-  }
-  
+	}
+
 	if utils.Sign() {
 		if err := director.InitSigningKey(); err != nil {
 			log.Fatalf("Failed to load signing key: %v", err)
