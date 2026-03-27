@@ -713,6 +713,7 @@ func DeleteSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -720,7 +721,9 @@ func DeleteSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			log.Errorf("DeleteSharedProfiles: could not query device-specific profiles: %v", err)
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("DeleteSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
 			continue
 		}
 		skipUDIDs := make(map[string]struct{})
@@ -750,14 +753,16 @@ func DeleteSharedProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
 				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func DeleteDeviceProfiles(
