@@ -66,8 +66,8 @@ func newMockKMFDDM(t *testing.T) (*httptest.Server, *[]requestLog, map[string]in
 		// Default responses
 		switch {
 		case r.Method == "PUT" && r.URL.Path == "/v1/declarations":
-			// 304 = changed/new in KMFDDM
-			w.WriteHeader(http.StatusNotModified)
+			// 204 = changed/new in KMFDDM
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			// 204 for touch, set-declarations, enrollment-sets
 			w.WriteHeader(http.StatusNoContent)
@@ -86,7 +86,7 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
 
-	// When declarations are new (304), no touch calls should be made.
+	// When declarations are new/changed (204), no touch calls should be made.
 	// Expected sequence: PUT decl (legacy), PUT decl (activation), PUT set-decl (legacy),
 	// PUT set-decl (activation), PUT enrollment-set
 	assert.Len(t, *requests, 5)
@@ -137,15 +137,15 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	server, requests, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	// Override PUT declarations to return 204 (unchanged)
-	statusOverrides["PUT /v1/declarations"] = http.StatusNoContent
+	// Override PUT declarations to return 304 (unchanged)
+	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
 
-	// When declarations are unchanged (204), touch calls should be made.
+	// When declarations are unchanged (304), touch calls should be made.
 	// Expected: PUT decl (legacy), POST touch (legacy), PUT decl (activation),
 	// POST touch (activation), PUT set-decl (legacy), PUT set-decl (activation),
 	// PUT enrollment-set
@@ -153,7 +153,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	reqs := *requests
 
-	// Step 1: PUT LegacyProfile declaration (returns 204 = unchanged)
+	// Step 1: PUT LegacyProfile declaration (returns 304 = unchanged)
 	assert.Equal(t, "PUT", reqs[0].Method)
 	assert.Equal(t, "/v1/declarations", reqs[0].Path)
 
@@ -162,7 +162,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch", reqs[1].Path)
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
-	// Step 2: PUT ActivationSimple declaration (returns 204 = unchanged)
+	// Step 2: PUT ActivationSimple declaration (returns 304 = unchanged)
 	assert.Equal(t, "PUT", reqs[2].Method)
 	assert.Equal(t, "/v1/declarations", reqs[2].Path)
 
@@ -225,8 +225,8 @@ func TestPushProfileViaDDM_TouchError(t *testing.T) {
 	server, _, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	// Declarations return 204 (unchanged) so touch is called
-	statusOverrides["PUT /v1/declarations"] = http.StatusNoContent
+	// Declarations return 304 (unchanged) so touch is called
+	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 	// Touch returns 500
 	statusOverrides["POST /v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch"] = http.StatusInternalServerError
 

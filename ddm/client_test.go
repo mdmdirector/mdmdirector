@@ -93,7 +93,7 @@ func TestPutDeclaration_NoNotifyFalse(t *testing.T) {
 func TestPutDeclaration_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":"internal error"}`))
+		_, _ = w.Write([]byte(`{"error":"internal error"}`))
 	}))
 	defer server.Close()
 
@@ -162,7 +162,7 @@ func TestPutSetDeclaration_Unchanged(t *testing.T) {
 func TestPutSetDeclaration_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":"fail"}`))
+		_, _ = w.Write([]byte(`{"error":"fail"}`))
 	}))
 	defer server.Close()
 
