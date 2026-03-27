@@ -319,6 +319,12 @@ func main() {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
+	if utils.Sign() {
+		if err := director.InitSigningKey(); err != nil {
+			log.Fatalf("Failed to load signing key: %v", err)
+		}
+	}
+
 	// Initialize NanoMDM client only if configured to use NanoMDM
 	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
 		mdm.InitClient(MicroMDMURL, MicroMDMAPIKey)

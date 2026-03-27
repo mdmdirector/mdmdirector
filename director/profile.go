@@ -29,6 +29,20 @@ import (
 	"gorm.io/gorm"
 )
 
+var signingPrivKey crypto.PrivateKey
+var signingCert *x509.Certificate
+
+// InitSigningKey loads the signing key and certificate at startup
+func InitSigningKey() error {
+	var err error
+	signingPrivKey, signingCert, err = loadSigningKey(
+		utils.KeyPassword(),
+		utils.KeyPath(),
+		utils.CertPath(),
+	)
+	return err
+}
+
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	var sharedProfiles []types.SharedProfile
@@ -566,6 +580,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error {
+	var errs []error
 	for i := range devices {
 		device := devices[i]
 		if device.UDID == "" {
@@ -580,7 +595,10 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 			err := db.DB.Save(&profileData).Error
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.Wrap(err, "Save incoming profile")
+					wrappedErr := fmt.Errorf("device %s profile %s: save incoming profile: %w", device.UDID, profileData.PayloadIdentifier, err)
+					log.Errorf("%v", wrappedErr)
+					errs = append(errs, wrappedErr)
+					continue
 				}
 			}
 
@@ -599,16 +617,21 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 				}).
 				Error
 			if err != nil {
-				return errors.Wrap(err, "Update boolean on profile")
+				wrappedErr := fmt.Errorf("device %s profile %s: update installed bool: %w", device.UDID, profileData.PayloadIdentifier, err)
+				log.Errorf("%v", wrappedErr)
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 		}
 	}
-	return nil
+	return intErrors.Join(errs...)
 }
 
 func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
+
 	for i := range devices {
 		device := devices[i]
 		for i := range profiles {
@@ -637,14 +660,17 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func SaveSharedProfiles(profiles []types.SharedProfile) error {
@@ -653,6 +679,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 		return nil
 	}
 
+	var errs []error
 	for _, profileData := range profiles {
 		if profileData.PayloadIdentifier != "" {
 			err := db.DB.Model(&profile).
@@ -660,27 +687,25 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 				Delete(&profile).
 				Error
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-				return errors.Wrap(err, "Deleting shared profiles")
+				wrappedErr := fmt.Errorf("profile %s: delete shared profile: %w", profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 		}
 	}
 
-	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
 		// utils.PrintStruct(profileData)
-		err := tx2.Create(&profileData).Error
+		err := db.DB.Model(&profile).Create(&profileData).Error
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			wrappedErr := fmt.Errorf("profile %s: create shared profile: %w", profileData.PayloadIdentifier, err)
+			ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+			errs = append(errs, wrappedErr)
 		}
 	}
 
-	err := tx2.Error
-	if err != nil {
-		return errors.Wrap(err, "Saving shared profiles")
-	}
-	// db.DB.Create(&profiles)
-	return nil
+	return intErrors.Join(errs...)
 }
 
 func DeleteSharedProfiles(
@@ -688,6 +713,7 @@ func DeleteSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -695,7 +721,10 @@ func DeleteSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("DeleteSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -724,13 +753,16 @@ func DeleteSharedProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteSharedProfiles")
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func DeleteDeviceProfiles(
@@ -758,7 +790,8 @@ func DeleteDeviceProfiles(
 			)
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteDeviceProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -772,6 +805,8 @@ func PushSharedProfiles(
 	profiles []types.SharedProfile,
 ) ([]types.Command, error) {
 	var pushedCommands []types.Command
+	var errs []error
+
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -779,7 +814,10 @@ func PushSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("PushSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -816,14 +854,17 @@ func PushSharedProfiles(
 
 			command, err := SendCommand(commandPayload)
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 type ProfileForVerification struct {
@@ -925,13 +966,8 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
-	_, cert, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
-	if err != nil {
-		log.Errorf("loading signing certificate and private key: %v", err)
-	}
-
 	// ensure certificate matches on enrollment profile
-	err = ensureCertOnEnrollmentProfile(device, profileLists, cert)
+	err = ensureCertOnEnrollmentProfile(device, profileLists, signingCert)
 	if err != nil {
 		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
 	}
@@ -941,7 +977,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		isInstalled, needsReinstall, err := validateProfileInProfileList(
 			profileForVerification,
 			profileLists,
-			cert,
+			signingCert,
 		)
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")
