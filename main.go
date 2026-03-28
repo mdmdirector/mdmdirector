@@ -330,7 +330,7 @@ func main() {
 		"use-ddm-packages",
 		env.Bool("USE_DDM_PACKAGES", false),
 		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
-  )
+	)
 	flag.StringVar(
 		&DDMDeclarationPrefix,
 		"ddm-declaration-prefix",
