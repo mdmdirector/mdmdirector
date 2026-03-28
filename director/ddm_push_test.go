@@ -2,14 +2,21 @@ package director
 
 import (
 	"encoding/json"
+	"flag"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	flag.String("ddm-declaration-prefix", "biz.airbnb", "DDM declaration prefix")
+	os.Exit(m.Run())
+}
 
 // requestLog records HTTP requests made to the mock KMFDDM server.
 type requestLog struct {
@@ -79,7 +86,7 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
 
-	// When declarations are new (304), no touch calls should be made.
+	// When declarations are new/changed (204), no touch calls should be made.
 	// Expected sequence: PUT decl (legacy), PUT decl (activation), PUT set-decl (legacy),
 	// PUT set-decl (activation), PUT enrollment-set
 	assert.Len(t, *requests, 5)
@@ -146,7 +153,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	reqs := *requests
 
-	// Step 1: PUT LegacyProfile declaration (returns 204 = unchanged)
+	// Step 1: PUT LegacyProfile declaration (returns 304 = unchanged)
 	assert.Equal(t, "PUT", reqs[0].Method)
 	assert.Equal(t, "/v1/declarations", reqs[0].Path)
 
@@ -155,7 +162,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch", reqs[1].Path)
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
-	// Step 2: PUT ActivationSimple declaration (returns 204 = unchanged)
+	// Step 2: PUT ActivationSimple declaration (returns 304 = unchanged)
 	assert.Equal(t, "PUT", reqs[2].Method)
 	assert.Equal(t, "/v1/declarations", reqs[2].Path)
 

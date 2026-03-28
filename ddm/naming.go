@@ -5,16 +5,14 @@ import (
 	"strings"
 )
 
-const declarationPrefix = "biz.airbnb"
-
 // LegacyProfileDeclarationID returns the declaration identifier for a LegacyProfile
-// Format: biz.airbnb.<udid>.legacy_profile.<profileID>
-func LegacyProfileDeclarationID(udid, profileID string) string {
-	return fmt.Sprintf("%s.%s.legacy_profile.%s", declarationPrefix, udid, profileID)
+// Format: <prefix>.<udid>.legacy_profile.<profileID>
+func LegacyProfileDeclarationID(prefix, udid, profileID string) string {
+	return fmt.Sprintf("%s.%s.legacy_profile.%s", prefix, udid, profileID)
 }
 
 // ProfileActivationDeclarationID returns the declaration identifier for an ActivationSimple for Profile
-// Format: biz.airbnb.<udid>.legacy_profile_activation.<profileID>
+// Format: <prefix>.<udid>.legacy_profile_activation.<profileID>
 func ProfileActivationDeclarationID(udid, profileID string) string {
 	return fmt.Sprintf("%s.%s.legacy_profile_activation.%s", declarationPrefix, udid, profileID)
 }

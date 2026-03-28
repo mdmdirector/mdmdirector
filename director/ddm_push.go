@@ -11,8 +11,9 @@ import (
 
 // PushProfileViaDDM pushes a single profile via DDM declarations
 func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
-	legacyDeclID := ddm.LegacyProfileDeclarationID(udid, payloadIdentifier)
-	activationDeclID := ddm.ProfileActivationDeclarationID(udid, payloadIdentifier)
+	declarationPrefix := utils.DDMDeclarationPrefix()
+	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
+	activationDeclID := ddm.ActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	profileURL := ddm.ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier)
 
 	// Step 1: PUT LegacyProfile declaration (noNotify=true)
@@ -182,8 +183,9 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 
 // DeleteProfileViaDDM removes a single profile's DDM declarations for a device
 func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string) error {
-	legacyDeclID := ddm.LegacyProfileDeclarationID(udid, payloadIdentifier)
-	activationDeclID := ddm.ProfileActivationDeclarationID(udid, payloadIdentifier)
+	declarationPrefix := utils.DDMDeclarationPrefix()
+	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
+	activationDeclID := ddm.ActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 
 	// Step 1: Remove LegacyProfile from the device's set (noNotify=true)
 	if err := client.DeleteSetDeclaration(udid, legacyDeclID, true); err != nil {

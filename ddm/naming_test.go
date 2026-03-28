@@ -9,18 +9,21 @@ import (
 func TestLegacyProfileDeclarationID(t *testing.T) {
 	tests := []struct {
 		name      string
+		prefix    string
 		udid      string
 		profileID string
 		expected  string
 	}{
 		{
 			name:      "basic identifiers",
+			prefix:    "biz.airbnb",
 			udid:      "ABCD-1234",
 			profileID: "com.airbnb.mdm.wifi",
 			expected:  "biz.airbnb.ABCD-1234.legacy_profile.com.airbnb.mdm.wifi",
 		},
 		{
 			name:      "uuid-style udid",
+			prefix:    "biz.airbnb",
 			udid:      "00000000-0000-0000-0000-000000000001",
 			profileID: "com.example.profile",
 			expected:  "biz.airbnb.00000000-0000-0000-0000-000000000001.legacy_profile.com.example.profile",
@@ -28,7 +31,7 @@ func TestLegacyProfileDeclarationID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := LegacyProfileDeclarationID(tt.udid, tt.profileID)
+			result := LegacyProfileDeclarationID(tt.prefix, tt.udid, tt.profileID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -37,12 +40,14 @@ func TestLegacyProfileDeclarationID(t *testing.T) {
 func TestActivationDeclarationID(t *testing.T) {
 	tests := []struct {
 		name      string
+		prefix    string
 		udid      string
 		profileID string
 		expected  string
 	}{
 		{
 			name:      "basic identifiers",
+			prefix:    "biz.airbnb",
 			udid:      "ABCD-1234",
 			profileID: "com.airbnb.mdm.wifi",
 			expected:  "biz.airbnb.ABCD-1234.legacy_profile_activation.com.airbnb.mdm.wifi",
@@ -93,12 +98,14 @@ func TestPackageActivationDeclarationID(t *testing.T) {
 	}{
 		{
 			name:        "basic identifiers",
+      prefix:    "biz.airbnb",
 			udid:        "ABCD-1234",
 			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
 			expected:    "biz.airbnb.ABCD-1234.package_activation.550e8400-e29b-41d4-a716-446655440000",
 		},
 		{
 			name:        "uuid-style udid",
+      prefix:    "biz.airbnb",
 			udid:        "00000000-0000-0000-0000-000000000001",
 			packageUUID: "550e8400-e29b-41d4-a716-446655440000",
 			expected:    "biz.airbnb.00000000-0000-0000-0000-000000000001.package_activation.550e8400-e29b-41d4-a716-446655440000",
@@ -106,7 +113,7 @@ func TestPackageActivationDeclarationID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := PackageActivationDeclarationID(tt.udid, tt.packageUUID)
+			result := PackageActivationDeclarationID(tt.prefix, tt.udid, tt.profileID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

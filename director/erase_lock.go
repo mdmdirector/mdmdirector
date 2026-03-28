@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	intErrors "errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -52,11 +53,9 @@ func EraseLockDevice(udid string) error {
 		log.Info("Neither lock or erase are set")
 		return nil
 	}
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
+
 	// Inspect the devices queue to see if the command is already there
-	deviceQueue, err := InspectCommandQueue(client, device)
+	deviceQueue, err := InspectCommandQueue(device)
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:InspectCommandQueue")
 	}
@@ -141,6 +140,21 @@ func escrowPin(device types.Device, pin string) error {
 	if err != nil {
 		return errors.Wrap(err, "escrowPin:"+string(body))
 	}
+
+	if response.StatusCode != http.StatusOK {
+		ErrorLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      fmt.Sprintf("Failed to escrow pin, status %v: %v", response.StatusCode, string(body)),
+		})
+		return errors.Errorf("escrowPin: server returned %v: %v", response.StatusCode, string(body))
+	}
+
+	InfoLogger(LogHolder{
+		DeviceUDID:   device.UDID,
+		DeviceSerial: device.SerialNumber,
+		Message:      "Successfully escrowed pin",
+	})
 
 	return nil
 }

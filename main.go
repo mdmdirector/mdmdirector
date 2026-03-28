@@ -9,6 +9,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/director"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -109,6 +110,12 @@ var UseDDM bool
 
 // UseDDMPackages controls whether package installation uses DDM instead of InstallApplication commands
 var UseDDMPackages bool
+
+// DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
+var DDMDeclarationPrefix string
+
+// MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
+var MDMServerType string
 
 func main() {
 	var port string
@@ -314,6 +321,18 @@ func main() {
 		"use-ddm-packages",
 		env.Bool("USE_DDM_PACKAGES", false),
 		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
+  )
+	flag.StringVar(
+		&DDMDeclarationPrefix,
+		"ddm-declaration-prefix",
+		env.String("DDM_DECLARATION_PREFIX", ""),
+		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
+	)
+	flag.StringVar(
+		&MDMServerType,
+		"mdm-server-type",
+		env.String("MDM_SERVER_TYPE", "micromdm"),
+		"MDM server type: micromdm or nanomdm",
 	)
 	flag.Parse()
 
@@ -365,7 +384,24 @@ func main() {
 		if NanoMDMURL == "" {
 			log.Fatal("NanoMDM URL is required when DDM is enabled. Exiting.")
 		}
+		if DDMDeclarationPrefix == "" {
+			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
+		}
 		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
+	}
+
+	if utils.Sign() {
+		if err := director.InitSigningKey(); err != nil {
+			log.Fatalf("Failed to load signing key: %v", err)
+		}
+	}
+
+	// Initialize NanoMDM client only if configured to use NanoMDM
+	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
+		mdm.InitClient(MicroMDMURL, MicroMDMAPIKey)
+		director.InfoLogger(director.LogHolder{Message: "NanoMDM client initialized"})
+	} else {
+		director.InfoLogger(director.LogHolder{Message: "Using MicroMDM (default)"})
 	}
 
 	r := mux.NewRouter()
@@ -392,6 +428,7 @@ func main() {
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
+	r.HandleFunc("/profiledownload/{udid}/{profileIdentifier}", director.ProfileDownloadHandler).Methods("GET")
 
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
