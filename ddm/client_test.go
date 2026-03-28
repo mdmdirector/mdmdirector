@@ -12,25 +12,25 @@ import (
 )
 
 func TestPutDeclaration_Changed(t *testing.T) {
+	var (
+		capturedMethod   string
+		capturedPath     string
+		capturedNoNotify string
+		capturedUser     string
+		capturedPass     string
+		capturedAuthOK   bool
+		capturedDecl     Declaration
+		capturedBodyErr  error
+	)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "PUT", r.Method)
-		assert.Equal(t, "/v1/declarations", r.URL.Path)
-		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedNoNotify = r.URL.Query().Get("nonotify")
+		capturedUser, capturedPass, capturedAuthOK = r.BasicAuth()
 
-		// Verify basic auth
-		user, pass, ok := r.BasicAuth()
-		assert.True(t, ok)
-		assert.Equal(t, "kmfddm", user)
-		assert.Equal(t, "test-api-key", pass)
-
-		// Verify body contains declaration
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		var decl Declaration
-		err = json.Unmarshal(body, &decl)
-		require.NoError(t, err)
-		assert.Equal(t, "test.declaration.id", decl.Identifier)
-		assert.Equal(t, TypeLegacyProfile, decl.Type)
+		body, _ := io.ReadAll(r.Body)
+		capturedBodyErr = json.Unmarshal(body, &capturedDecl)
 
 		// 204 = changed/new in KMFDDM
 		w.WriteHeader(http.StatusNoContent)
@@ -49,6 +49,16 @@ func TestPutDeclaration_Changed(t *testing.T) {
 	changed, err := kmfddmClient.PutDeclaration(decl, true)
 	require.NoError(t, err)
 	assert.True(t, changed)
+
+	assert.Equal(t, "PUT", capturedMethod)
+	assert.Equal(t, "/v1/declarations", capturedPath)
+	assert.Equal(t, "true", capturedNoNotify)
+	assert.True(t, capturedAuthOK)
+	assert.Equal(t, "kmfddm", capturedUser)
+	assert.Equal(t, "test-api-key", capturedPass)
+	require.NoError(t, capturedBodyErr)
+	assert.Equal(t, "test.declaration.id", capturedDecl.Identifier)
+	assert.Equal(t, TypeLegacyProfile, capturedDecl.Type)
 }
 
 func TestPutDeclaration_Unchanged(t *testing.T) {
@@ -108,14 +118,14 @@ func TestPutDeclaration_ServerError(t *testing.T) {
 func TestTouchDeclaration_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/v1/declarations/biz.airbnb.udid123.legacy_profile.com.test/touch", r.URL.Path)
+		assert.Equal(t, "/v1/declarations/com.example.udid123.legacy_profile.com.test/touch", r.URL.Path)
 		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
-	err := kmfddmClient.TouchDeclaration("biz.airbnb.udid123.legacy_profile.com.test", true)
+	err := kmfddmClient.TouchDeclaration("com.example.udid123.legacy_profile.com.test", true)
 	require.NoError(t, err)
 }
 
@@ -135,7 +145,7 @@ func TestPutSetDeclaration_Changed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "PUT", r.Method)
 		assert.Equal(t, "/v1/set-declarations/device-udid-123", r.URL.Path)
-		assert.Equal(t, "biz.airbnb.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
+		assert.Equal(t, "com.example.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
 		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
 		// 204 = changed for set-declarations
 		w.WriteHeader(http.StatusNoContent)
@@ -143,7 +153,7 @@ func TestPutSetDeclaration_Changed(t *testing.T) {
 	defer server.Close()
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
-	err := kmfddmClient.PutSetDeclaration("device-udid-123", "biz.airbnb.device-udid-123.legacy_profile.com.test", true)
+	err := kmfddmClient.PutSetDeclaration("device-udid-123", "com.example.device-udid-123.legacy_profile.com.test", true)
 	require.NoError(t, err)
 }
 
@@ -203,14 +213,14 @@ func TestPutEnrollmentSet_Unchanged(t *testing.T) {
 func TestDeleteDeclaration_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "DELETE", r.Method)
-		assert.Equal(t, "/v1/declarations/biz.airbnb.udid123.legacy_profile.com.test", r.URL.Path)
+		assert.Equal(t, "/v1/declarations/com.example.udid123.legacy_profile.com.test", r.URL.Path)
 		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
-	err := kmfddmClient.DeleteDeclaration("biz.airbnb.udid123.legacy_profile.com.test", true)
+	err := kmfddmClient.DeleteDeclaration("com.example.udid123.legacy_profile.com.test", true)
 	require.NoError(t, err)
 }
 
@@ -230,14 +240,14 @@ func TestDeleteSetDeclaration_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "DELETE", r.Method)
 		assert.Equal(t, "/v1/set-declarations/device-udid-123", r.URL.Path)
-		assert.Equal(t, "biz.airbnb.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
+		assert.Equal(t, "com.example.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
 		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
-	err := kmfddmClient.DeleteSetDeclaration("device-udid-123", "biz.airbnb.device-udid-123.legacy_profile.com.test", true)
+	err := kmfddmClient.DeleteSetDeclaration("device-udid-123", "com.example.device-udid-123.legacy_profile.com.test", true)
 	require.NoError(t, err)
 }
 

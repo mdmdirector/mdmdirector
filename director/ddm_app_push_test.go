@@ -14,8 +14,8 @@ import (
 
 const (
 	testAppUUID    = "550e8400-e29b-41d4-a716-446655440000"
-	testPackageID  = "biz.airbnb.DEVICE-UDID-1234.package.550e8400-e29b-41d4-a716-446655440000"
-	testActiPackID = "biz.airbnb.DEVICE-UDID-1234.package_activation.550e8400-e29b-41d4-a716-446655440000"
+	testPackageID  = "com.example.DEVICE-UDID-1234.package.550e8400-e29b-41d4-a716-446655440000"
+	testActiPackID = "com.example.DEVICE-UDID-1234.package_activation.550e8400-e29b-41d4-a716-446655440000"
 )
 
 func newTestApp(manifestURL string) types.DeviceInstallApplication {

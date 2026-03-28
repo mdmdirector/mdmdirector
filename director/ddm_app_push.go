@@ -4,6 +4,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 
 	"github.com/pkg/errors"
 )
@@ -11,8 +12,9 @@ import (
 // PushApplicationViaDDM pushes a single application via DDM declarations for a single device
 // app.ID must be populated (loaded from DB) - used as declaration identifier
 func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.DeviceInstallApplication) error {
-	packageDeclID := ddm.PackageDeclarationID(udid, app.ID.String())
-	activationDeclID := ddm.PackageActivationDeclarationID(udid, app.ID.String())
+	declarationPrefix := utils.DDMDeclarationPrefix()
+	packageDeclID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
+	activationDeclID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
 
 	// Step 1: PUT Package declaration (noNotify=true)
 	packageDecl := ddm.Declaration{

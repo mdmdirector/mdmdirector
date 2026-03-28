@@ -13,8 +13,8 @@ func LegacyProfileDeclarationID(prefix, udid, profileID string) string {
 
 // ProfileActivationDeclarationID returns the declaration identifier for an ActivationSimple for Profile
 // Format: <prefix>.<udid>.legacy_profile_activation.<profileID>
-func ProfileActivationDeclarationID(udid, profileID string) string {
-	return fmt.Sprintf("%s.%s.legacy_profile_activation.%s", declarationPrefix, udid, profileID)
+func ProfileActivationDeclarationID(prefix, udid, profileID string) string {
+	return fmt.Sprintf("%s.%s.legacy_profile_activation.%s", prefix, udid, profileID)
 }
 
 // ProfileDownloadURL constructs the URL a device will use to fetch profile data
@@ -24,13 +24,13 @@ func ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier string) string {
 }
 
 // PackageDeclarationID returns the declaration identifier for a Package declaration
-// Format: biz.airbnb.<udid>.package.<packageUUID>
-func PackageDeclarationID(udid, packageUUID string) string {
-	return fmt.Sprintf("%s.%s.package.%s", declarationPrefix, udid, packageUUID)
+// Format: <prefix>.<udid>.package.<packageUUID>
+func PackageDeclarationID(prefix, udid, packageUUID string) string {
+	return fmt.Sprintf("%s.%s.package.%s", prefix, udid, packageUUID)
 }
 
 // PackageActivationDeclarationID returns the declaration identifier for the ActivationSimple for Package
-// Format: biz.airbnb.<udid>.package_activation.<packageUUID>
-func PackageActivationDeclarationID(udid, packageUUID string) string {
-	return fmt.Sprintf("%s.%s.package_activation.%s", declarationPrefix, udid, packageUUID)
+// Format: <prefix>.<udid>.package_activation.<packageUUID>
+func PackageActivationDeclarationID(prefix, udid, packageUUID string) string {
+	return fmt.Sprintf("%s.%s.package_activation.%s", prefix, udid, packageUUID)
 }
