@@ -89,9 +89,11 @@ func reinstallEnrollmentProfile(device types.Device) error {
 		if err != nil {
 			return errors.Wrap(err, "Failed to unmarshal enrollment profile to struct")
 		}
-
-		profile.MobileconfigData = profileBytes
-		_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile})
+    
+    profile.MobileconfigData = profileBytes
+    
+    // enrollment profile cannot be installed using DDM
+		_, err = PushProfiles([]types.Device{device}, []types.DeviceProfile{profile}, false)
 		if err != nil {
 			return errors.Wrap(err, "Failed to push enrollment profile")
 		}
