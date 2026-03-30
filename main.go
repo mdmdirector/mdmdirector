@@ -418,9 +418,6 @@ func main() {
 			log.Fatal("ENROLL_WEBHOOK_TOKEN is required when --enable-reenroll-via-webhook is set")
 		}
 		log.Infof("Using enrollment profile webhook at %s", EnrollWebhookURL)
-		if !Sign {
-			log.Warn("Profile signing is disabled but is required for MachineInfo header construction")
-		}
 	} else if EnrollmentProfile != "" {
 		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
 	}
