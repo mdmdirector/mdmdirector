@@ -84,6 +84,11 @@ func validateEnrollmentCertExpiry(certList []types.CertificateList, device types
 		}
 	}
 
+	scepIssuer := utils.ScepCertIssuer()
+	scepMinValidity := utils.ScepCertMinValidity()
+	acmeIssuer := utils.AcmeCertIssuer()
+	acmeMinValidity := utils.AcmeCertMinValidity()
+
 	var nearingExpiry bool
 
 	for _, certListItem := range certList {
@@ -98,14 +103,14 @@ func validateEnrollmentCertExpiry(certList []types.CertificateList, device types
 		msg := fmt.Sprintf("Certificate issued by %s issuer", issuer)
 		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg, Metric: strconv.Itoa(days)})
 
-		if issuer == utils.ScepCertIssuer() {
-			if days <= utils.ScepCertMinValidity() {
+		if issuer == scepIssuer {
+			if days <= scepMinValidity {
 				InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg, Metric: strconv.Itoa(days)})
 				nearingExpiry = true
 				break
 			}
-		} else if utils.AcmeCertIssuer() != "" && issuer == utils.AcmeCertIssuer() {
-			if days <= utils.AcmeCertMinValidity() {
+		} else if acmeIssuer != "" && issuer == acmeIssuer {
+			if days <= acmeMinValidity {
 				InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg, Metric: strconv.Itoa(days)})
 				nearingExpiry = true
 				break
