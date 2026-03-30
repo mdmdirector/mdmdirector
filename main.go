@@ -333,8 +333,8 @@ func main() {
 		"enable-reenroll-via-webhook",
 		env.Bool("ENABLE_REENROLL_VIA_WEBHOOK", false),
 		"Enable fetching the enrollment profile from a remote webhook for re-enrollment",
-  )
-  flag.StringVar(
+	)
+	flag.StringVar(
 		&KMFDDMURL,
 		"kmfddm-url",
 		env.String("KMFDDM_URL", ""),
@@ -423,8 +423,8 @@ func main() {
 		}
 	} else if EnrollmentProfile != "" {
 		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
-  }
-  
+	}
+
 	if UseDDM {
 		if KMFDDMURL == "" {
 			log.Fatal("KMFDDM URL is required when DDM is enabled. Exiting.")

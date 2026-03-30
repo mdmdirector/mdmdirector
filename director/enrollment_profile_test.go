@@ -10,13 +10,10 @@ import (
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
-	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/micromdm/go4/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // registerEnrollmentProfileFlags registers all flags consumed by reinstallEnrollmentProfile
@@ -131,26 +128,6 @@ func TestReinstallEnrollmentProfile_WebhookEmptyBody(t *testing.T) {
 	err := reinstallEnrollmentProfile(device)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Failed to fetch enrollment profile from webhook")
-}
-
-func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
-	t.Helper()
-	oldDB := db.DB
-
-	postgresMock, mockSpy, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
-	require.NoError(t, err)
-
-	gormDB, err := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
-	require.NoError(t, err)
-
-	db.DB = gormDB
-
-	cleanup := func() {
-		db.DB = oldDB
-		postgresMock.Close()
-	}
-
-	return mockSpy, cleanup
 }
 
 // mockGetDevice sets up DB expectations for GetDevice
