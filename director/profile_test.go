@@ -106,6 +106,10 @@ func TestValidateProfileInProfileList(t *testing.T) {
 	log.SetLevel(log.PanicLevel)
 	defer log.SetLevel(log.InfoLevel)
 
+	// set up global sign flag
+	if flag.Lookup("sign") == nil {
+		flag.Bool("sign", false, "Sign profiles prior to sending to MicroMDM.")
+	}
 	// decode test signer cert
 	p, _ := pem.Decode([]byte(testSignerCert))
 	signer, err := x509.ParseCertificate(p.Bytes)
@@ -237,11 +241,12 @@ func TestValidateProfileInProfileList(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			signVal := "false"
 			if test.signCheck {
-				_ = flag.Set("sign", "true")
-			} else {
-				_ = flag.Set("sign", "false")
+				signVal = "true"
 			}
+			require.NoError(t, flag.Set("sign", signVal))
+
 			var s *x509.Certificate
 			if test.signCheck {
 				s = signer

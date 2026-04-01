@@ -96,6 +96,21 @@ var OnceIn int
 
 var InfoRequestInterval int
 
+// AcmeCertIssuer is the issuer of the ACME certificate
+var AcmeCertIssuer string
+
+// AcmeCertMinValidity is the minimum number of days before ACME cert expiry to trigger re-enrollment
+var AcmeCertMinValidity int
+
+// EnrollWebhookURL is the full URL of the enrollment profile webhook endpoint
+var EnrollWebhookURL string
+
+// EnrollWebhookToken is the Bearer token for the enrollment profile webhook
+var EnrollWebhookToken string
+
+// EnableReEnrollViaWebhook enables fetching enrollment profiles via a remote webhook for re-enrollment
+var EnableReEnrollViaWebhook bool
+
 // KMFDDMURL is the base URL for the KMFDDM server
 var KMFDDMURL string
 
@@ -271,6 +286,18 @@ func main() {
 		"The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.",
 	)
 	flag.StringVar(
+		&AcmeCertIssuer,
+		"acme-cert-issuer",
+		env.String("ACME_CERT_ISSUER", ""),
+		"The issuer of your ACME certificate. When set, ACME cert expiry will also be checked.",
+	)
+	flag.IntVar(
+		&AcmeCertMinValidity,
+		"acme-cert-min-validity",
+		env.Int("ACME_CERT_MIN_VALIDITY", 180),
+		"The number of days at which the ACME certificate has remaining before the enrollment profile is re-sent.",
+	)
+	flag.StringVar(
 		&EnrollmentProfile,
 		"enrollment-profile",
 		env.String("ENROLLMENT_PROFILE", ""),
@@ -294,6 +321,24 @@ func main() {
 		"info-request-interval",
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
+	)
+	flag.StringVar(
+		&EnrollWebhookURL,
+		"enroll-webhook-url",
+		env.String("ENROLL_WEBHOOK_URL", ""),
+		"URL of the enrollment profile webhook endpoint",
+	)
+	flag.StringVar(
+		&EnrollWebhookToken,
+		"enroll-webhook-token",
+		env.String("ENROLL_WEBHOOK_TOKEN", ""),
+		"Bearer token for the enrollment profile webhook",
+	)
+	flag.BoolVar(
+		&EnableReEnrollViaWebhook,
+		"enable-reenroll-via-webhook",
+		env.Bool("ENABLE_REENROLL_VIA_WEBHOOK", false),
+		"Enable fetching the enrollment profile from a remote webhook for re-enrollment",
 	)
 	flag.StringVar(
 		&KMFDDMURL,
@@ -394,7 +439,19 @@ func main() {
 		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
 	}
 
-	if UseDDM || UseDDMPackages {
+	if EnableReEnrollViaWebhook {
+		if EnrollWebhookURL == "" {
+			log.Fatal("ENROLL_WEBHOOK_URL is required when --enable-reenroll-via-webhook is set")
+		}
+		if EnrollWebhookToken == "" {
+			log.Fatal("ENROLL_WEBHOOK_TOKEN is required when --enable-reenroll-via-webhook is set")
+		}
+		log.Infof("Using enrollment profile webhook at %s", EnrollWebhookURL)
+	} else if EnrollmentProfile != "" {
+		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
+	}
+
+  if UseDDM || UseDDMPackages {
 		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
 			log.Fatal("DDM requires mdm-server-type=nanomdm. Exiting.")
 		}
