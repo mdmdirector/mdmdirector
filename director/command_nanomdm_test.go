@@ -53,26 +53,6 @@ func setupMockDB(t *testing.T) (sqlmock.Sqlmock, func()) {
 	return mockSpy, cleanup
 }
 
-// mockGetDevice sets up DB expectations for GetDevice function
-// GetDevice uses First().Scan() which generates TWO queries
-func mockGetDevice(mockSpy sqlmock.Sqlmock) {
-	const udid = "test-udid-123"
-	deviceRows1 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
-		AddRow(udid, "C02TEST123")
-	deviceRows2 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
-		AddRow(udid, "C02TEST123")
-
-	// First query from First()
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 ORDER BY "devices"\."ud_id" LIMIT 1`).
-		WithArgs(udid).
-		WillReturnRows(deviceRows1)
-
-	// Second query from Scan() - includes primary key in WHERE
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 AND "devices"\."ud_id" = \$2 ORDER BY "devices"\."ud_id" LIMIT 1`).
-		WithArgs(udid, udid).
-		WillReturnRows(deviceRows2)
-}
-
 // mockCreateCommand sets up DB expectations for db.DB.Create(&command)
 func mockCreateCommand(mockSpy sqlmock.Sqlmock) {
 	mockSpy.ExpectBegin()
@@ -124,7 +104,7 @@ func TestSendCommand_NanoMDM_EnqueueError(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}, mdm.WithMaxRetries(0))
 
-	mockGetDevice(mockSpy)
+	mockGetDevice(mockSpy, "test-udid-123")
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -153,7 +133,7 @@ func TestSendCommand_NanoMDM_CommandError(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 
-	mockGetDevice(mockSpy)
+	mockGetDevice(mockSpy, "test-udid-123")
 
 	payload := types.CommandPayload{
 		UDID:        "test-udid-123",
@@ -184,7 +164,7 @@ func TestSendCommand_NanoMDM_PushErrorButCommandQueued(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 
-	mockGetDevice(mockSpy)
+	mockGetDevice(mockSpy, "test-udid-123")
 	mockCreateCommand(mockSpy)
 
 	payload := types.CommandPayload{
@@ -220,7 +200,7 @@ func TestSendCommand_NanoMDM_Success(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 
-	mockGetDevice(mockSpy)
+	mockGetDevice(mockSpy, "test-udid-123")
 	mockCreateCommand(mockSpy)
 
 	payload := types.CommandPayload{
@@ -290,7 +270,7 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(resp)
 			})
 
-			mockGetDevice(mockSpy)
+			mockGetDevice(mockSpy, "test-udid-123")
 			mockCreateCommand(mockSpy)
 
 			payload := types.CommandPayload{
