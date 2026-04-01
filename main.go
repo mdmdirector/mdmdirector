@@ -451,7 +451,7 @@ func main() {
 		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
 	}
 
-  if UseDDM || UseDDMPackages {
+	if UseDDM || UseDDMPackages {
 		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
 			log.Fatal("DDM requires mdm-server-type=nanomdm. Exiting.")
 		}
