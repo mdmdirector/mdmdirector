@@ -120,8 +120,14 @@ var KMFDDMAPIKey string
 // NanoMDMURL is the externally reachable URL of the NanoMDM server
 var NanoMDMURL string
 
+// NanoMDMAPIKey is the API key for the NanoMDM server
+var NanoMDMAPIKey string
+
 // UseDDM controls whether profile management uses DDM instead of InstallProfile
 var UseDDM bool
+
+// UseDDMPackages controls whether package installation uses DDM instead of InstallApplication commands
+var UseDDMPackages bool
 
 // DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
 var DDMDeclarationPrefix string
@@ -350,13 +356,25 @@ func main() {
 		&NanoMDMURL,
 		"nanomdm-url",
 		env.String("NANOMDM_URL", ""),
-		"NanoMDM server URL",
+		"NanoMDM server URL (required if mdm-server-type=nanomdm)",
+	)
+	flag.StringVar(
+		&NanoMDMAPIKey,
+		"nanomdm-api-key",
+		env.String("NANOMDM_API_KEY", ""),
+		"NanoMDM server API key (required if mdm-server-type=nanomdm)",
 	)
 	flag.BoolVar(
 		&UseDDM,
 		"use-ddm",
 		env.Bool("USE_DDM", false),
 		"Enable DDM profile management via KMFDDM instead of InstallProfile commands",
+	)
+	flag.BoolVar(
+		&UseDDMPackages,
+		"use-ddm-packages",
+		env.Bool("USE_DDM_PACKAGES", false),
+		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
 	)
 	flag.StringVar(
 		&DDMDeclarationPrefix,
@@ -389,14 +407,6 @@ func main() {
 		})
 	}
 
-	if MicroMDMURL == "" {
-		log.Fatal("MicroMDM Server URL missing. Exiting.")
-	}
-
-	if MicroMDMAPIKey == "" {
-		log.Fatal("MicroMDM API Key missing. Exiting.")
-	}
-
 	if BasicAuthPass == "" {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
@@ -408,6 +418,25 @@ func main() {
 
 	if LogLevel != "debug" && LogLevel != "info" && LogLevel != "warn" && LogLevel != "error" {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
+	}
+
+	switch MDMServerType {
+	case string(mdm.ServerTypeMicroMDM):
+		if MicroMDMURL == "" {
+			log.Fatal("MicroMDM Server URL missing. Exiting.")
+		}
+		if MicroMDMAPIKey == "" {
+			log.Fatal("MicroMDM API Key missing. Exiting.")
+		}
+	case string(mdm.ServerTypeNanoMDM):
+		if NanoMDMURL == "" {
+			log.Fatal("NanoMDM Server URL missing. Exiting.")
+		}
+		if NanoMDMAPIKey == "" {
+			log.Fatal("NanoMDM API Key missing. Exiting.")
+		}
+	default:
+		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
 	}
 
 	if EnableReEnrollViaWebhook {
@@ -422,15 +451,15 @@ func main() {
 		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
 	}
 
-	if UseDDM {
+	if UseDDM || UseDDMPackages {
+		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
+			log.Fatal("DDM requires mdm-server-type=nanomdm. Exiting.")
+		}
 		if KMFDDMURL == "" {
 			log.Fatal("KMFDDM URL is required when DDM is enabled. Exiting.")
 		}
 		if KMFDDMAPIKey == "" {
 			log.Fatal("KMFDDM API Key is required when DDM is enabled. Exiting.")
-		}
-		if NanoMDMURL == "" {
-			log.Fatal("NanoMDM URL is required when DDM is enabled. Exiting.")
 		}
 		if DDMDeclarationPrefix == "" {
 			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
@@ -446,7 +475,7 @@ func main() {
 
 	// Initialize NanoMDM client only if configured to use NanoMDM
 	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
-		mdm.InitClient(MicroMDMURL, MicroMDMAPIKey)
+		mdm.InitClient(NanoMDMURL, NanoMDMAPIKey)
 		director.InfoLogger(director.LogHolder{Message: "NanoMDM client initialized"})
 	} else {
 		director.InfoLogger(director.LogHolder{Message: "Using MicroMDM (default)"})

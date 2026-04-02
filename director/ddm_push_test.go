@@ -14,7 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	flag.String("ddm-declaration-prefix", "biz.airbnb", "DDM declaration prefix")
+	flag.String("ddm-declaration-prefix", "com.example", "DDM declaration prefix")
 	os.Exit(m.Run())
 }
 
@@ -100,7 +100,7 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	var legacyDecl ddm.Declaration
 	err = json.Unmarshal([]byte(reqs[0].Body), &legacyDecl)
 	require.NoError(t, err)
-	assert.Equal(t, "biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi", legacyDecl.Identifier)
+	assert.Equal(t, "com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi", legacyDecl.Identifier)
 	assert.Equal(t, ddm.TypeLegacyProfile, legacyDecl.Type)
 
 	// Step 2: PUT ActivationSimple declaration
@@ -110,19 +110,19 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	var activationDecl ddm.Declaration
 	err = json.Unmarshal([]byte(reqs[1].Body), &activationDecl)
 	require.NoError(t, err)
-	assert.Equal(t, "biz.airbnb.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", activationDecl.Identifier)
+	assert.Equal(t, "com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", activationDecl.Identifier)
 	assert.Equal(t, ddm.TypeActivationSimple, activationDecl.Type)
 
 	// Step 3: PUT set-declaration (legacy)
 	assert.Equal(t, "PUT", reqs[2].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[2].Path)
-	assert.Contains(t, reqs[2].Query, "declaration=biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
+	assert.Contains(t, reqs[2].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
 	assert.Contains(t, reqs[2].Query, "nonotify=true")
 
 	// Step 4: PUT set-declaration (activation)
 	assert.Equal(t, "PUT", reqs[3].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[3].Path)
-	assert.Contains(t, reqs[3].Query, "declaration=biz.airbnb.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
+	assert.Contains(t, reqs[3].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
 	// Step 5: PUT enrollment-set (noNotify=false to trigger sync)
@@ -159,7 +159,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	// Step 1b: POST touch for LegacyProfile
 	assert.Equal(t, "POST", reqs[1].Method)
-	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch", reqs[1].Path)
+	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch", reqs[1].Path)
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
 	// Step 2: PUT ActivationSimple declaration (returns 304 = unchanged)
@@ -168,7 +168,7 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	// Step 2b: POST touch for ActivationSimple
 	assert.Equal(t, "POST", reqs[3].Method)
-	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi/touch", reqs[3].Path)
+	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi/touch", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
 	// Step 3-4: PUT set-declarations
@@ -203,7 +203,7 @@ func TestPushProfileViaDDM_ActivationReferencesLegacyDeclaration(t *testing.T) {
 	err = json.Unmarshal([]byte(reqs[1].Body), &activationDecl)
 	require.NoError(t, err)
 
-	expectedLegacyID := "biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi"
+	expectedLegacyID := "com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi"
 	assert.Len(t, activationDecl.Payload.StandardConfigurations, 1)
 	assert.Equal(t, expectedLegacyID, activationDecl.Payload.StandardConfigurations[0])
 }
@@ -228,7 +228,7 @@ func TestPushProfileViaDDM_TouchError(t *testing.T) {
 	// Declarations return 304 (unchanged) so touch is called
 	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 	// Touch returns 500
-	statusOverrides["POST /v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch"] = http.StatusInternalServerError
+	statusOverrides["POST /v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch"] = http.StatusInternalServerError
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
 
@@ -253,23 +253,23 @@ func TestDeleteProfileViaDDM_Success(t *testing.T) {
 	// Step 1: DELETE set-declaration for LegacyProfile
 	assert.Equal(t, "DELETE", reqs[0].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[0].Path)
-	assert.Contains(t, reqs[0].Query, "declaration=biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
+	assert.Contains(t, reqs[0].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
 	assert.Contains(t, reqs[0].Query, "nonotify=true")
 
 	// Step 2: DELETE set-declaration for ActivationSimple
 	assert.Equal(t, "DELETE", reqs[1].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[1].Path)
-	assert.Contains(t, reqs[1].Query, "declaration=biz.airbnb.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
+	assert.Contains(t, reqs[1].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
 	// Step 3: DELETE declaration (legacy)
 	assert.Equal(t, "DELETE", reqs[2].Method)
-	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile.com.example.wifi", reqs[2].Path)
+	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi", reqs[2].Path)
 	assert.Contains(t, reqs[2].Query, "nonotify=true")
 
 	// Step 4: DELETE declaration (activation)
 	assert.Equal(t, "DELETE", reqs[3].Method)
-	assert.Equal(t, "/v1/declarations/biz.airbnb.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", reqs[3].Path)
+	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
 	// Step 5: PUT enrollment-set (noNotify=false to trigger sync)

@@ -21,7 +21,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	var device types.Device
 	var oldDevice types.Device
 
-	if newDevice.UDID == "" && device.SerialNumber == "" {
+	if newDevice.UDID == "" && newDevice.SerialNumber == "" {
 		err := fmt.Errorf("no device UDID or serial set")
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
@@ -57,20 +57,6 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	err := UpdateDeviceBools(&newDevice)
 	if err != nil {
 		return &device, errors.Wrap(err, "UpdateDevice")
-	}
-
-	if newDevice.AwaitingConfiguration && newDevice.InitialTasksRun {
-		err := SendDeviceConfigured(newDevice)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:SendDeviceConfigured")
-		}
-	}
-
-	if !newDevice.InitialTasksRun && newDevice.AwaitingConfiguration {
-		err := RunInitialTasks(newDevice.UDID)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:RunInitialTasks")
-		}
 	}
 
 	return &device, nil

@@ -160,8 +160,16 @@ func NanoMDMURL() string {
 	return strings.TrimRight(flag.Lookup("nanomdm-url").Value.(flag.Getter).Get().(string), "/")
 }
 
+func NanoMDMAPIKey() string {
+	return flag.Lookup("nanomdm-api-key").Value.(flag.Getter).Get().(string)
+}
+
 func UseDDM() bool {
 	return flag.Lookup("use-ddm").Value.(flag.Getter).Get().(bool)
+}
+
+func UseDDMPackages() bool {
+	return flag.Lookup("use-ddm-packages").Value.(flag.Getter).Get().(bool)
 }
 
 func DDMDeclarationPrefix() string {

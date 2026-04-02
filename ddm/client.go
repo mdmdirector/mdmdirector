@@ -25,12 +25,7 @@ var kmfddmClient *KMFDDMClient
 
 // InitClient initializes the global KMFDDM client
 func InitClient(baseURL, apiKey string) {
-	kmfddmClient = &KMFDDMClient{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		username:   KMFDDMAuthUsername,
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 20 * time.Second},
-	}
+	kmfddmClient = NewKMFDDMClient(baseURL, apiKey)
 }
 
 // Client returns the global KMFDDM client instance
@@ -55,7 +50,7 @@ func NewKMFDDMClient(baseURL, apiKey string) *KMFDDMClient {
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		username:   KMFDDMAuthUsername,
 		apiKey:     apiKey,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 20 * time.Second},
 	}
 }
 
