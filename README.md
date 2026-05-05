@@ -81,6 +81,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-redis-host string` - Hostname of your Redis instance. (default "localhost") Env: `REDIS_HOST`
 - `-redis-port string` - Port of your Redis instance. (default "6379") Env: `REDIS_PORT`
 - `-redis-password string` - Password for your Redis instance. (default "") Env: `REDIS_PASSWORD`
+- `-redis-tls` - Enable TLS for the Redis connection. Required when connecting to ElastiCache with transit encryption enabled. (default false) Env: `REDIS_TLS`
 
 #### Profile Signing
 
