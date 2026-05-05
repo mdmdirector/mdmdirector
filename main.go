@@ -92,6 +92,8 @@ var RedisPort string
 
 var RedisPassword string
 
+var RedisTLS bool
+
 var OnceIn int
 
 var InfoRequestInterval int
@@ -230,6 +232,12 @@ func main() {
 		"redis-password",
 		env.String("REDIS_PASSWORD", ""),
 		"Redis password",
+	)
+	flag.BoolVar(
+		&RedisTLS,
+		"redis-tls",
+		env.Bool("REDIS_TLS", false),
+		"Enable TLS for Redis connection",
 	)
 	flag.StringVar(
 		&DBSSLMode,

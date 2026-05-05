@@ -128,6 +128,10 @@ func RedisPassword() string {
 	return flag.Lookup("redis-password").Value.(flag.Getter).Get().(string)
 }
 
+func RedisTLS() bool {
+	return flag.Lookup("redis-tls").Value.(flag.Getter).Get().(bool)
+}
+
 func OnceIn() int {
 	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
 }
