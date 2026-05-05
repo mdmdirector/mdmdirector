@@ -49,12 +49,18 @@ func ScheduledCheckin(pushQueue taskq.Queue, onceIn time.Duration) {
 	var wg sync.WaitGroup
 	sem := make(chan int, 1)
 
+	minInterval := time.Minute
+
 	fn := func(sem chan int, wg *sync.WaitGroup) {
 		defer wg.Done()
+		start := time.Now()
 		log.Info("Running scheduled checkin")
 		err := processScheduledCheckin(pushQueue, task, onceIn)
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+		if elapsed := time.Since(start); elapsed < minInterval {
+			time.Sleep(minInterval - elapsed)
 		}
 		<-sem
 	}
@@ -142,6 +148,11 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
 		return errors.Wrap(err, "PushAll: Scan devices")
+	}
+
+	if len(dbDevices) == 0 {
+		InfoLogger(LogHolder{Message: "No enrolled devices, skipping push scheduling"})
+		return nil
 	}
 
 	for i := range dbDevices {
