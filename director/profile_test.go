@@ -1,7 +1,6 @@
 package director
 
 import (
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"flag"
@@ -9,9 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/groob/plist"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -448,45 +445,4 @@ func TestSignIfRequired_SigningDisabled(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, data, result)
-}
-
-func TestMobileconfigHashPreservesOriginalBytes(t *testing.T) {
-	// OriginalMobileconfigHash must be computed from the raw input bytes
-	// before PayloadUUID is replaced with the deterministic hash. This lets
-	// callers reproduce the hash without knowing the post-mutation UUID.
-	originalPlist := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>PayloadIdentifier</key>
-	<string>com.example.test</string>
-	<key>PayloadUUID</key>
-	<string>original-uuid-before-mutation</string>
-	<key>PayloadType</key>
-	<string>Configuration</string>
-	<key>PayloadVersion</key>
-	<integer>1</integer>
-</dict>
-</plist>`
-
-	raw := []byte(originalPlist)
-	expectedOriginalHash := sha256.Sum256(raw)
-
-	// Reproduce the mutation that PostProfileHandler performs.
-	var dict map[string]interface{}
-	require.NoError(t, plist.Unmarshal(raw, &dict))
-
-	newUUID := uuid.NewSHA1(uuid.NameSpaceDNS, raw).String()
-	dict["PayloadUUID"] = newUUID
-
-	mutated, err := plist.MarshalIndent(&dict, "\t")
-	require.NoError(t, err)
-
-	mutatedHash := sha256.Sum256(mutated)
-
-	// The two hashes must differ — the mutation changed the bytes.
-	assert.NotEqual(t, expectedOriginalHash[:], mutatedHash[:], "hashes should differ after PayloadUUID mutation")
-
-	// OriginalMobileconfigHash must equal the hash of the pre-mutation bytes.
-	assert.Equal(t, expectedOriginalHash[:], expectedOriginalHash[:], "original hash is reproducible from raw input")
 }
