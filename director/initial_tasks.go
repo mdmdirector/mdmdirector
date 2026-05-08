@@ -37,6 +37,11 @@ func RunInitialTasks(udid string) error {
 	// 	return nil
 	// }
 
+	err = RequestAllDeviceInfo(device)
+	if err != nil {
+		return errors.Wrap(err, "RunInitialTasks:RequestAllDeviceInfo")
+	}
+
 	_, err = InstallAllProfiles(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:InstallAllProfiles")

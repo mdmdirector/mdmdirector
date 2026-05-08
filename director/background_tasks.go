@@ -188,7 +188,6 @@ func fetchDevicesFromNanoMDM(nanoClient *mdm.NanoMDMClient) {
 		if enrollment.Enabled {
 			device.AuthenticateRecieved = true
 			device.TokenUpdateRecieved = true
-			device.InitialTasksRun = true
 		}
 
 		devices = append(devices, device)
@@ -216,7 +215,6 @@ func fetchDevicesFromNanoMDM(nanoClient *mdm.NanoMDMClient) {
 			"serial_number",
 			"authenticate_recieved",
 			"token_update_recieved",
-			"initial_tasks_run",
 		}),
 	}).CreateInBatches(devices, batchSize).Error
 
