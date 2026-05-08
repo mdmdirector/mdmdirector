@@ -223,6 +223,27 @@ func (c *KMFDDMClient) DeleteSetDeclaration(setName, declarationID string, noNot
 	}
 }
 
+// NotifyEnrollment triggers a DDM sync for an enrollment ID via POST /v1/notify.
+// Unlike PutEnrollmentSet with nonotify=false, this bypasses the changed-check entirely.
+func (c *KMFDDMClient) NotifyEnrollment(udid string) error {
+	params := url.Values{}
+	params.Set("id", udid)
+
+	resp, err := c.doRequest("POST", "/v1/notify", params, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("KMFDDM POST /v1/notify returned unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+}
+
 // PutEnrollmentSet associates an enrollment ID with a set
 func (c *KMFDDMClient) PutEnrollmentSet(enrollmentID, setName string, noNotify bool) error {
 	params := url.Values{}

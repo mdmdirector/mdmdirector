@@ -68,22 +68,15 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Associate enrollment with the set (noNotify=true - we enqueue directly in step 6)
-	// FIXME: once kmfddm fix is deployed (PutEnrollmentSetHandler notifies on notify=true regardless
-	// of changed), change noNotify to false and remove step 6. The fix is in
-	// sources/kmfddm/http/api/enrollments.go PutEnrollmentSetHandler.
+	// Step 5: Associate enrollment with the set (noNotify=true - notify done explicitly in step 6)
 	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT enrollment-set for %s", udid)
 	}
 
-	// Step 6: Enqueue DeclarativeManagement command directly - workaround for kmfddm not notifying
-	// when enrollment-set association already exists (changed=false). Remove once kmfddm fix deployed.
-	commandPayload := types.CommandPayload{
-		UDID:        udid,
-		RequestType: "DeclarativeManagement",
-	}
-	if _, err := SendCommand(commandPayload); err != nil {
-		return errors.Wrapf(err, "PushProfileViaDDM: enqueue DeclarativeManagement for %s", udid)
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command regardless of prior enrollment state.
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "PushProfileViaDDM: notify enrollment for %s", udid)
 	}
 
 	return nil
@@ -220,22 +213,15 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Re-associate enrollment with set (noNotify=true - we enqueue directly in step 6)
-	// FIXME: once kmfddm fix is deployed (PutEnrollmentSetHandler notifies on notify=true regardless
-	// of changed), change noNotify to false and remove step 6. The fix is in
-	// sources/kmfddm/http/api/enrollments.go PutEnrollmentSetHandler.
+	// Step 5: Re-associate enrollment with set (noNotify=true - notify done explicitly in step 6)
 	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: PUT enrollment-set for %s", udid)
 	}
 
-	// Step 6: Enqueue DeclarativeManagement command directly - workaround for kmfddm not notifying
-	// when enrollment-set association already exists (changed=false). Remove once kmfddm fix deployed.
-	commandPayload := types.CommandPayload{
-		UDID:        udid,
-		RequestType: "DeclarativeManagement",
-	}
-	if _, err := SendCommand(commandPayload); err != nil {
-		return errors.Wrapf(err, "DeleteProfileViaDDM: enqueue DeclarativeManagement for %s", udid)
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command and removes the deleted declarations.
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "DeleteProfileViaDDM: notify enrollment for %s", udid)
 	}
 
 	return nil
