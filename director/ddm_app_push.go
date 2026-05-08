@@ -68,7 +68,7 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT set-declaration (activation) for %s on %s", app.ManifestURL, udid)
 	}
 
-	// Step 5: Associate enrollment with the set (noNotify=false — triggers DDM sync)
+	// Step 5: Associate enrollment with the set (noNotify=false - triggers DDM sync)
 	if err := client.PutEnrollmentSet(udid, udid, false); err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT enrollment-set for %s", udid)
 	}

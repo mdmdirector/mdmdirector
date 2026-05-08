@@ -162,7 +162,7 @@ func (c *KMFDDMClient) PutSetDeclaration(setName, declarationID string, noNotify
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusNoContent, http.StatusNotModified: // 204 = changed, 304 = unchanged — both OK
+	case http.StatusNoContent, http.StatusNotModified: // 204 = changed, 304 = unchanged - both OK
 		return nil
 	default:
 		respBody, _ := io.ReadAll(resp.Body)
@@ -188,7 +188,7 @@ func (c *KMFDDMClient) DeleteDeclaration(declarationID string, noNotify bool) er
 	case http.StatusNoContent, http.StatusNotModified: // both OK
 		return nil
 	case http.StatusNotFound:
-		// Declaration already gone — not an error for deletion
+		// Declaration already gone - not an error for deletion
 		return nil
 	default:
 		respBody, _ := io.ReadAll(resp.Body)
@@ -215,7 +215,7 @@ func (c *KMFDDMClient) DeleteSetDeclaration(setName, declarationID string, noNot
 	case http.StatusNoContent, http.StatusNotModified: // both OK
 		return nil
 	case http.StatusNotFound:
-		// Association already gone — not an error for deletion
+		// Association already gone - not an error for deletion
 		return nil
 	default:
 		respBody, _ := io.ReadAll(resp.Body)
@@ -239,7 +239,7 @@ func (c *KMFDDMClient) PutEnrollmentSet(enrollmentID, setName string, noNotify b
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusNoContent, http.StatusNotModified: // 204 = changed, 304 = unchanged — both OK
+	case http.StatusNoContent, http.StatusNotModified: // 204 = changed, 304 = unchanged - both OK
 		return nil
 	default:
 		respBody, _ := io.ReadAll(resp.Body)

@@ -168,7 +168,7 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	assert.Contains(t, reqs[3].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
-	// Step 5: PUT enrollment-set (nonotify=true — DeclarativeManagement enqueued directly in step 6)
+	// Step 5: PUT enrollment-set (nonotify=true - DeclarativeManagement enqueued directly in step 6)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
 	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
@@ -253,7 +253,7 @@ func TestPushProfileViaDDM_PutDeclarationError(t *testing.T) {
 	defer kmfddmServer.Close()
 	statusOverrides["PUT /v1/declarations"] = http.StatusInternalServerError
 
-	// Rebuild server with error override — use a fresh mock that returns 500
+	// Rebuild server with error override - use a fresh mock that returns 500
 	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -327,7 +327,7 @@ func TestDeleteProfileViaDDM_Success(t *testing.T) {
 	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
-	// Step 5: PUT enrollment-set (nonotify=true — DeclarativeManagement enqueued directly in step 6)
+	// Step 5: PUT enrollment-set (nonotify=true - DeclarativeManagement enqueued directly in step 6)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
 	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")

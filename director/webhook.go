@@ -60,8 +60,8 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // reconcileDeviceState handles post-enrollment lifecycle transitions after any device event
-// Returns (true, nil) if RunInitialTasks was triggered — caller must return immediately
-// Returns (false, err) if SendDeviceConfigured failed — caller must propagate the error
+// Returns (true, nil) if RunInitialTasks was triggered - caller must return immediately
+// Returns (false, err) if SendDeviceConfigured failed - caller must propagate the error
 func reconcileDeviceState(device types.Device, currentDevice *types.Device) (bool, error) {
 	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
 		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})

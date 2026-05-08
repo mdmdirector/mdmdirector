@@ -232,7 +232,7 @@ func TestDeleteDeclaration_NotFound(t *testing.T) {
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
 	err := kmfddmClient.DeleteDeclaration("nonexistent.declaration", true)
-	// Not found is not an error for deletion — declaration already gone
+	// Not found is not an error for deletion - declaration already gone
 	require.NoError(t, err)
 }
 
@@ -259,6 +259,6 @@ func TestDeleteSetDeclaration_NotFound(t *testing.T) {
 
 	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
 	err := kmfddmClient.DeleteSetDeclaration("device-udid-123", "nonexistent.declaration", true)
-	// Not found is not an error for deletion — association already gone
+	// Not found is not an error for deletion - association already gone
 	require.NoError(t, err)
 }
