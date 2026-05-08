@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -77,18 +78,58 @@ func newMockKMFDDM(t *testing.T) (*httptest.Server, *[]requestLog, map[string]in
 	return server, &requests, statusOverrides
 }
 
-func TestPushProfileViaDDM_AllNew(t *testing.T) {
-	server, requests, _ := newMockKMFDDM(t)
-	defer server.Close()
+// setupDDMPushTest wires up a mock KMFDDM server, mock DB, and mock NanoMDM server
+// needed by PushProfileViaDDM and DeleteProfileViaDDM (which call SendCommand internally).
+// Returns the KMFDDM client, request log, status overrides, and cleanup func.
+func setupDDMPushTest(t *testing.T, udid string) (*ddm.KMFDDMClient, *[]requestLog, map[string]int, func()) {
+	t.Helper()
 
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	setupNanoMDMFlag(t)
+
+	kmfddmServer, requests, statusOverrides := newMockKMFDDM(t)
+
+	// Mock DB for GetDevice lookup inside SendCommand
+	mockSpy, dbCleanup := setupMockDB(t)
+	mockGetDevice(mockSpy, udid)
+	mockCreateCommand(mockSpy)
+
+	// Mock NanoMDM server that returns a successful enqueue response
+	nanoServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			CommandUUID: "ddm-cmd-uuid",
+			RequestType: "DeclarativeManagement",
+			Status: map[string]mdm.EnrollmentStatus{
+				udid: {PushResult: "success"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	mdm.InitClient(nanoServer.URL, "test-api-key")
+
+	client := ddm.NewKMFDDMClient(kmfddmServer.URL, "testapikey")
+
+	cleanup := func() {
+		kmfddmServer.Close()
+		nanoServer.Close()
+		dbCleanup()
+		mdm.InitClient("", "")
+	}
+
+	return client, requests, statusOverrides, cleanup
+}
+
+func TestPushProfileViaDDM_AllNew(t *testing.T) {
+	client, requests, _, cleanup := setupDDMPushTest(t, "DEVICE-UDID-1234")
+	defer cleanup()
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
 
 	// When declarations are new/changed (204), no touch calls should be made.
-	// Expected sequence: PUT decl (legacy), PUT decl (activation), PUT set-decl (legacy),
-	// PUT set-decl (activation), PUT enrollment-set
+	// Expected kmfddm sequence: PUT decl (legacy), PUT decl (activation), PUT set-decl (legacy),
+	// PUT set-decl (activation), PUT enrollment-set (nonotify=true)
+	// Step 6 (DeclarativeManagement enqueue) goes to nanomdm, not captured here.
 	assert.Len(t, *requests, 5)
 
 	reqs := *requests
@@ -125,30 +166,27 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 	assert.Contains(t, reqs[3].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
-	// Step 5: PUT enrollment-set (noNotify=false to trigger sync)
+	// Step 5: PUT enrollment-set (nonotify=true — DeclarativeManagement enqueued directly in step 6)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
 	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
-	// noNotify should be false (absent from query or set to false)
-	assert.NotContains(t, reqs[4].Query, "nonotify=true")
+	assert.Contains(t, reqs[4].Query, "nonotify=true")
 }
 
 func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
-	server, requests, statusOverrides := newMockKMFDDM(t)
-	defer server.Close()
+	client, requests, statusOverrides, cleanup := setupDDMPushTest(t, "DEVICE-UDID-1234")
+	defer cleanup()
 
 	// Override PUT declarations to return 304 (unchanged)
 	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
-
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
 
 	// When declarations are unchanged (304), touch calls should be made.
-	// Expected: PUT decl (legacy), POST touch (legacy), PUT decl (activation),
+	// Expected kmfddm: PUT decl (legacy), POST touch (legacy), PUT decl (activation),
 	// POST touch (activation), PUT set-decl (legacy), PUT set-decl (activation),
-	// PUT enrollment-set
+	// PUT enrollment-set (nonotify=true)
 	assert.Len(t, *requests, 7)
 
 	reqs := *requests
@@ -178,16 +216,15 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	assert.Equal(t, "PUT", reqs[5].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[5].Path)
 
-	// Step 5: PUT enrollment-set
+	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[6].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[6].Path)
+	assert.Contains(t, reqs[6].Query, "nonotify=true")
 }
 
 func TestPushProfileViaDDM_ActivationReferencesLegacyDeclaration(t *testing.T) {
-	server, requests, _ := newMockKMFDDM(t)
-	defer server.Close()
-
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	client, requests, _, cleanup := setupDDMPushTest(t, "DEVICE-UDID-1234")
+	defer cleanup()
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.NoError(t, err)
@@ -209,12 +246,18 @@ func TestPushProfileViaDDM_ActivationReferencesLegacyDeclaration(t *testing.T) {
 }
 
 func TestPushProfileViaDDM_PutDeclarationError(t *testing.T) {
-	server, _, statusOverrides := newMockKMFDDM(t)
-	defer server.Close()
-
+	_, _, statusOverrides := newMockKMFDDM(t)
+	kmfddmServer, _, _ := newMockKMFDDM(t)
+	defer kmfddmServer.Close()
 	statusOverrides["PUT /v1/declarations"] = http.StatusInternalServerError
 
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	// Rebuild server with error override — use a fresh mock that returns 500
+	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer errServer.Close()
+
+	client := ddm.NewKMFDDMClient(errServer.URL, "testapikey")
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.Error(t, err)
@@ -222,15 +265,24 @@ func TestPushProfileViaDDM_PutDeclarationError(t *testing.T) {
 }
 
 func TestPushProfileViaDDM_TouchError(t *testing.T) {
-	server, _, statusOverrides := newMockKMFDDM(t)
-	defer server.Close()
+	_, _, statusOverrides := newMockKMFDDM(t)
 
-	// Declarations return 304 (unchanged) so touch is called
-	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
-	// Touch returns 500
-	statusOverrides["POST /v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi/touch"] = http.StatusInternalServerError
+	// Build a server where PUT /v1/declarations returns 304 but touch returns 500
+	touchErrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && r.URL.Path == "/v1/declarations" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer touchErrServer.Close()
+	_ = statusOverrides
 
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	client := ddm.NewKMFDDMClient(touchErrServer.URL, "testapikey")
 
 	err := PushProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi", "https://mdm.example.com")
 	require.Error(t, err)
@@ -238,14 +290,15 @@ func TestPushProfileViaDDM_TouchError(t *testing.T) {
 }
 
 func TestDeleteProfileViaDDM_Success(t *testing.T) {
-	server, requests, _ := newMockKMFDDM(t)
-	defer server.Close()
-
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	client, requests, _, cleanup := setupDDMPushTest(t, "DEVICE-UDID-1234")
+	defer cleanup()
 
 	err := DeleteProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi")
 	require.NoError(t, err)
 
+	// Expected kmfddm: DELETE set-decl (legacy), DELETE set-decl (activation),
+	// DELETE decl (legacy), DELETE decl (activation), PUT enrollment-set (nonotify=true)
+	// Step 6 (DeclarativeManagement) goes to nanomdm.
 	assert.Len(t, *requests, 5)
 
 	reqs := *requests
@@ -272,20 +325,24 @@ func TestDeleteProfileViaDDM_Success(t *testing.T) {
 	assert.Equal(t, "/v1/declarations/com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
-	// Step 5: PUT enrollment-set (noNotify=false to trigger sync)
+	// Step 5: PUT enrollment-set (nonotify=true — DeclarativeManagement enqueued directly in step 6)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
 	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
-	assert.NotContains(t, reqs[4].Query, "nonotify=true")
+	assert.Contains(t, reqs[4].Query, "nonotify=true")
 }
 
 func TestDeleteProfileViaDDM_DeleteSetDeclarationError(t *testing.T) {
-	server, _, statusOverrides := newMockKMFDDM(t)
-	defer server.Close()
+	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer errServer.Close()
 
-	statusOverrides["DELETE /v1/set-declarations/DEVICE-UDID-1234"] = http.StatusInternalServerError
-
-	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+	client := ddm.NewKMFDDMClient(errServer.URL, "testapikey")
 
 	err := DeleteProfileViaDDM(client, "DEVICE-UDID-1234", "com.example.wifi")
 	require.Error(t, err)

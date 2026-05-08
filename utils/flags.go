@@ -164,6 +164,14 @@ func NanoMDMURL() string {
 	return strings.TrimRight(flag.Lookup("nanomdm-url").Value.(flag.Getter).Get().(string), "/")
 }
 
+func NanoMDMProfileURL() string {
+	v := strings.TrimRight(flag.Lookup("nanomdm-profile-url").Value.(flag.Getter).Get().(string), "/")
+	if v == "" {
+		return NanoMDMURL()
+	}
+	return v
+}
+
 func NanoMDMAPIKey() string {
 	return flag.Lookup("nanomdm-api-key").Value.(flag.Getter).Get().(string)
 }

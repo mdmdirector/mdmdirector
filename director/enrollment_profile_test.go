@@ -183,6 +183,8 @@ const minimalUnsignedProfile = `<?xml version="1.0" encoding="UTF-8"?>
 // the webhook returns a valid profile and PushProfiles sends it successfully
 func TestReinstallEnrollmentProfile_Webhook_Success(t *testing.T) {
 	registerEnrollmentProfileFlags(t)
+	setupNanoMDMFlag(t) // ensure mdm-server-type registered
+	setFlag(t, "mdm-server-type", "micromdm")
 	setFlag(t, "enable-reenroll-via-webhook", "true")
 	setFlag(t, "enrollment-profile-signed", "false")
 	setFlag(t, "sign", "false")

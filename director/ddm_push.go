@@ -68,9 +68,20 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Associate enrollment with the set (noNotify=false — triggers DDM sync)
-	if err := client.PutEnrollmentSet(udid, udid, false); err != nil {
+	// Step 5: Associate enrollment with the set (noNotify=true — we enqueue directly below)
+	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT enrollment-set for %s", udid)
+	}
+
+	// Step 6: Enqueue DeclarativeManagement command directly — kmfddm only notifies when
+	// something changed in its DB, so re-enrollment with same UDID never triggers a push.
+	// Enqueue unconditionally to guarantee the device syncs its declaration set.
+	commandPayload := types.CommandPayload{
+		UDID:        udid,
+		RequestType: "DeclarativeManagement",
+	}
+	if _, err := SendCommand(commandPayload); err != nil {
+		return errors.Wrapf(err, "PushProfileViaDDM: enqueue DeclarativeManagement for %s", udid)
 	}
 
 	return nil
@@ -83,7 +94,7 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 		return err
 	}
 
-	nanoMDMURL := utils.NanoMDMURL()
+	nanoMDMURL := utils.NanoMDMProfileURL()
 
 	for i := range devices {
 		device := devices[i]
@@ -130,7 +141,7 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 		return err
 	}
 
-	nanoMDMURL := utils.NanoMDMURL()
+	nanoMDMURL := utils.NanoMDMProfileURL()
 
 	for i := range profiles {
 		profileData := profiles[i]
@@ -207,9 +218,18 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Re-associate enrollment with set (noNotify=false — triggers DDM sync)
-	if err := client.PutEnrollmentSet(udid, udid, false); err != nil {
+	// Step 5: Re-associate enrollment with set (noNotify=true — we enqueue directly below)
+	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: PUT enrollment-set for %s", udid)
+	}
+
+	// Step 6: Enqueue DeclarativeManagement command directly (same reason as PushProfileViaDDM)
+	commandPayload := types.CommandPayload{
+		UDID:        udid,
+		RequestType: "DeclarativeManagement",
+	}
+	if _, err := SendCommand(commandPayload); err != nil {
+		return errors.Wrapf(err, "DeleteProfileViaDDM: enqueue DeclarativeManagement for %s", udid)
 	}
 
 	return nil

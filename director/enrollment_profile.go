@@ -125,6 +125,14 @@ func ensureCertOnEnrollmentProfile(
 		return nil
 	}
 
+	if !utils.EnableReEnrollViaWebhook() {
+		enrollmentProfilePath := utils.EnrollmentProfile()
+		if enrollmentProfilePath == "" {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No enrollment profile set, skipping signing cert check"})
+			return nil
+		}
+	}
+
 	enrollmentProfile, found := getEnrollmentProfile(profileLists)
 	if !found {
 		InfoLogger(LogHolder{
