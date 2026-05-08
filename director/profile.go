@@ -101,6 +101,8 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
 
+		originalHash := sha256.Sum256(mobileconfig)
+
 		tempProfileDict["PayloadUUID"] = profile.HashedPayloadUUID
 
 		mobileconfig, err = plist.MarshalIndent(&tempProfileDict, "\t")
@@ -114,10 +116,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		mutatedHash := sha256.Sum256(mobileconfig)
 		profile.MobileconfigData = mobileconfig
-		mobileconfigData := mobileconfig
-		hash := sha256.Sum256(mobileconfigData)
-		profile.MobileconfigHash = hash[:]
+		profile.MobileconfigHash = mutatedHash[:]
+		profile.OriginalMobileconfigHash = originalHash[:]
 
 		profiles = append(profiles, profile)
 
@@ -158,8 +160,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		sharedMutatedHash := sha256.Sum256(mobileconfig)
 		sharedProfile.MobileconfigData = mobileconfig
-		sharedProfile.MobileconfigHash = hash[:]
+		sharedProfile.MobileconfigHash = sharedMutatedHash[:]
+		sharedProfile.OriginalMobileconfigHash = originalHash[:]
 		sharedProfiles = append(sharedProfiles, sharedProfile)
 	}
 
