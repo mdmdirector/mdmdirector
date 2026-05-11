@@ -3,6 +3,7 @@ package director
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/google/uuid"
@@ -37,8 +38,8 @@ func TestPushApplicationViaDDM_AllNew(t *testing.T) {
 
 	// When declarations are new (304), no touch calls should be made.
 	// Expected sequence: PUT decl (package), PUT decl (activation), PUT set-decl (package),
-	// PUT set-decl (activation), PUT enrollment-set
-	assert.Len(t, *requests, 5)
+	// PUT set-decl (activation), PUT enrollment-set (nonotify=true), POST notify
+	assert.Len(t, *requests, 6)
 
 	reqs := *requests
 
@@ -74,11 +75,16 @@ func TestPushApplicationViaDDM_AllNew(t *testing.T) {
 	assert.Contains(t, reqs[3].Query, "declaration="+testActiPackID)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
-	// Step 5: PUT enrollment-set (noNotify=false to trigger sync)
+	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
 	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
-	assert.NotContains(t, reqs[4].Query, "nonotify=true")
+	assert.Contains(t, reqs[4].Query, "nonotify=true")
+
+	// Step 6: POST notify - triggers DDM sync unconditionally
+	assert.Equal(t, "POST", reqs[5].Method)
+	assert.Equal(t, "/v1/notify", reqs[5].Path)
+	assert.Contains(t, reqs[5].Query, "id=DEVICE-UDID-1234")
 }
 
 func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
@@ -97,8 +103,8 @@ func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	// When declarations are unchanged (304), touch calls should be made.
 	// Expected: PUT decl (package), POST touch (package), PUT decl (activation),
 	// POST touch (activation), PUT set-decl (package), PUT set-decl (activation),
-	// PUT enrollment-set
-	assert.Len(t, *requests, 7)
+	// PUT enrollment-set (nonotify=true), POST notify
+	assert.Len(t, *requests, 8)
 
 	reqs := *requests
 
@@ -127,9 +133,15 @@ func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 	assert.Equal(t, "PUT", reqs[5].Method)
 	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[5].Path)
 
-	// Step 5: PUT enrollment-set
+	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[6].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[6].Path)
+	assert.Contains(t, reqs[6].Query, "nonotify=true")
+
+	// Step 6: POST notify
+	assert.Equal(t, "POST", reqs[7].Method)
+	assert.Equal(t, "/v1/notify", reqs[7].Path)
+	assert.Contains(t, reqs[7].Query, "id=DEVICE-UDID-1234")
 }
 
 func TestPushApplicationViaDDM_ActivationReferencesPackageDeclaration(t *testing.T) {
@@ -208,4 +220,23 @@ func TestPushApplicationViaDDM_TouchError(t *testing.T) {
 	err := PushApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "touch Package declaration")
+}
+
+func TestPushApplicationViaDDM_NotifyError(t *testing.T) {
+	// Build a server that succeeds for all steps but returns 500 for POST /v1/notify
+	notifyErrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/v1/notify" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer notifyErrServer.Close()
+
+	client := ddm.NewKMFDDMClient(notifyErrServer.URL, "testapikey")
+	app := newTestApp("https://example.com/app.plist")
+
+	err := PushApplicationViaDDM(client, "DEVICE-UDID-1234", app)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "notify enrollment")
 }
