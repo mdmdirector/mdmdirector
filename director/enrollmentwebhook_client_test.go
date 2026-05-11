@@ -89,7 +89,7 @@ func TestFetchEnrollmentProfileFromWebhook_EmptyBody(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		// Write nothing — empty body.
+		// Write nothing - empty body.
 	}))
 	defer server.Close()
 

@@ -68,9 +68,15 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Associate enrollment with the set (noNotify=false — triggers DDM sync)
-	if err := client.PutEnrollmentSet(udid, udid, false); err != nil {
+	// Step 5: Associate enrollment with the set (noNotify=true - notify done explicitly in step 6)
+	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT enrollment-set for %s", udid)
+	}
+
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command regardless of prior enrollment state.
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "PushProfileViaDDM: notify enrollment for %s", udid)
 	}
 
 	return nil
@@ -83,7 +89,7 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 		return err
 	}
 
-	nanoMDMURL := utils.NanoMDMURL()
+	nanoMDMURL := utils.NanoMDMProfileURL()
 
 	for i := range devices {
 		device := devices[i]
@@ -130,7 +136,7 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 		return err
 	}
 
-	nanoMDMURL := utils.NanoMDMURL()
+	nanoMDMURL := utils.NanoMDMProfileURL()
 
 	for i := range profiles {
 		profileData := profiles[i]
@@ -207,9 +213,15 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Re-associate enrollment with set (noNotify=false — triggers DDM sync)
-	if err := client.PutEnrollmentSet(udid, udid, false); err != nil {
+	// Step 5: Re-associate enrollment with set (noNotify=true - notify done explicitly in step 6)
+	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: PUT enrollment-set for %s", udid)
+	}
+
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command and removes the deleted declarations.
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "DeleteProfileViaDDM: notify enrollment for %s", udid)
 	}
 
 	return nil

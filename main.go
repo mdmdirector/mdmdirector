@@ -119,8 +119,12 @@ var KMFDDMURL string
 // KMFDDMAPIKey is the API key for KMFDDM basic auth
 var KMFDDMAPIKey string
 
-// NanoMDMURL is the externally reachable URL of the NanoMDM server
+// NanoMDMURL is the internal API URL of the NanoMDM server (server-to-server)
 var NanoMDMURL string
+
+// NanoMDMProfileURL is the public URL devices use to fetch profiles via DDM LegacyProfile declarations.
+// Defaults to NanoMDMURL if not set.
+var NanoMDMProfileURL string
 
 // NanoMDMAPIKey is the API key for the NanoMDM server
 var NanoMDMAPIKey string
@@ -364,7 +368,13 @@ func main() {
 		&NanoMDMURL,
 		"nanomdm-url",
 		env.String("NANOMDM_URL", ""),
-		"NanoMDM server URL (required if mdm-server-type=nanomdm)",
+		"NanoMDM server URL for server-to-server API calls (required if mdm-server-type=nanomdm)",
+	)
+	flag.StringVar(
+		&NanoMDMProfileURL,
+		"nanomdm-profile-url",
+		env.String("NANOMDM_PROFILE_URL", ""),
+		"Public NanoMDM URL for DDM profile download URLs (devices fetch directly); defaults to nanomdm-url if not set",
 	)
 	flag.StringVar(
 		&NanoMDMAPIKey,
@@ -483,6 +493,9 @@ func main() {
 
 	// Initialize NanoMDM client only if configured to use NanoMDM
 	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
+		if NanoMDMProfileURL == "" {
+			NanoMDMProfileURL = NanoMDMURL
+		}
 		mdm.InitClient(NanoMDMURL, NanoMDMAPIKey)
 		director.InfoLogger(director.LogHolder{Message: "NanoMDM client initialized"})
 	} else {

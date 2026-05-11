@@ -79,6 +79,6 @@ func (c *NanoMDMClient) ClearQueue(enrollmentIDs ...string) (*QueueDeleteRespons
 		return result, errors.New(errMsg)
 	}
 
-	// 204 = empty queue (doRequest returns new(T)), 207 = partial success — both returned without error
+	// 204 = empty queue (doRequest returns new(T)), 207 = partial success - both returned without error
 	return result, nil
 }

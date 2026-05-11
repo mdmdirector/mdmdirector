@@ -19,7 +19,7 @@ import (
 )
 
 // A minimal valid device plist payload for tests.
-// Only carries UDID and SerialNumber — enough for most checkin/acknowledge flows.
+// Only carries UDID and SerialNumber - enough for most checkin/acknowledge flows.
 const testDevicePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -95,7 +95,7 @@ func TestReconcileDeviceState_NotAwaitingConfiguration(t *testing.T) {
 
 // ---- WebhookHandler HTTP routing ------------------------------------------------
 
-// Only CheckinEvent is populated — AcknowledgeEvent is nil.
+// Only CheckinEvent is populated - AcknowledgeEvent is nil.
 // WebhookHandler must route to handleCheckinEvent and return 200 regardless of inner errors.
 func TestWebhookHandler_OnlyCheckinEventPopulated(t *testing.T) {
 	payload := types.PostPayload{
@@ -116,7 +116,7 @@ func TestWebhookHandler_OnlyCheckinEventPopulated(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
-// Only AcknowledgeEvent is populated — CheckinEvent is nil.
+// Only AcknowledgeEvent is populated - CheckinEvent is nil.
 // WebhookHandler must route to handleAcknowledgeEvent and return 200 regardless of inner errors.
 func TestWebhookHandler_OnlyAcknowledgeEventPopulated(t *testing.T) {
 	payload := types.PostPayload{
@@ -149,7 +149,7 @@ func TestHandleCheckinEvent_InvalidPlist(t *testing.T) {
 	assert.Contains(t, err.Error(), "handleCheckinEvent:plist.Unmarshal")
 }
 
-// mdm.CheckOut resets the device and returns immediately — no UpdateDevice call.
+// mdm.CheckOut resets the device and returns immediately - no UpdateDevice call.
 func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 	utils.FlagProvider = mockFlagBuilder{false}
 

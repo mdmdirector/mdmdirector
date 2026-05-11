@@ -79,7 +79,7 @@ func TestSendCommand_NanoMDM_EmptyUDID(t *testing.T) {
 	defer cleanup()
 
 	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
-		// Should never be called — empty UDID is rejected before HTTP
+		// Should never be called - empty UDID is rejected before HTTP
 		t.Error("unexpected HTTP call for empty UDID")
 	})
 
@@ -552,7 +552,7 @@ func TestFetchDevicesFromMDM_NanoMDM_SkipsEmptyID(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 
-	// Only one valid device — one INSERT batch
+	// Only one valid device - one INSERT batch
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "devices"`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
