@@ -20,6 +20,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	if out.DeviceUDIDs != nil {
@@ -31,6 +32,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
@@ -53,16 +55,15 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+						return
 					}
 					devices = append(devices, device)
-					err = SaveInstallApplications(devices, out)
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-					}
 				}
 				err = SaveInstallApplications(devices, out)
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				for _, ManifestURL := range out.ManifestURLs {
 					var installApplication types.DeviceInstallApplication
@@ -84,6 +85,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
@@ -124,14 +126,14 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) error {
-	var installApplication types.DeviceInstallApplication
-
 	for i := range devices {
 		device := devices[i]
 		for _, ManifestURL := range payload.ManifestURLs {
-			installApplication.ManifestURL = ManifestURL.URL
-			installApplication.DeviceUDID = device.UDID
-			err := db.DB.Model(&device).Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
+			installApplication := types.DeviceInstallApplication{
+				ManifestURL: ManifestURL.URL,
+				DeviceUDID:  device.UDID,
+			}
+			err := db.DB.Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
 			if err != nil {
 				return errors.Wrap(err, "SaveInstallApplications")
 			}
