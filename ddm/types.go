@@ -28,5 +28,13 @@ type ActivationSimplePayload struct {
 
 // PackagePayload is the Payload for a com.apple.configuration.package declaration
 type PackagePayload struct {
-	ManifestURL string `json:"ManifestURL"`
+	ManifestURL     string                 `json:"ManifestURL"`
+	InstallBehavior PackageInstallBehavior `json:"InstallBehavior"`
+}
+
+// PackageInstallBehavior controls how the device installs the package.
+// Install: "Required" → auto-install after activation.
+// Install: "Optional" → stage as available, user-triggered install.
+type PackageInstallBehavior struct {
+	Install string `json:"Install"`
 }

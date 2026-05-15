@@ -181,14 +181,19 @@ func TestPushApplicationViaDDM_PackagePayloadContainsManifestURL(t *testing.T) {
 
 	reqs := *requests
 	// Parse the package declaration to verify it contains the manifest URL
+	// and the InstallBehavior.Install=Required key required for auto-install.
 	var payload struct {
 		Payload struct {
-			ManifestURL string `json:"ManifestURL"`
+			ManifestURL     string `json:"ManifestURL"`
+			InstallBehavior struct {
+				Install string `json:"Install"`
+			} `json:"InstallBehavior"`
 		} `json:"Payload"`
 	}
 	err = json.Unmarshal([]byte(reqs[0].Body), &payload)
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/myapp.plist", payload.Payload.ManifestURL)
+	assert.Equal(t, "Required", payload.Payload.InstallBehavior.Install)
 }
 
 func TestPushApplicationViaDDM_PutDeclarationError(t *testing.T) {

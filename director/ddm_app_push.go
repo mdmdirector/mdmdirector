@@ -21,7 +21,8 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 		Identifier: packageDeclID,
 		Type:       ddm.TypePackage,
 		Payload: ddm.PackagePayload{
-			ManifestURL: app.ManifestURL,
+			ManifestURL:     app.ManifestURL,
+			InstallBehavior: ddm.PackageInstallBehavior{Install: "Required"},
 		},
 	}
 
