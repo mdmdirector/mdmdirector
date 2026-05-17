@@ -60,26 +60,24 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // reconcileDeviceState handles post-enrollment lifecycle transitions after any device event
-// Returns (true, nil) if RunInitialTasks was triggered - caller must return immediately
-// Returns (false, err) if SendDeviceConfigured failed - caller must propagate the error
-func reconcileDeviceState(device types.Device, currentDevice *types.Device) (bool, error) {
+func reconcileDeviceState(device types.Device, currentDevice *types.Device) error {
 	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
 		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})
 		if err := RunInitialTasks(device.UDID); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return true, err
+			return err
 		}
-		return true, nil
+		return nil
 	}
 
 	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
 		if err := SendDeviceConfigured(*currentDevice); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return false, err
+			return err
 		}
 	}
 
-	return false, nil
+	return nil
 }
 
 func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
@@ -118,7 +116,7 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return err
 	}
 
-	if done, err := reconcileDeviceState(device, currentDevice); done || err != nil {
+	if err := reconcileDeviceState(device, currentDevice); err != nil {
 		return err
 	}
 
@@ -151,7 +149,7 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		return err
 	}
 
-	if done, err := reconcileDeviceState(device, currentDevice); done || err != nil {
+	if err := reconcileDeviceState(device, currentDevice); err != nil {
 		return err
 	}
 
