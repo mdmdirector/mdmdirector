@@ -2,6 +2,7 @@ package mdm
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -29,8 +30,16 @@ func (c *NanoMDMClient) Enqueue(enrollmentIDs []string, payload types.CommandPay
 		},
 	}
 
+	// Callers pass Payload base64-encoded — historically required so it could travel as JSON to micromdm,
+	// which then base64-decoded it before building the plist.
+	// nanomdm has no such decode step: we need to build the plist here.
+	// So, undo the caller's base64 first, and pass plist directly
 	if payload.Payload != "" {
-		mdmCmd.Command.Payload = []byte(payload.Payload)
+		raw, err := base64.StdEncoding.DecodeString(payload.Payload)
+		if err != nil {
+			return nil, errors.Wrap(err, "Enqueue: decode payload")
+		}
+		mdmCmd.Command.Payload = raw
 	}
 
 	plistData, err := plist.MarshalIndent(mdmCmd, "\t")

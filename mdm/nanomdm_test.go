@@ -1,6 +1,7 @@
 package mdm
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/stretchr/testify/assert"
@@ -223,6 +225,52 @@ func TestNanoMDMClient_Enqueue(t *testing.T) {
 		_, err := client.Enqueue([]string{}, types.CommandPayload{}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no enrollment IDs provided")
+	})
+
+	t.Run("InstallProfile payload is base64-encoded exactly once on the wire", func(t *testing.T) {
+		// The mobileconfig bytes any caller would have produced.
+		rawMobileconfig := []byte(`<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>PayloadType</key><string>Configuration</string></dict></plist>`)
+
+		// Callers (e.g. director/profile.go) hand us the already-base64'd string.
+		callerPayload := base64.StdEncoding.EncodeToString(rawMobileconfig)
+
+		var capturedBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(APIResponse{CommandUUID: "cmd-1"})
+		}))
+		defer server.Close()
+
+		client := createTestClient(server.URL, "test-key")
+
+		_, err := client.Enqueue([]string{"device-123"}, types.CommandPayload{
+			UDID:        "device-123",
+			RequestType: "InstallProfile",
+			Payload:     callerPayload,
+		}, nil)
+		require.NoError(t, err)
+
+		// Decode the on-wire plist exactly the way macOS does, and assert that
+		// the <data> in <key>Payload</key> decodes to the original mobileconfig.
+		// If the producer's base64 wasn't decoded in Enqueue, this round-trip
+		// would yield `callerPayload` (a base64 string) instead of `rawMobileconfig`.
+		var decoded MDMCommandPlist
+		require.NoError(t, plist.Unmarshal(capturedBody, &decoded))
+		assert.Equal(t, "InstallProfile", decoded.Command.RequestType)
+		assert.Equal(t, rawMobileconfig, decoded.Command.Payload,
+			"<data> on the wire must decode to the raw mobileconfig (no double-base64)")
+	})
+
+	t.Run("invalid base64 payload returns error", func(t *testing.T) {
+		client := createTestClient("https://example.com", "key")
+
+		_, err := client.Enqueue([]string{"device-123"}, types.CommandPayload{
+			RequestType: "InstallProfile",
+			Payload:     "!!!not-base64!!!",
+		}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decode payload")
 	})
 }
 
