@@ -264,11 +264,11 @@ func CommandInQueue(device types.Device, command string, afterDate time.Time) bo
 	return true
 }
 
-func InstallAppInQueue(device types.Device, data string) (bool, error) {
+func InstallAppInQueue(device types.Device, manifestURL string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND data = ?", device.UDID, "InstallApplication", data).
+		Where("device_ud_id = ? AND request_type = ? AND manifest_url = ?", device.UDID, "InstallApplication", manifestURL).
 		Where("status = ? OR status = ?", "", "NotNow").
 		First(&commandModel).
 		Error
