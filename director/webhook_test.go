@@ -45,9 +45,8 @@ func TestReconcileDeviceState_NeitherConditionMet(t *testing.T) {
 		AwaitingConfiguration: false,
 	}
 
-	done, err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(device, currentDevice)
 
-	assert.False(t, done)
 	assert.NoError(t, err)
 }
 
@@ -59,9 +58,8 @@ func TestReconcileDeviceState_TokenUpdateNotReceived(t *testing.T) {
 		TokenUpdateRecieved: false,
 	}
 
-	done, err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(device, currentDevice)
 
-	assert.False(t, done)
 	assert.NoError(t, err)
 }
 
@@ -73,9 +71,8 @@ func TestReconcileDeviceState_InitialTasksAlreadyRun(t *testing.T) {
 		TokenUpdateRecieved: true,
 	}
 
-	done, err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(device, currentDevice)
 
-	assert.False(t, done)
 	assert.NoError(t, err)
 }
 
@@ -87,9 +84,8 @@ func TestReconcileDeviceState_NotAwaitingConfiguration(t *testing.T) {
 		AwaitingConfiguration: false,
 	}
 
-	done, err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(device, currentDevice)
 
-	assert.False(t, done)
 	assert.NoError(t, err)
 }
 
