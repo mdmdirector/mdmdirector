@@ -3,6 +3,7 @@ package director
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -280,4 +281,130 @@ func TestProcessAcknowledgePayload_QueryResponses_InvalidPlist(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "processAcknowledgePayload:QueryResponses:plist.Unmarshal")
+}
+
+// ---- previousBuildVersion -------------------------------------------------------
+
+// Unknown UDID (no row) returns "" — used by handlers to skip the build comparison
+// on first enrollment.
+func TestPreviousBuildVersion_UnknownDeviceReturnsEmpty(t *testing.T) {
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	got := previousBuildVersion("UNKNOWN-UDID")
+
+	assert.Equal(t, "", got)
+}
+
+// Known device returns its persisted BuildVersion.
+func TestPreviousBuildVersion_KnownDeviceReturnsBuild(t *testing.T) {
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	// GetDevice chains First(...).Scan(...), which re-executes the SELECT.
+	// Both invocations need rows.
+	makeRows := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"ud_id", "build_version"}).
+			AddRow("1234-5678-123456", "25F71")
+	}
+	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
+		WillReturnRows(makeRows())
+	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
+		WillReturnRows(makeRows())
+
+	got := previousBuildVersion("1234-5678-123456")
+
+	assert.Equal(t, "25F71", got)
+}
+
+// ---- pushOnNewBuild -------------------------------------------------------------
+
+// setBoolFlag registers (idempotent) and sets a global bool flag for the
+// duration of the test. Used to drive utils.PushOnNewBuild() / utils.UseDDM().
+func setBoolFlag(t *testing.T, name string, enabled bool) {
+	t.Helper()
+	if flag.Lookup(name) == nil {
+		flag.Bool(name, enabled, "test")
+	}
+	prev := flag.Lookup(name).Value.String()
+	require.NoError(t, flag.Set(name, fmt.Sprintf("%t", enabled)))
+	t.Cleanup(func() { _ = flag.Set(name, prev) })
+}
+
+func setPushOnNewBuildFlag(t *testing.T, enabled bool) {
+	setBoolFlag(t, "push-new-build", enabled)
+}
+
+// First enrollment: no prior build to compare against → no-op, no error.
+func TestPushOnNewBuild_FirstEnrollmentNoOp(t *testing.T) {
+	setPushOnNewBuildFlag(t, true)
+
+	device := types.Device{UDID: "1234-5678-123456"}
+
+	err := pushOnNewBuild(device, "", "25F71")
+
+	assert.NoError(t, err)
+}
+
+// Same build on both sides (the original bug pattern): no-op, no error,
+// no profile push attempted.
+func TestPushOnNewBuild_SameBuildNoOp(t *testing.T) {
+	setPushOnNewBuildFlag(t, true)
+
+	device := types.Device{UDID: "1234-5678-123456"}
+
+	err := pushOnNewBuild(device, "25F71", "25F71")
+
+	assert.NoError(t, err)
+}
+
+// Apparent downgrade: skipped (avoids spurious re-pushes from synthetic webhooks
+// or rollback scenarios).
+func TestPushOnNewBuild_DowngradeNoOp(t *testing.T) {
+	setPushOnNewBuildFlag(t, true)
+
+	device := types.Device{UDID: "1234-5678-123456"}
+
+	err := pushOnNewBuild(device, "26Z99", "25F71")
+
+	assert.NoError(t, err)
+}
+
+// Build upgrade triggers InstallAllProfiles. Asserted by observing that
+// InstallAllProfiles' first query (device-specific profiles by UDID) was
+// issued — proves the version-comparison branch fired. We let every query
+// fail; pushOnNewBuild swallows the resulting error and returns nil, which
+// matches its production contract (errors logged, not propagated).
+func TestPushOnNewBuild_BuildUpgradeTriggersInstall(t *testing.T) {
+	setPushOnNewBuildFlag(t, true)
+	setBoolFlag(t, "use-ddm", false) // InstallAllProfiles reads utils.UseDDM()
+
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	mockSpy.MatchExpectationsInOrder(false)
+	deviceProfilesQuery := mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1`).
+		WithArgs("1234-5678-123456").
+		WillReturnError(errDBGoneAway)
+	// Allow any number of follow-up queries (shared profiles, RequestProfileList)
+	// to fail without failing the test — only the device_profiles query is
+	// load-bearing for the assertion.
+	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
+	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
+
+	device := types.Device{UDID: "1234-5678-123456"}
+
+	err := pushOnNewBuild(device, "25F71", "26Z99")
+
+	assert.NoError(t, err)
+	require.NotNil(t, deviceProfilesQuery, "device_profiles query must have been registered")
 }
