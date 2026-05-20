@@ -95,7 +95,8 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 	}
 
 	device.Active = true
-	oldBuild := device.BuildVersion
+	oldBuild := previousBuildVersion(device.UDID)
+	newBuild := device.BuildVersion
 
 	switch topic {
 	case "mdm.Authenticate":
@@ -120,11 +121,9 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return err
 	}
 
-	if utils.PushOnNewBuild() {
-		if err := pushOnNewBuild(device.UDID, oldBuild); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return err
-		}
+	if err := pushOnNewBuild(*currentDevice, oldBuild, newBuild); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
 	}
 
 	return nil
@@ -143,6 +142,9 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	}
 
 	device.Active = true
+	oldBuild := previousBuildVersion(device.UDID)
+	newBuild := device.BuildVersion
+
 	currentDevice, err := UpdateDevice(device)
 	if err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
@@ -153,12 +155,9 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		return err
 	}
 
-	oldBuild := device.BuildVersion
-	if utils.PushOnNewBuild() {
-		if err := pushOnNewBuild(device.UDID, oldBuild); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			return err
-		}
+	if err := pushOnNewBuild(*currentDevice, oldBuild, newBuild); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
 	}
 
 	if event.CommandUUID != "" {
@@ -271,37 +270,42 @@ func RequestDeviceUpdate(device types.Device) {
 	// PushDevice(device.UDID)
 }
 
-func pushOnNewBuild(udid string, currentBuild string) error {
-	// Only compare if there is actually a build version set
-	var err error
-	if udid == "" {
-		err = fmt.Errorf("device does not have a udid set %v", udid)
-		return errors.Wrap(err, "No Device UDID set")
-	}
-
-	oldDevice, err := GetDevice(udid)
+// previousBuildVersion returns the BuildVersion currently persisted for the given UDID
+// returns "" if the device is unknown (first enrollment) or the row can't be loaded
+func previousBuildVersion(udid string) string {
+	existing, err := GetDevice(udid)
 	if err != nil {
-		return errors.Wrap(err, "push on new build")
+		return ""
 	}
-	if oldDevice.BuildVersion != "" {
-		if currentBuild != "" {
-			oldVersion, err := version.NewVersion(oldDevice.BuildVersion)
-			if err != nil {
-				return err
-			}
-			currentVersion, err := version.NewVersion(currentBuild)
-			if err != nil {
-				return err
-			}
+	return existing.BuildVersion
+}
 
-			if oldVersion.LessThan(currentVersion) {
-				_, err = InstallAllProfiles(oldDevice)
-				if err != nil {
-					ErrorLogger(LogHolder{Message: err.Error()})
-				}
-			}
-		}
+// pushOnNewBuild re-pushes all profiles when the device's BuildVersion has moved forward (e.g. macOS upgrade).
+func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error {
+	if !utils.PushOnNewBuild() {
+		return nil
+	}
+	if device.UDID == "" {
+		return errors.Wrap(fmt.Errorf("device does not have a udid set"), "No Device UDID set")
+	}
+	if oldBuild == "" || newBuild == "" {
+		return nil
 	}
 
+	oldVersion, err := version.NewVersion(oldBuild)
+	if err != nil {
+		return err
+	}
+	newVersion, err := version.NewVersion(newBuild)
+	if err != nil {
+		return err
+	}
+	if !oldVersion.LessThan(newVersion) {
+		return nil
+	}
+
+	if _, err := InstallAllProfiles(device); err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+	}
 	return nil
 }
