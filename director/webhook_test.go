@@ -338,13 +338,13 @@ func setBoolFlag(t *testing.T, name string, enabled bool) {
 	t.Cleanup(func() { _ = flag.Set(name, prev) })
 }
 
-func setPushOnNewBuildFlag(t *testing.T, enabled bool) {
-	setBoolFlag(t, "push-new-build", enabled)
+func setPushOnNewBuildFlag(t *testing.T) {
+	setBoolFlag(t, "push-new-build", true)
 }
 
 // First enrollment: no prior build to compare against → no-op, no error.
 func TestPushOnNewBuild_FirstEnrollmentNoOp(t *testing.T) {
-	setPushOnNewBuildFlag(t, true)
+	setPushOnNewBuildFlag(t)
 
 	device := types.Device{UDID: "1234-5678-123456"}
 
@@ -356,7 +356,7 @@ func TestPushOnNewBuild_FirstEnrollmentNoOp(t *testing.T) {
 // Same build on both sides (the original bug pattern): no-op, no error,
 // no profile push attempted.
 func TestPushOnNewBuild_SameBuildNoOp(t *testing.T) {
-	setPushOnNewBuildFlag(t, true)
+	setPushOnNewBuildFlag(t)
 
 	device := types.Device{UDID: "1234-5678-123456"}
 
@@ -368,7 +368,7 @@ func TestPushOnNewBuild_SameBuildNoOp(t *testing.T) {
 // Apparent downgrade: skipped (avoids spurious re-pushes from synthetic webhooks
 // or rollback scenarios).
 func TestPushOnNewBuild_DowngradeNoOp(t *testing.T) {
-	setPushOnNewBuildFlag(t, true)
+	setPushOnNewBuildFlag(t)
 
 	device := types.Device{UDID: "1234-5678-123456"}
 
@@ -383,7 +383,7 @@ func TestPushOnNewBuild_DowngradeNoOp(t *testing.T) {
 // fail; pushOnNewBuild swallows the resulting error and returns nil, which
 // matches its production contract (errors logged, not propagated).
 func TestPushOnNewBuild_BuildUpgradeTriggersInstall(t *testing.T) {
-	setPushOnNewBuildFlag(t, true)
+	setPushOnNewBuildFlag(t)
 	setBoolFlag(t, "use-ddm", false) // InstallAllProfiles reads utils.UseDDM()
 
 	postgresMock, mockSpy, _ := sqlmock.New()
