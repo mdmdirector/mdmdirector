@@ -4,9 +4,9 @@ import "testing"
 
 func TestClassifyDeclarationType(t *testing.T) {
 	cases := []struct {
-		declType        string
-		wantClass       string
-		wantSubtype     string
+		declType    string
+		wantClass   string
+		wantSubtype string
 	}{
 		{TypeLegacyProfile, DeclClassConfiguration, DeclSubtypeProfile},
 		{TypePackage, DeclClassConfiguration, DeclSubtypeApplication},
@@ -29,9 +29,9 @@ func TestClassifyDeclarationType(t *testing.T) {
 
 func TestClassifyDeclarationID(t *testing.T) {
 	cases := []struct {
-		identifier      string
-		wantClass       string
-		wantSubtype     string
+		identifier  string
+		wantClass   string
+		wantSubtype string
 	}{
 		{LegacyProfileDeclarationID("com.example", "UDID-1", "com.profile.id"), DeclClassConfiguration, DeclSubtypeProfile},
 		{ProfileActivationDeclarationID("com.example", "UDID-1", "com.profile.id"), DeclClassActivation, ""},
