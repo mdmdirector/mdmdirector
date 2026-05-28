@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/groob/plist"
 	"github.com/hashicorp/go-version"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -46,16 +48,48 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if out.CheckinEvent != nil {
-		if err := handleCheckinEvent(out.Topic, out.CheckinEvent); err != nil {
+		err := handleCheckinEvent(out.Topic, out.CheckinEvent)
+		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+		if utils.Prometheus() {
+			metrics.CheckinRequests(checkinMessageType(out.Topic), metrics.ResultFromError(err)).Inc()
 		}
 		return
 	}
 
 	if out.AcknowledgeEvent != nil {
-		if err := handleAcknowledgeEvent(out.AcknowledgeEvent); err != nil {
+		err := handleAcknowledgeEvent(out.AcknowledgeEvent)
+		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
 		}
+		if utils.Prometheus() {
+			metrics.CommandResults(commandResultStatus(out.AcknowledgeEvent.Status), metrics.ResultFromError(err)).Inc()
+		}
+	}
+}
+
+// commandResultStatus normalizes the device-reported Status field into a label for mdmdirector_command_results_total
+func commandResultStatus(status string) string {
+	switch status {
+	case "Acknowledged", "Error", "Idle", "NotNow", "CommandFormatError":
+		return status
+	default:
+		return metrics.UnknownLabel
+	}
+}
+
+// checkinMessageType maps an MDM webhook topic (e.g. "mdm.TokenUpdate") to the MessageType label used by mdmdirector_checkin_requests_total
+func checkinMessageType(topic string) string {
+	const prefix = "mdm."
+	if !strings.HasPrefix(topic, prefix) {
+		return metrics.UnknownLabel
+	}
+	switch t := strings.TrimPrefix(topic, prefix); t {
+	case "Authenticate", "TokenUpdate", "CheckOut":
+		return t
+	default:
+		return metrics.UnknownLabel
 	}
 }
 

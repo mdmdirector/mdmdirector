@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -670,6 +671,9 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 			commandPayload.UDID = device.UDID
 
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
 				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
 				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
@@ -771,6 +775,9 @@ func DeleteSharedProfiles(
 				},
 			)
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "deleted", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
 				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
 				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
@@ -816,6 +823,9 @@ func DeleteDeviceProfiles(
 				},
 			)
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "deleted", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 				continue
@@ -888,6 +898,9 @@ func PushSharedProfiles(
 			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
 				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
 				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
@@ -1074,6 +1087,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			// But it should be installed
 			if profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present not in the profile list and should be installed", Metric: profileForVerification.Type})
+				if utils.Prometheus() {
+					metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
+				}
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			} else { // Not present, and shouldn't be installed
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is not present and should not be installed", Metric: profileForVerification.Type})

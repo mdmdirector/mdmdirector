@@ -3,6 +3,7 @@ package director
 import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 
@@ -26,13 +27,16 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 	}
 
 	legacyChanged, err := client.PutDeclaration(legacyDecl, true)
+	observeDeclarationWrite(ddm.TypeLegacyProfile, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT LegacyProfile declaration for %s on %s", payloadIdentifier, udid)
 	}
 
 	// If unchanged (304), touch to force reinstall
 	if !legacyChanged {
-		if err := client.TouchDeclaration(legacyDeclID, true); err != nil {
+		err := client.TouchDeclaration(legacyDeclID, true)
+		observeDeclarationWrite(ddm.TypeLegacyProfile, "touch", err)
+		if err != nil {
 			return errors.Wrapf(err, "PushProfileViaDDM: touch LegacyProfile declaration for %s on %s", payloadIdentifier, udid)
 		}
 	}
@@ -47,24 +51,31 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 	}
 
 	activationChanged, err := client.PutDeclaration(activationDecl, true)
+	observeDeclarationWrite(ddm.TypeActivationSimple, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT ActivationSimple declaration for %s on %s", payloadIdentifier, udid)
 	}
 
 	// If unchanged (304), touch to force reinstall
 	if !activationChanged {
-		if err := client.TouchDeclaration(activationDeclID, true); err != nil {
+		err := client.TouchDeclaration(activationDeclID, true)
+		observeDeclarationWrite(ddm.TypeActivationSimple, "touch", err)
+		if err != nil {
 			return errors.Wrapf(err, "PushProfileViaDDM: touch ActivationSimple declaration for %s on %s", payloadIdentifier, udid)
 		}
 	}
 
 	// Step 3: Associate LegacyProfile declaration with the device's set (noNotify=true)
-	if err := client.PutSetDeclaration(udid, legacyDeclID, true); err != nil {
+	err = client.PutSetDeclaration(udid, legacyDeclID, true)
+	observeSetMembershipChange(legacyDeclID, "put", err)
+	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (legacy) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 4: Associate ActivationSimple declaration with the device's set (noNotify=true)
-	if err := client.PutSetDeclaration(udid, activationDeclID, true); err != nil {
+	err = client.PutSetDeclaration(udid, activationDeclID, true)
+	observeSetMembershipChange(activationDeclID, "put", err)
+	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
@@ -75,7 +86,9 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 
 	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
 	// always receives a DeclarativeManagement command regardless of prior enrollment state.
-	if err := client.NotifyEnrollment(udid); err != nil {
+	err = client.NotifyEnrollment(udid)
+	observeDDMNotify(err)
+	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: notify enrollment for %s", udid)
 	}
 
@@ -105,7 +118,11 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 				},
 			)
 
-			if err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL); err != nil {
+			err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+			}
+			if err != nil {
 				ErrorLogger(LogHolder{
 					Message:           err.Error(),
 					DeviceUDID:        device.UDID,
@@ -163,7 +180,11 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 				},
 			)
 
-			if err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL); err != nil {
+			err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+			}
+			if err != nil {
 				ErrorLogger(LogHolder{
 					Message:           err.Error(),
 					DeviceUDID:        device.UDID,
@@ -194,22 +215,30 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 
 	// Step 1: Remove LegacyProfile from the device's set (noNotify=true)
-	if err := client.DeleteSetDeclaration(udid, legacyDeclID, true); err != nil {
+	err := client.DeleteSetDeclaration(udid, legacyDeclID, true)
+	observeSetMembershipChange(legacyDeclID, "delete", err)
+	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE set-declaration (legacy) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 2: Remove ActivationSimple from the device's set (noNotify=true)
-	if err := client.DeleteSetDeclaration(udid, activationDeclID, true); err != nil {
+	err = client.DeleteSetDeclaration(udid, activationDeclID, true)
+	observeSetMembershipChange(activationDeclID, "delete", err)
+	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 3: Delete LegacyProfile declaration (noNotify=true)
-	if err := client.DeleteDeclaration(legacyDeclID, true); err != nil {
+	err = client.DeleteDeclaration(legacyDeclID, true)
+	observeDeclarationWriteByID(legacyDeclID, "delete", err)
+	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (legacy) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 4: Delete ActivationSimple declaration (noNotify=true)
-	if err := client.DeleteDeclaration(activationDeclID, true); err != nil {
+	err = client.DeleteDeclaration(activationDeclID, true)
+	observeDeclarationWriteByID(activationDeclID, "delete", err)
+	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
@@ -220,7 +249,9 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 
 	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
 	// always receives a DeclarativeManagement command and removes the deleted declarations.
-	if err := client.NotifyEnrollment(udid); err != nil {
+	err = client.NotifyEnrollment(udid)
+	observeDDMNotify(err)
+	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: notify enrollment for %s", udid)
 	}
 
@@ -248,7 +279,11 @@ func DeleteDeviceProfilesViaDDM(devices []types.Device, profiles []types.DeviceP
 				},
 			)
 
-			if err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier); err != nil {
+			err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "deleted", metrics.ResultFromError(err)).Inc()
+			}
+			if err != nil {
 				ErrorLogger(LogHolder{
 					Message:           err.Error(),
 					DeviceUDID:        device.UDID,
@@ -305,7 +340,11 @@ func DeleteSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedP
 				},
 			)
 
-			if err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier); err != nil {
+			err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "deleted", metrics.ResultFromError(err)).Inc()
+			}
+			if err != nil {
 				ErrorLogger(LogHolder{
 					Message:           err.Error(),
 					DeviceUDID:        device.UDID,

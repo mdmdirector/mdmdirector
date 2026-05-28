@@ -4,7 +4,9 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -42,18 +44,27 @@ func releaseInitialTasksLease(udid string) {
 	}
 }
 
-func RunInitialTasks(udid string) error {
+func RunInitialTasks(udid string) (retErr error) {
 	if udid == "" {
 		err := errors.New("No Device UDID")
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
 		return errors.Wrap(err, "RunInitialTasks")
 	}
 
 	acquired, err := tryAcquireInitialTasksLease(udid)
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
 		return errors.Wrap(err, "RunInitialTasks")
 	}
 	if !acquired {
 		InfoLogger(LogHolder{DeviceUDID: udid, Message: "RunInitialTasks lease not acquired - already running or already complete; skipping"})
+		if utils.Prometheus() {
+			metrics.InitialTasks("lease_contention").Inc()
+		}
 		return nil
 	}
 
@@ -61,6 +72,9 @@ func RunInitialTasks(udid string) error {
 	defer func() {
 		if !completed {
 			releaseInitialTasksLease(udid)
+		}
+		if utils.Prometheus() {
+			metrics.InitialTasks(metrics.ResultFromError(retErr)).Inc()
 		}
 	}()
 
