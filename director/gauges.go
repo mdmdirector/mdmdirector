@@ -8,7 +8,7 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 )
 
-const gaugePollInterval = 10 * time.Second
+const gaugePollInterval = time.Minute
 
 // PollGauges starts background pollers that populate - mdmdirector_devices_total and mdmdirector_profiles_total
 func PollGauges() {
