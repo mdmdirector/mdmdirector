@@ -17,6 +17,7 @@ import (
 
 	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -131,6 +132,9 @@ func escrowPin(device types.Device, pin string) error {
 	response, err := http.PostForm(urlString, encoded)
 
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
 		return errors.Wrap(err, "escrowPin")
 	}
 
@@ -138,6 +142,9 @@ func escrowPin(device types.Device, pin string) error {
 	body, err := io.ReadAll(response.Body)
 
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
 		return errors.Wrap(err, "escrowPin:"+string(body))
 	}
 
@@ -147,6 +154,9 @@ func escrowPin(device types.Device, pin string) error {
 			DeviceSerial: device.SerialNumber,
 			Message:      fmt.Sprintf("Failed to escrow pin, status %v: %v", response.StatusCode, string(body)),
 		})
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
 		return errors.Errorf("escrowPin: server returned %v: %v", response.StatusCode, string(body))
 	}
 
@@ -156,6 +166,9 @@ func escrowPin(device types.Device, pin string) error {
 		Message:      "Successfully escrowed pin",
 	})
 
+	if utils.Prometheus() {
+		metrics.PinEscrow("success").Inc()
+	}
 	return nil
 }
 

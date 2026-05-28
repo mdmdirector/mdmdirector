@@ -3,6 +3,7 @@ package director
 import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 
@@ -27,13 +28,16 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 	}
 
 	packageChanged, err := client.PutDeclaration(packageDecl, true)
+	observeDeclarationWrite(ddm.TypePackage, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT Package declaration for %s on %s", app.ManifestURL, udid)
 	}
 
 	// If unchanged (304), touch to force reinstall
 	if !packageChanged {
-		if err := client.TouchDeclaration(packageDeclID, true); err != nil {
+		err := client.TouchDeclaration(packageDeclID, true)
+		observeDeclarationWrite(ddm.TypePackage, "touch", err)
+		if err != nil {
 			return errors.Wrapf(err, "PushApplicationViaDDM: touch Package declaration for %s on %s", app.ManifestURL, udid)
 		}
 	}
@@ -48,24 +52,31 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 	}
 
 	activationChanged, err := client.PutDeclaration(activationDecl, true)
+	observeDeclarationWrite(ddm.TypeActivationSimple, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT ActivationSimple declaration for %s on %s", app.ManifestURL, udid)
 	}
 
 	// If unchanged (304), touch to force reinstall
 	if !activationChanged {
-		if err := client.TouchDeclaration(activationDeclID, true); err != nil {
+		err := client.TouchDeclaration(activationDeclID, true)
+		observeDeclarationWrite(ddm.TypeActivationSimple, "touch", err)
+		if err != nil {
 			return errors.Wrapf(err, "PushApplicationViaDDM: touch ActivationSimple declaration for %s on %s", app.ManifestURL, udid)
 		}
 	}
 
 	// Step 3: Associate Package declaration with the device's set (noNotify=true)
-	if err := client.PutSetDeclaration(udid, packageDeclID, true); err != nil {
+	err = client.PutSetDeclaration(udid, packageDeclID, true)
+	observeSetMembershipChange(packageDeclID, "put", err)
+	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT set-declaration (package) for %s on %s", app.ManifestURL, udid)
 	}
 
 	// Step 4: Associate ActivationSimple declaration with the device's set (noNotify=true)
-	if err := client.PutSetDeclaration(udid, activationDeclID, true); err != nil {
+	err = client.PutSetDeclaration(udid, activationDeclID, true)
+	observeSetMembershipChange(activationDeclID, "put", err)
+	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT set-declaration (activation) for %s on %s", app.ManifestURL, udid)
 	}
 
@@ -76,7 +87,9 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 
 	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
 	// always receives a DeclarativeManagement command regardless of prior enrollment state.
-	if err := client.NotifyEnrollment(udid); err != nil {
+	err = client.NotifyEnrollment(udid)
+	observeDDMNotify(err)
+	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: notify enrollment for %s", udid)
 	}
 
@@ -104,7 +117,11 @@ func PushApplicationsViaDDM(devices []types.Device, manifestURL string) error {
 			Message:      "Pushing application via DDM",
 		})
 
-		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+		err := PushApplicationViaDDM(client, device.UDID, app)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+		}
+		if err != nil {
 			ErrorLogger(LogHolder{
 				Message:      err.Error(),
 				DeviceUDID:   device.UDID,
@@ -150,7 +167,11 @@ func PushSharedApplicationsViaDDM(devices []types.Device, manifestURL string) er
 			Message:      "Pushing shared application via DDM",
 		})
 
-		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+		err := PushApplicationViaDDM(client, device.UDID, app)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+		}
+		if err != nil {
 			ErrorLogger(LogHolder{
 				Message:      err.Error(),
 				DeviceUDID:   device.UDID,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -255,7 +256,13 @@ func deviceNeedsPush(device types.Device) bool {
 	return true
 }
 
-func PushDevice(udid string) error {
+func PushDevice(udid string) (err error) {
+	if utils.Prometheus() {
+		defer func() {
+			metrics.PushRequests(metrics.ResultFromError(err)).Inc()
+		}()
+	}
+
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
 		nanoClient, err := mdm.Client()

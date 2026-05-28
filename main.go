@@ -577,7 +577,7 @@ func main() {
 	}
 
 	if utils.Prometheus() {
-		director.Metrics()
+		director.PollGauges()
 		r.Handle("/metrics", promhttp.Handler())
 	}
 

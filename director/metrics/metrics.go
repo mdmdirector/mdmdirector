@@ -1,0 +1,289 @@
+package metrics
+
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+const subsystem = "mdmdirector"
+
+// UnknownLabel is the placeholder used when a metric label cannot be derived
+const UnknownLabel = "unknown"
+
+// checkinRequestsTotal counts MDM check-in events received via the webhook by message type and result
+// message_type: Authenticate, TokenUpdate, CheckOut, unknown (CommandAndReportResults are tracked in commandResultsTotal)
+//
+//nolint:gochecknoglobals
+var checkinRequestsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "checkin_requests_total",
+		Help:      "Total MDM check-in webhook events by message type and result.",
+	},
+	[]string{"message_type", "result"},
+)
+
+// CheckinRequests - accessor for checkinRequestsTotal
+func CheckinRequests(messageType, result string) prometheus.Counter {
+	return checkinRequestsTotal.WithLabelValues(messageType, result)
+}
+
+// commandResultsTotal counts MDM CommandAndReportResults webhook events by device-reported status and result
+// status values: Acknowledged, Error, Idle, NotNow, CommandFormatError
+//
+//nolint:gochecknoglobals
+var commandResultsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "command_results_total",
+		Help:      "Total MDM CommandAndReportResults webhook events by device-reported status and result.",
+	},
+	[]string{"status", "result"},
+)
+
+// CommandResults - accessor for commandResultsTotal
+func CommandResults(status, result string) prometheus.Counter {
+	return commandResultsTotal.WithLabelValues(status, result)
+}
+
+// pushRequestsTotal counts APNs push requests dispatched by mdmdirector by result
+//
+//nolint:gochecknoglobals
+var pushRequestsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "push_requests_total",
+		Help:      "Total APNs push requests dispatched by mdmdirector by result.",
+	},
+	[]string{"result"},
+)
+
+// PushRequests - accessor for pushRequestsTotal
+func PushRequests(result string) prometheus.Counter {
+	return pushRequestsTotal.WithLabelValues(result)
+}
+
+// profileOperationsTotal counts profile delivery operations dispatched by mdmdirector
+// Labels:
+//   - scope:     "device" (per-device profile) or "shared" (shared profile)
+//   - operation: "pushed" or "deleted"
+//   - result:    "success" or "error"
+//
+//nolint:gochecknoglobals
+var profileOperationsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "profile_operations_total",
+		Help:      "Total profile push/delete operations dispatched by mdmdirector, by scope, operation and result.",
+	},
+	[]string{"scope", "operation", "result"},
+)
+
+// ProfileOperations - accessor for profileOperationsTotal
+func ProfileOperations(scope, operation, result string) prometheus.Counter {
+	return profileOperationsTotal.WithLabelValues(scope, operation, result)
+}
+
+// applicationOperationsTotal counts application delivery operations dispatched by mdmdirector
+// Labels:
+//   - scope:     "device" (per-device app) or "shared" (shared app)
+//   - operation: "pushed"
+//   - result:    "success" or "error"
+//
+//nolint:gochecknoglobals
+var applicationOperationsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "application_operations_total",
+		Help:      "Total application push operations dispatched by mdmdirector, by scope, operation and result.",
+	},
+	[]string{"scope", "operation", "result"},
+)
+
+// ApplicationOperations - accessor for applicationOperationsTotal
+func ApplicationOperations(scope, operation, result string) prometheus.Counter {
+	return applicationOperationsTotal.WithLabelValues(scope, operation, result)
+}
+
+// enqueueRequestsTotal counts MDM command enqueue attempts dispatched by mdmdirector
+// command_type: e.g. InstallProfile, RemoveProfile, InstallApplication, DeviceInformation,
+// ProfileList, SecurityInfo, CertificateList, DeviceLock, EraseDevice
+//
+//nolint:gochecknoglobals
+var enqueueRequestsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "enqueue_requests_total",
+		Help:      "Total MDM command enqueue attempts by mdmdirector, by command type and result.",
+	},
+	[]string{"command_type", "result"},
+)
+
+// EnqueueRequests - accessor for enqueueRequestsTotal
+func EnqueueRequests(commandType, result string) prometheus.Counter {
+	return enqueueRequestsTotal.WithLabelValues(commandType, result)
+}
+
+// profileVerificationMismatchesTotal counts profiles found missing from a device's reported ProfileList during verification
+// scope: "device" or "shared"
+//
+//nolint:gochecknoglobals
+var profileVerificationMismatchesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "profile_verification_mismatches_total",
+		Help:      "Total profile verification mismatches detected (desired profile absent from device's reported ProfileList), by scope.",
+	},
+	[]string{"scope"},
+)
+
+// ProfileVerificationMismatches - accessor for profileVerificationMismatchesTotal
+func ProfileVerificationMismatches(scope string) prometheus.Counter {
+	return profileVerificationMismatchesTotal.WithLabelValues(scope)
+}
+
+// initialTasksTotal counts RunInitialTasks invocations by terminal result
+// result: "success", "error", "lease_contention"
+//
+//nolint:gochecknoglobals
+var initialTasksTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "initial_tasks_total",
+		Help:      "Total RunInitialTasks invocations by terminal result.",
+	},
+	[]string{"result"},
+)
+
+// InitialTasks - accessor for initialTasksTotal
+func InitialTasks(result string) prometheus.Counter {
+	return initialTasksTotal.WithLabelValues(result)
+}
+
+// ddmDeclarationWritesTotal counts KMFDDM declaration write operations issued by mdmdirector
+// Labels:
+//   - declaration_type:    "configuration", "activation", "asset", "management", "unknown"
+//   - declaration_subtype: "profile" or "application" for configuration declarations; "" otherwise
+//   - operation:           "put", "touch", or "delete"
+//   - result:              "success" or "error"
+//
+//nolint:gochecknoglobals
+var ddmDeclarationWritesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "ddm_declaration_writes_total",
+		Help:      "Total KMFDDM declaration writes issued by mdmdirector, by declaration type/subtype, operation and result.",
+	},
+	[]string{"declaration_type", "declaration_subtype", "operation", "result"},
+)
+
+// DDMDeclarationWrites - accessor for ddmDeclarationWritesTotal
+func DDMDeclarationWrites(declarationType, declarationSubtype, operation, result string) prometheus.Counter {
+	return ddmDeclarationWritesTotal.WithLabelValues(declarationType, declarationSubtype, operation, result)
+}
+
+// ddmSetMembershipChangesTotal counts KMFDDM set-declaration membership changes issued by mdmdirector
+// Labels match ddmDeclarationWritesTotal with operation values "put" or "delete".
+//
+//nolint:gochecknoglobals
+var ddmSetMembershipChangesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "ddm_set_membership_changes_total",
+		Help:      "Total KMFDDM set-declaration membership changes issued by mdmdirector, by declaration type/subtype, operation and result.",
+	},
+	[]string{"declaration_type", "declaration_subtype", "operation", "result"},
+)
+
+// DDMSetMembershipChanges - accessor for ddmSetMembershipChangesTotal
+func DDMSetMembershipChanges(declarationType, declarationSubtype, operation, result string) prometheus.Counter {
+	return ddmSetMembershipChangesTotal.WithLabelValues(declarationType, declarationSubtype, operation, result)
+}
+
+// ddmNotifyTotal counts KMFDDM enrollment notify calls issued by mdmdirector
+// result: "success", "error"
+//
+//nolint:gochecknoglobals
+var ddmNotifyTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "ddm_notify_total",
+		Help:      "Total KMFDDM enrollment notify calls issued by mdmdirector, by result.",
+	},
+	[]string{"result"},
+)
+
+// DDMNotify - accessor for ddmNotifyTotal
+func DDMNotify(result string) prometheus.Counter {
+	return ddmNotifyTotal.WithLabelValues(result)
+}
+
+// pinEscrowTotal counts unlock-pin escrow attempts to the Crypt-compatible endpoint
+// result: "success", "error"
+//
+//nolint:gochecknoglobals
+var pinEscrowTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "pin_escrow_total",
+		Help:      "Total unlock-pin escrow attempts by result.",
+	},
+	[]string{"result"},
+)
+
+// PinEscrow - accessor for pinEscrowTotal
+func PinEscrow(result string) prometheus.Counter {
+	return pinEscrowTotal.WithLabelValues(result)
+}
+
+// devicesTotal reports the current number of devices known to mdmdirector
+//
+//nolint:gochecknoglobals
+var devicesTotal = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Subsystem: subsystem,
+		Name:      "devices_total",
+		Help:      "Current number of devices known to mdmdirector.",
+	},
+)
+
+// DevicesTotal - accessor for devicesTotal
+func DevicesTotal() prometheus.Gauge {
+	return devicesTotal
+}
+
+// profilesTotal reports the current number of profiles tracked by mdmdirector
+// Labels:
+//   - scope:     "device" or "shared"
+//   - installed: "true" or "false"
+//
+//nolint:gochecknoglobals
+var profilesTotal = promauto.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Subsystem: subsystem,
+		Name:      "profiles_total",
+		Help:      "Current number of profiles tracked by mdmdirector, by scope and installed state.",
+	},
+	[]string{"scope", "installed"},
+)
+
+// ProfilesTotal - accessor for profilesTotal
+func ProfilesTotal(scope, installed string) prometheus.Gauge {
+	return profilesTotal.WithLabelValues(scope, installed)
+}
+
+// ResultLabel maps an HTTP status code or error presence to the canonical result label.
+func ResultLabel(statusCode int) string {
+	if statusCode >= 400 {
+		return "error"
+	}
+	return "success"
+}
+
+// ResultFromError returns "success" if err is nil, otherwise "error".
+func ResultFromError(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "success"
+}

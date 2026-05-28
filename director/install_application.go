@@ -6,6 +6,7 @@ import (
 
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -168,6 +169,9 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		commandPayload.ManifestURL = installApplication.ManifestURL
 
 		command, err := SendCommand(commandPayload)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+		}
 		if err != nil {
 			// We should return an error or something here
 			ErrorLogger(LogHolder{Message: err.Error()})
@@ -218,6 +222,9 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 		commandPayload.ManifestURL = installSharedApplication.ManifestURL
 
 		command, err := SendCommand(commandPayload)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+		}
 		if err != nil {
 			return sentCommands, errors.Wrap(err, "Push Shared Install Application")
 		}

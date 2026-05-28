@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -58,16 +59,25 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
 		return command, err
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&commandResponse)
 
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
 		return command, err
 	}
 
 	defer resp.Body.Close()
+	if utils.Prometheus() {
+		metrics.EnqueueRequests(commandPayload.RequestType, metrics.ResultLabel(resp.StatusCode)).Inc()
+	}
 
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
@@ -84,15 +94,6 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	)
 
 	db.DB.Create(&command)
-	if utils.Prometheus() {
-		if commandPayload.RequestType == "InstallProfile" {
-			ProfilesPushed.Inc()
-		}
-
-		if commandPayload.RequestType == "InstallApplication" {
-			InstallApplicationsPushed.Inc()
-		}
-	}
 
 	return command, nil
 }
@@ -116,13 +117,22 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 
 	resp, err := nanoClient.Enqueue([]string{commandPayload.UDID}, commandPayload, nil)
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
 		return command, errors.Wrap(err, "nanoMDM enqueue")
 	}
 
 	// Check per-device errors
 	pushErr, cmdErr := resp.ErrorsForID(commandPayload.UDID)
 	if cmdErr != "" {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
 		return command, errors.Errorf("command enqueue failed: %s", cmdErr)
+	}
+	if utils.Prometheus() {
+		metrics.EnqueueRequests(commandPayload.RequestType, "success").Inc()
 	}
 
 	if pushErr != "" {
@@ -146,15 +156,6 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	})
 
 	db.DB.Create(&command)
-
-	if utils.Prometheus() {
-		if commandPayload.RequestType == "InstallProfile" {
-			ProfilesPushed.Inc()
-		}
-		if commandPayload.RequestType == "InstallApplication" {
-			InstallApplicationsPushed.Inc()
-		}
-	}
 
 	return command, nil
 }
