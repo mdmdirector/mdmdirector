@@ -12,15 +12,15 @@ import (
 )
 
 const (
-	testSharedAppUUID   = "660e8400-e29b-41d4-a716-446655440001"
-	testSharedPkgID     = "com.example.DEVICE-UDID-1234.package.660e8400-e29b-41d4-a716-446655440001"
-	testSharedActPkgID  = "com.example.DEVICE-UDID-1234.package_activation.660e8400-e29b-41d4-a716-446655440001"
+	testSharedAppUUID  = "660e8400-e29b-41d4-a716-446655440001"
+	testSharedPkgID    = "com.example.DEVICE-UDID-1234.package.660e8400-e29b-41d4-a716-446655440001"
+	testSharedActPkgID = "com.example.DEVICE-UDID-1234.package_activation.660e8400-e29b-41d4-a716-446655440001"
 )
 
-func newTestSharedApp(manifestURL string) types.SharedInstallApplication {
+func newTestSharedApp() types.SharedInstallApplication {
 	return types.SharedInstallApplication{
 		ID:          uuid.MustParse(testSharedAppUUID),
-		ManifestURL: manifestURL,
+		ManifestURL: "https://example.com/app.plist",
 	}
 }
 
@@ -29,7 +29,7 @@ func TestDeleteSharedInstallApplicationViaDDM_Success(t *testing.T) {
 	defer server.Close()
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-	app := newTestSharedApp("https://example.com/app.plist")
+	app := newTestSharedApp()
 
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestDeleteSharedInstallApplicationViaDDM_AlreadyGone(t *testing.T) {
 	statusOverrides["DELETE /v1/declarations/"+testSharedActPkgID] = http.StatusNotFound
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-	app := newTestSharedApp("https://example.com/app.plist")
+	app := newTestSharedApp()
 
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestDeleteSharedInstallApplicationViaDDM_DeleteSetDeclarationError(t *testi
 	statusOverrides["DELETE /v1/set-declarations/DEVICE-UDID-1234"] = http.StatusInternalServerError
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-	app := newTestSharedApp("https://example.com/app.plist")
+	app := newTestSharedApp()
 
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.Error(t, err)
@@ -108,7 +108,7 @@ func TestDeleteSharedInstallApplicationViaDDM_DeleteDeclarationError(t *testing.
 	statusOverrides["DELETE /v1/declarations/"+testSharedPkgID] = http.StatusInternalServerError
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-	app := newTestSharedApp("https://example.com/app.plist")
+	app := newTestSharedApp()
 
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.Error(t, err)
@@ -122,7 +122,7 @@ func TestDeleteSharedInstallApplicationViaDDM_NotifyError(t *testing.T) {
 	statusOverrides["POST /v1/notify"] = http.StatusInternalServerError
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
-	app := newTestSharedApp("https://example.com/app.plist")
+	app := newTestSharedApp()
 
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.Error(t, err)
