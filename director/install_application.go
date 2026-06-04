@@ -320,6 +320,87 @@ func installBootstrapPackagesViaDDM(device types.Device) error {
 	return nil
 }
 
+func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
+	declarationPrefix := utils.DDMDeclarationPrefix()
+	pkgID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
+	actID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
+
+	if err := client.DeleteSetDeclaration(udid, pkgID, true); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove package set-declaration for %s on %s", app.ManifestURL, udid)
+	}
+	if err := client.DeleteSetDeclaration(udid, actID, true); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove activation set-declaration for %s on %s", app.ManifestURL, udid)
+	}
+	if err := client.DeleteDeclaration(pkgID, true); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: delete package declaration for %s on %s", app.ManifestURL, udid)
+	}
+	if err := client.DeleteDeclaration(actID, true); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: delete activation declaration for %s on %s", app.ManifestURL, udid)
+	}
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: notify enrollment for %s", udid)
+	}
+	return nil
+}
+
+func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
+	var out types.InstallApplicationPayload
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	manifestURLs := make([]string, 0, len(out.ManifestURLs))
+	for _, m := range out.ManifestURLs {
+		manifestURLs = append(manifestURLs, m.URL)
+	}
+
+	var sharedApps []types.SharedInstallApplication
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Find(&sharedApps).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if len(sharedApps) == 0 {
+		http.Error(w, "no matching shared install applications found", http.StatusNotFound)
+		return
+	}
+
+	if utils.UseDDMPackages() {
+		client, err := ddm.Client()
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		devices, err := GetAllDevices()
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		for _, app := range sharedApps {
+			for _, device := range devices {
+				if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
+					ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+				}
+			}
+		}
+	}
+
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Delete(&types.SharedInstallApplication{}).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
 	var installApplications []types.SharedInstallApplication
 
