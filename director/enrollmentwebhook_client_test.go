@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/fullsailor/pkcs7"
+	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/micromdm/go4/env"
 	"github.com/stretchr/testify/assert"
@@ -114,10 +116,6 @@ func TestFetchEnrollmentProfileFromWebhook_DeviceInfoHeaderEncoded(t *testing.T)
 		BuildVersion: "21A329",
 	}
 
-	// Pre-compute expected header so we can compare against what the server receives.
-	expectedHeader, err := buildMachineInfoHeader(device)
-	require.NoError(t, err)
-
 	var receivedHeader string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +128,23 @@ func TestFetchEnrollmentProfileFromWebhook_DeviceInfoHeaderEncoded(t *testing.T)
 	setFlagValue(t, "enroll-webhook-url", server.URL)
 	setFlagValue(t, "enroll-webhook-token", "tok")
 
-	_, err = fetchEnrollmentProfileFromWebhook(device)
+	_, err := fetchEnrollmentProfileFromWebhook(device)
 	require.NoError(t, err)
-	assert.Equal(t, expectedHeader, receivedHeader)
+
+	// The header must be a base64-encoded PKCS7 structure whose inner content
+	// is the MachineInfo plist. The receiving endpoint always runs pkcs7.Parse
+	// on it, so a raw plist would be rejected.
+	der, err := base64.StdEncoding.DecodeString(receivedHeader)
+	require.NoError(t, err, "header must be valid base64")
+
+	p7, err := pkcs7.Parse(der)
+	require.NoError(t, err, "header must be valid PKCS7 DER")
+
+	var info machineInfoPlist
+	err = plist.Unmarshal(p7.Content, &info)
+	require.NoError(t, err, "PKCS7 content must be a MachineInfo plist")
+
+	assert.Equal(t, device.UDID, info.UDID)
+	assert.Equal(t, device.SerialNumber, info.Serial)
+	assert.Equal(t, device.Model, info.Product)
 }

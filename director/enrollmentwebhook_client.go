@@ -1,11 +1,17 @@
 package director
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"io"
+	"math/big"
 	"net/http"
 	"time"
 
+	"github.com/fullsailor/pkcs7"
 	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
@@ -44,7 +50,57 @@ func buildMachineInfoHeader(device types.Device) (string, error) {
 		return "", errors.Wrap(err, "marshal MachineInfo plist")
 	}
 
-	return base64.StdEncoding.EncodeToString(plistBytes), nil
+	// X-Apple-Aspen-Deviceinfo is an Apple-format PKCS7/CMS-signed plist; real
+	// devices always send it wrapped this way. We match that format so any
+	// enrollment endpoint expecting the standard header can parse it.
+	wrapped, err := wrapPKCS7(plistBytes)
+	if err != nil {
+		return "", errors.Wrap(err, "wrap MachineInfo plist in PKCS7")
+	}
+
+	return base64.StdEncoding.EncodeToString(wrapped), nil
+}
+
+// wrapPKCS7 wraps data in a PKCS7 signed-data structure using an ephemeral self-signed certificate.
+// The signature is not intended to be verified by the receiver; it exists only so the payload is valid PKCS7 DER
+func wrapPKCS7(data []byte) ([]byte, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, errors.Wrap(err, "generate signing key")
+	}
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "mdmdirector-machineinfo"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, errors.Wrap(err, "create signing certificate")
+	}
+
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse signing certificate")
+	}
+
+	sd, err := pkcs7.NewSignedData(data)
+	if err != nil {
+		return nil, errors.Wrap(err, "new signed data")
+	}
+
+	if err := sd.AddSigner(cert, priv, pkcs7.SignerInfoConfig{}); err != nil {
+		return nil, errors.Wrap(err, "add signer")
+	}
+
+	signed, err := sd.Finish()
+	if err != nil {
+		return nil, errors.Wrap(err, "finish signed data")
+	}
+
+	return signed, nil
 }
 
 // fetchEnrollmentProfileFromWebhook gets enrollment profile from the enrollment profile webhook endpoint
