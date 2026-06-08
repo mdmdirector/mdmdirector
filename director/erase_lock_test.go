@@ -109,6 +109,39 @@ func TestEscrowPinServerError(t *testing.T) {
 	assert.True(t, found, "expected error log for server error response")
 }
 
+func TestEscrowPinRetryExhausted(t *testing.T) {
+	// Close the server before any requests so every attempt gets a connection error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server.Close()
+
+	registerEscrowFlag()
+	flag.Set("escrowurl", server.URL) //nolint:errcheck
+	defer flag.Set("escrowurl", "")   //nolint:errcheck
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	device := types.Device{UDID: "test-udid", SerialNumber: "test-serial"}
+
+	err := escrowPin(device, "123456")
+	assert.Error(t, err)
+
+	var warnCount int
+	var errorFound bool
+	for _, entry := range hook.Entries {
+		if entry.Level == logrus.WarnLevel {
+			warnCount++
+		}
+		if entry.Level == logrus.ErrorLevel && entry.Message == "Failed to escrow pin" {
+			errorFound = true
+			assert.Equal(t, "test-udid", entry.Data["device_udid"])
+			assert.Equal(t, "test-serial", entry.Data["device_serial"])
+		}
+	}
+	assert.Equal(t, escrowMaxRetries, warnCount, "expected a warn log for each failed attempt")
+	assert.True(t, errorFound, "expected error log 'Failed to escrow pin' after retries exhausted")
+}
+
 func TestEscrowPinNoURL(t *testing.T) {
 	registerEscrowFlag()
 	flag.Set("escrowurl", "") //nolint:errcheck
