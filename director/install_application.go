@@ -320,29 +320,6 @@ func installBootstrapPackagesViaDDM(device types.Device) error {
 	return nil
 }
 
-func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
-	declarationPrefix := utils.DDMDeclarationPrefix()
-	pkgID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
-	actID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
-
-	if err := client.DeleteSetDeclaration(udid, pkgID, true); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove package set-declaration for %s on %s", app.ManifestURL, udid)
-	}
-	if err := client.DeleteSetDeclaration(udid, actID, true); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove activation set-declaration for %s on %s", app.ManifestURL, udid)
-	}
-	if err := client.DeleteDeclaration(pkgID, true); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: delete package declaration for %s on %s", app.ManifestURL, udid)
-	}
-	if err := client.DeleteDeclaration(actID, true); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: delete activation declaration for %s on %s", app.ManifestURL, udid)
-	}
-	if err := client.NotifyEnrollment(udid); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: notify enrollment for %s", udid)
-	}
-	return nil
-}
-
 func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.InstallApplicationPayload
 	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
@@ -368,26 +345,28 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if utils.UseDDMPackages() {
-		client, err := ddm.Client()
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
+	if !utils.UseDDMPackages() {
+		return
+	}
 
-		devices, err := GetAllDevices()
-		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
+	client, err := ddm.Client()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
 
-		for _, app := range sharedApps {
-			for _, device := range devices {
-				if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
-					ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-				}
+	devices, err := GetAllDevices()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	for _, app := range sharedApps {
+		for _, device := range devices {
+			if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
+				ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
 			}
 		}
 	}
