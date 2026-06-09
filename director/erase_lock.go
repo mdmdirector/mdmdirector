@@ -95,10 +95,6 @@ func EraseLockDevice(udid string) error {
 	return nil
 }
 
-const escrowMaxRetries = 3
-
-var escrowClientTimeout = 10 * time.Second
-
 func escrowPin(device types.Device, pin string) error {
 	escrowURL := utils.EscrowURL()
 	if escrowURL == "" {
@@ -133,52 +129,36 @@ func escrowPin(device types.Device, pin string) error {
 		return errors.Wrap(err, "escrowPin")
 	}
 
-	client := &http.Client{Timeout: escrowClientTimeout}
+	log.Debugf("Escrowing %v to %v", device.UDID, urlString)
+	response, err := http.PostForm(urlString, encoded)
 
-	var lastErr error
-	for attempt := 1; attempt <= escrowMaxRetries; attempt++ {
-		log.Debugf("Escrowing %v to %v (attempt %d/%d)", device.UDID, urlString, attempt, escrowMaxRetries)
-
-		response, err := client.PostForm(urlString, encoded)
-		if err != nil {
-			lastErr = err
-			WarnLogger(LogHolder{
-				DeviceUDID:   device.UDID,
-				DeviceSerial: device.SerialNumber,
-				Message:      fmt.Sprintf("Failed to escrow pin on attempt %d/%d: %v", attempt, escrowMaxRetries, err),
-			})
-			continue
-		}
-
-		body, readErr := io.ReadAll(response.Body)
-		response.Body.Close()
-		if readErr != nil {
-			return errors.Wrap(readErr, "escrowPin:readBody")
-		}
-
-		if response.StatusCode != http.StatusOK {
-			ErrorLogger(LogHolder{
-				DeviceUDID:   device.UDID,
-				DeviceSerial: device.SerialNumber,
-				Message:      fmt.Sprintf("Failed to escrow pin, status %v: %v", response.StatusCode, string(body)),
-			})
-			return errors.Errorf("escrowPin: server returned %v: %v", response.StatusCode, string(body))
-		}
-
-		InfoLogger(LogHolder{
-			DeviceUDID:   device.UDID,
-			DeviceSerial: device.SerialNumber,
-			Message:      "Successfully escrowed pin",
-		})
-		return nil
+	if err != nil {
+		return errors.Wrap(err, "escrowPin")
 	}
 
-	ErrorLogger(LogHolder{
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+
+	if err != nil {
+		return errors.Wrap(err, "escrowPin:"+string(body))
+	}
+
+	if response.StatusCode != http.StatusOK {
+		ErrorLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      fmt.Sprintf("Failed to escrow pin, status %v: %v", response.StatusCode, string(body)),
+		})
+		return errors.Errorf("escrowPin: server returned %v: %v", response.StatusCode, string(body))
+	}
+
+	InfoLogger(LogHolder{
 		DeviceUDID:   device.UDID,
 		DeviceSerial: device.SerialNumber,
-		Message:      "Failed to escrow pin",
+		Message:      "Successfully escrowed pin",
 	})
-	return errors.Wrapf(lastErr, "escrowPin: failed after %d attempts", escrowMaxRetries)
+
+	return nil
 }
 
 func generatePin(device types.Device) (string, error) {
