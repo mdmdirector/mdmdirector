@@ -320,6 +320,66 @@ func installBootstrapPackagesViaDDM(device types.Device) error {
 	return nil
 }
 
+func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
+	var out types.InstallApplicationPayload
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	manifestURLs := make([]string, 0, len(out.ManifestURLs))
+	for _, m := range out.ManifestURLs {
+		manifestURLs = append(manifestURLs, m.URL)
+	}
+
+	var sharedApps []types.SharedInstallApplication
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Find(&sharedApps).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if len(sharedApps) == 0 {
+		http.Error(w, "no matching shared install applications found", http.StatusNotFound)
+		return
+	}
+
+	if !utils.UseDDMPackages() {
+		return
+	}
+
+	client, err := ddm.Client()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	devices, err := GetAllDevices()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	for _, app := range sharedApps {
+		for _, device := range devices {
+			if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
+				ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+			}
+		}
+	}
+
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Delete(&types.SharedInstallApplication{}).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
 	var installApplications []types.SharedInstallApplication
 

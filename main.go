@@ -518,6 +518,8 @@ func main() {
 	r.HandleFunc("/device/{udid}/commands", utils.BasicAuth(director.InspectDeviceCommands)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).
 		Methods("POST")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.DeleteInstallApplicationHandler)).
+		Methods("DELETE")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).
 		Methods("GET")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")

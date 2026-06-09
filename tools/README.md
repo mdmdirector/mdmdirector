@@ -34,3 +34,18 @@ chmod 600 filename
 ```
 
 ## Usage examples
+
+### Install a shared application on all devices
+
+```
+./tools/post_shared_install_application https://example.com/app.plist
+```
+
+### Delete a shared application from all devices
+
+Removes the application from MDMDirector's DB and, if DDM package management is enabled,
+removes the corresponding declarations from KMFDDM and notifies all devices to sync.
+
+```
+./tools/delete_shared_install_application https://example.com/app.plist
+```
