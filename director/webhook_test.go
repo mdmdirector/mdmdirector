@@ -39,53 +39,54 @@ var errDBGoneAway = fmt.Errorf("database has gone away")
 
 // When neither trigger condition is met the function is a clean no-op.
 func TestReconcileDeviceState_NeitherConditionMet(t *testing.T) {
-	device := types.Device{UDID: "1234-5678-123456", SerialNumber: "C02ABCDEFGH"}
 	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
+		SerialNumber:          "C02ABCDEFGH",
 		InitialTasksRun:       true,
 		TokenUpdateRecieved:   true,
 		AwaitingConfiguration: false,
 	}
 
-	err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(currentDevice)
 
 	assert.NoError(t, err)
 }
 
 // TokenUpdateRecieved=false → RunInitialTasks must NOT be triggered.
 func TestReconcileDeviceState_TokenUpdateNotReceived(t *testing.T) {
-	device := types.Device{UDID: "1234-5678-123456"}
 	currentDevice := &types.Device{
+		UDID:                "1234-5678-123456",
 		InitialTasksRun:     false,
 		TokenUpdateRecieved: false,
 	}
 
-	err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(currentDevice)
 
 	assert.NoError(t, err)
 }
 
 // InitialTasksRun=true → the first condition is false; RunInitialTasks must NOT be re-triggered.
 func TestReconcileDeviceState_InitialTasksAlreadyRun(t *testing.T) {
-	device := types.Device{UDID: "1234-5678-123456"}
 	currentDevice := &types.Device{
+		UDID:                "1234-5678-123456",
 		InitialTasksRun:     true,
 		TokenUpdateRecieved: true,
 	}
 
-	err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(currentDevice)
 
 	assert.NoError(t, err)
 }
 
 // AwaitingConfiguration=false → SendDeviceConfigured must NOT be called even when InitialTasksRun=true.
 func TestReconcileDeviceState_NotAwaitingConfiguration(t *testing.T) {
-	device := types.Device{UDID: "1234-5678-123456"}
 	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
 		InitialTasksRun:       true,
 		AwaitingConfiguration: false,
 	}
 
-	err := reconcileDeviceState(device, currentDevice)
+	err := reconcileDeviceState(currentDevice)
 
 	assert.NoError(t, err)
 }

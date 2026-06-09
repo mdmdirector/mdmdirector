@@ -94,11 +94,11 @@ func checkinMessageType(topic string) string {
 }
 
 // reconcileDeviceState handles post-enrollment lifecycle transitions after any device event
-func reconcileDeviceState(device types.Device, currentDevice *types.Device) error {
+func reconcileDeviceState(currentDevice *types.Device) error {
 	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Running initial tasks"})
-		if err := RunInitialTasks(device.UDID); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		InfoLogger(LogHolder{DeviceSerial: currentDevice.SerialNumber, DeviceUDID: currentDevice.UDID, Message: "Running initial tasks"})
+		if err := RunInitialTasks(currentDevice.UDID); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
 			return err
 		}
 		return nil
@@ -106,7 +106,7 @@ func reconcileDeviceState(device types.Device, currentDevice *types.Device) erro
 
 	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
 		if err := SendDeviceConfigured(*currentDevice); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
 			return err
 		}
 	}
@@ -151,7 +151,7 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return err
 	}
 
-	if err := reconcileDeviceState(device, currentDevice); err != nil {
+	if err := reconcileDeviceState(currentDevice); err != nil {
 		return err
 	}
 
@@ -185,7 +185,7 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		return err
 	}
 
-	if err := reconcileDeviceState(device, currentDevice); err != nil {
+	if err := reconcileDeviceState(currentDevice); err != nil {
 		return err
 	}
 
@@ -206,7 +206,7 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		return nil
 	}
 
-	if err := processAcknowledgePayload(event, device, payloadDict); err != nil {
+	if err := processAcknowledgePayload(event, *currentDevice, payloadDict); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 		return err
 	}
