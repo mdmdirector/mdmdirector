@@ -295,15 +295,20 @@ func ProcessDeviceProfiles(
 			}
 			profile.Installed = true
 			if profileDiffers {
-				profilesToSave = append(profilesToSave, profile)
 				status = "changed"
 				if pushNow {
+					// Persist the profile before pushing as in DDM flow the device fetches the mobileconfig from /profiledownload
+					// using the ProfileURL in the declaration, so the row must already be in DB
+					if err := SaveProfiles([]types.Device{device}, []types.DeviceProfile{profile}); err != nil {
+						return metadata, errors.Wrap(err, "Save profile before push")
+					}
 					_, err = PushProfiles(devices, []types.DeviceProfile{profile}, utils.UseDDM())
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 					}
 					status = "pushed"
 				} else {
+					profilesToSave = append(profilesToSave, profile)
 					status = "saved"
 				}
 			}
