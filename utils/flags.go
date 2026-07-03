@@ -6,11 +6,13 @@ import (
 	"strings"
 )
 
-func ServerURL() string {
+// MicroMDMURL returns the MicroMDM server URL (flag micromdmurl / env MICRO_URL)
+func MicroMDMURL() string {
 	return strings.TrimRight(flag.Lookup("micromdmurl").Value.(flag.Getter).Get().(string), "/")
 }
 
-func APIKey() string {
+// MicroMDMAPIKey returns the MicroMDM API key (flag micromdmapikey / env MICRO_API_KEY)
+func MicroMDMAPIKey() string {
 	return flag.Lookup("micromdmapikey").Value.(flag.Getter).Get().(string)
 }
 
