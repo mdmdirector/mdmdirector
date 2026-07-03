@@ -96,6 +96,14 @@ func ClearDeviceOnEnroll() bool {
 	return flag.Lookup("clear-device-on-enroll").Value.(flag.Getter).Get().(bool)
 }
 
+func DualWriteMicroMDM() bool {
+	f := flag.Lookup("dual-write-micromdm")
+	if f == nil {
+		return false
+	}
+	return f.Value.(flag.Getter).Get().(bool)
+}
+
 func ScepCertIssuer() string {
 	return flag.Lookup("scep-cert-issuer").Value.(flag.Getter).Get().(string)
 }
