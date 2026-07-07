@@ -145,13 +145,17 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 }
 
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
-	if utils.UseDDMPackages() {
-		return nil, PushApplicationsViaDDM(devices, installApplication.ManifestURL)
+	// MIGRATION: split by per-device DDM opt-in
+	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	if len(ddmDevices) > 0 {
+		if err := PushApplicationsViaDDM(ddmDevices, installApplication.ManifestURL); err != nil {
+			return nil, err
+		}
 	}
 
 	var sentCommands []types.Command
-	for i := range devices {
-		device := devices[i]
+	for i := range legacyDevices {
+		device := legacyDevices[i]
 		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
 		if err != nil {
 			// Shit went wrong for this device, but logging here feels wrong
@@ -202,13 +206,17 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 }
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
-	if utils.UseDDMPackages() {
-		return nil, PushSharedApplicationsViaDDM(devices, installSharedApplication.ManifestURL)
+	// MIGRATION: split by per-device DDM opt-in
+	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	if len(ddmDevices) > 0 {
+		if err := PushSharedApplicationsViaDDM(ddmDevices, installSharedApplication.ManifestURL); err != nil {
+			return nil, err
+		}
 	}
 
 	var sentCommands []types.Command
-	for i := range devices {
-		device := devices[i]
+	for i := range legacyDevices {
+		device := legacyDevices[i]
 		log.Infof("Pushing InstallApplication to %v", device.UDID)
 		inQueue, _ := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
@@ -235,7 +243,8 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
-	if utils.UseDDMPackages() {
+	// MIGRATION: per-device DDM opt-in
+	if ddmPackagesForDevice(device) {
 		return nil, installBootstrapPackagesViaDDM(device)
 	}
 
@@ -345,7 +354,16 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !utils.UseDDMPackages() {
+	// MIGRATION: tear down declarations only for the per-device DDM cohort
+	devices, err := GetAllDevices()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	ddmDevices, _ := partitionByDDMPackages(devices)
+	if len(ddmDevices) == 0 {
 		return
 	}
 
@@ -356,15 +374,8 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	devices, err := GetAllDevices()
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
 	for _, app := range sharedApps {
-		for _, device := range devices {
+		for _, device := range ddmDevices {
 			if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
 				ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
 			}
