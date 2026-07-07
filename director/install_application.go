@@ -145,7 +145,7 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 }
 
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
-	// MIGRATION: split by per-device DDM opt-in
+	// DDM-enabled devices install via declarations; the rest via InstallApplication.
 	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
 	if len(ddmDevices) > 0 {
 		if err := PushApplicationsViaDDM(ddmDevices, installApplication.ManifestURL); err != nil {
@@ -206,7 +206,7 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 }
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
-	// MIGRATION: split by per-device DDM opt-in
+	// DDM-enabled devices install via declarations; the rest via InstallApplication.
 	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
 	if len(ddmDevices) > 0 {
 		if err := PushSharedApplicationsViaDDM(ddmDevices, installSharedApplication.ManifestURL); err != nil {
@@ -243,7 +243,6 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
-	// MIGRATION: per-device DDM opt-in
 	if ddmPackagesForDevice(device) {
 		return nil, installBootstrapPackagesViaDDM(device)
 	}
@@ -354,7 +353,7 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MIGRATION: tear down declarations only for the per-device DDM cohort
+	// Tear down declarations only for DDM-enabled devices.
 	devices, err := GetAllDevices()
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})

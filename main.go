@@ -561,9 +561,9 @@ func main() {
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
 	r.HandleFunc("/profiledownload/{udid}/{profileIdentifier}", director.ProfileDownloadHandler).Methods("GET")
-	// TEMPORARY (MicroMDM->NanoMDM migration): per-device DDM opt-in management.
-	r.HandleFunc("/device/{udid}/ddm-migrate", utils.BasicAuth(director.DDMMigrateHandler)).Methods("POST")
-	r.HandleFunc("/device/{udid}/ddm-migrate", utils.BasicAuth(director.DDMUnmigrateHandler)).Methods("DELETE")
+	// Per-device DDM opt-in management.
+	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.EnableDeviceDDMHandler)).Methods("POST")
+	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.DisableDeviceDDMHandler)).Methods("DELETE")
 
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
@@ -592,8 +592,7 @@ func main() {
 		&types.Certificate{},
 		&types.ProfileList{},
 		&types.UnlockPin{},
-		// TEMPORARY (MicroMDM->NanoMDM migration): per-device DDM opt-in list.
-		&director.DDMMigrationOptIn{},
+		&director.DDMOptIn{},
 	)
 	if err != nil {
 		director.ErrorLogger(director.LogHolder{Message: err.Error()})
