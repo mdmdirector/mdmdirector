@@ -1,32 +1,11 @@
 package director
 
-// -----------------------------------------------------------------------------
-// TEMPORARY — MicroMDM -> NanoMDM migration only.
+// Per-device DDM control
 //
-// This whole file (plus the `ddm_migration_optins` table) exists so we can flip
-// individual devices (or cohorts) onto DDM independently of the global USE_DDM /
-// USE_DDM_PACKAGES switches. That lets a migration wave land on NanoMDM in the
-// classic InstallProfile / InstallApplication protocol first, and be promoted to
-// DDM later, per device.
-//
-// A single opt-in row covers BOTH profiles and applications for a device. The two
-// global flags remain independent enable-all master switches (see ddmForDevice /
-// ddmPackagesForDevice below).
-//
-// ============================ CLEANUP CHECKLIST ==============================
-// Once the whole fleet is on DDM and per-device control is no longer needed:
-//   1. Delete this file.
-//   2. Replace every call to ddmForDevice(d)        with utils.UseDDM().
-//      Replace every call to ddmPackagesForDevice(d) with utils.UseDDMPackages().
-//      Replace pushSharedProfilesPerDevice / deleteSharedProfilesPerDevice call
-//        sites with the direct PushSharedProfiles / DeleteSharedProfiles calls
-//        passing utils.UseDDM().
-//      Restore the app functions in install_application.go to branch on
-//        utils.UseDDMPackages() at the top (see the "migration" comments there).
-//   3. Remove &DDMMigrationOptIn{} from db.DB.AutoMigrate(...) in main.go and drop
-//      the two /device/{udid}/ddm-migrate routes.
-//   4. DROP TABLE ddm_migration_optins;
-// =============================================================================
+// mdmdirector can manage profiles and applications via Declarative Device Management
+// (DDM). The global USE_DDM / USE_DDM_PACKAGES flags enable DDM for the entire fleet.
+// This file adds finer-grained control: an opt-in list that enables DDM for individual
+// devices while the global flags remain off.
 
 import (
 	"encoding/json"
@@ -39,22 +18,22 @@ import (
 	"github.com/mdmdirector/mdmdirector/utils"
 )
 
-// DDMMigrationOptIn marks a single device as opted into DDM (for both profiles and
-// applications) during the migration. Presence of a row == opted in.
-type DDMMigrationOptIn struct {
+// DDMOptIn marks a single device as opted into DDM (for both profiles and
+// applications). Presence of a row == opted in.
+type DDMOptIn struct {
 	DeviceUDID string `gorm:"primaryKey" json:"device_udid"`
 }
 
-// TableName pins the table name so the CLEANUP "DROP TABLE" is unambiguous.
-func (DDMMigrationOptIn) TableName() string { return "ddm_migration_optins" }
+// TableName sets an explicit table name for the opt-in list
+func (DDMOptIn) TableName() string { return "ddm_opt_ins" }
 
-// deviceOptedIntoDDM reports whether a single device has been explicitly opted in.
+// deviceOptedIntoDDM reports whether a single device has been explicitly opted in
 func deviceOptedIntoDDM(udid string) bool {
 	if udid == "" {
 		return false
 	}
 	var count int64
-	if err := db.DB.Model(&DDMMigrationOptIn{}).Where("device_udid = ?", udid).Count(&count).Error; err != nil {
+	if err := db.DB.Model(&DDMOptIn{}).Where("device_udid = ?", udid).Count(&count).Error; err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "deviceOptedIntoDDM: " + err.Error()})
 		return false
 	}
@@ -71,7 +50,7 @@ func ddmPackagesForDevice(device types.Device) bool {
 	return utils.UseDDMPackages() || deviceOptedIntoDDM(device.UDID)
 }
 
-// optedInSet loads, in a single query, the opt-in membership for the given devices
+// optedInSet loads the opt-in membership for the given devices
 func optedInSet(devices []types.Device) map[string]bool {
 	set := make(map[string]bool)
 	if len(devices) == 0 {
@@ -81,7 +60,7 @@ func optedInSet(devices []types.Device) map[string]bool {
 	for i := range devices {
 		udids = append(udids, devices[i].UDID)
 	}
-	var optIns []DDMMigrationOptIn
+	var optIns []DDMOptIn
 	if err := db.DB.Where("device_udid IN (?)", udids).Find(&optIns).Error; err != nil {
 		ErrorLogger(LogHolder{Message: "optedInSet: " + err.Error()})
 		return set
@@ -92,7 +71,7 @@ func optedInSet(devices []types.Device) map[string]bool {
 	return set
 }
 
-// partitionByDDM splits devices into the DDM cohort and the classic cohort for PROFILE
+// partitionByDDM splits devices into the DDM cohort and the non-DDM cohort for PROFILE operations
 func partitionByDDM(devices []types.Device) (ddmDevices, legacyDevices []types.Device) {
 	global := utils.UseDDM()
 	set := optedInSet(devices)
@@ -106,7 +85,7 @@ func partitionByDDM(devices []types.Device) (ddmDevices, legacyDevices []types.D
 	return
 }
 
-// partitionByDDMPackages splits devices into the DDM cohort and the classic cohort for APPLICATION
+// partitionByDDMPackages splits devices into the DDM cohort and the non-DDM cohort for APPLICATION operations
 func partitionByDDMPackages(devices []types.Device) (ddmDevices, legacyDevices []types.Device) {
 	global := utils.UseDDMPackages()
 	set := optedInSet(devices)
@@ -121,7 +100,7 @@ func partitionByDDMPackages(devices []types.Device) (ddmDevices, legacyDevices [
 }
 
 // pushSharedProfilesPerDevice runs PushSharedProfiles split by each device's mode,
-// so a fleet-wide push respects per-device DDM opt-in.
+// so a fleet-wide push respects per-device DDM opt-in
 func pushSharedProfilesPerDevice(devices []types.Device, profiles []types.SharedProfile) error {
 	ddmDevices, legacyDevices := partitionByDDM(devices)
 	var errs []error
@@ -138,7 +117,7 @@ func pushSharedProfilesPerDevice(devices []types.Device, profiles []types.Shared
 	return intErrors.Join(errs...)
 }
 
-// deleteSharedProfilesPerDevice runs DeleteSharedProfiles split by each device's mode.
+// deleteSharedProfilesPerDevice runs DeleteSharedProfiles split by each device's mode
 func deleteSharedProfilesPerDevice(devices []types.Device, profiles []types.SharedProfile) error {
 	ddmDevices, legacyDevices := partitionByDDM(devices)
 	var errs []error
@@ -155,8 +134,11 @@ func deleteSharedProfilesPerDevice(devices []types.Device, profiles []types.Shar
 	return intErrors.Join(errs...)
 }
 
-// teardownDDMForDevice best-effort removes a device's DDM PROFILE declarations/sets
-// from KMFDDM when the device is demoted back to classic (Applications are not torn)
+// teardownDDMForDevice removes a device's DDM PROFILE declarations/sets
+// from KMFDDM when DDM is disabled for the device
+//
+// Applications are intentionally left in place: an app already installed via a DDM
+// declaration can stay installed
 func teardownDDMForDevice(device types.Device) {
 	var deviceProfiles []types.DeviceProfile
 	if err := db.DB.Where("device_ud_id = ?", device.UDID).Find(&deviceProfiles).Error; err != nil {
@@ -177,9 +159,9 @@ func teardownDDMForDevice(device types.Device) {
 	}
 }
 
-// DDMMigrateHandler (POST /device/{udid}/ddm-migrate) promotes a device to DDM by
-// inserting an opt-in row, then reconciles it so its profiles/apps re-push via DDM.
-func DDMMigrateHandler(w http.ResponseWriter, r *http.Request) {
+// EnableDeviceDDMHandler (POST /device/{udid}/ddm) opts a device into DDM by inserting
+// an opt-in row, then reconciles it so its profiles and applications install via DDM
+func EnableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	udid := mux.Vars(r)["udid"]
 	device, err := GetDevice(udid)
 	if err != nil {
@@ -187,31 +169,31 @@ func DDMMigrateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	optIn := DDMMigrationOptIn{DeviceUDID: udid}
+	optIn := DDMOptIn{DeviceUDID: udid}
 	if err := db.DB.Where(&optIn).FirstOrCreate(&optIn).Error; err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DDMMigrateHandler: create opt-in: " + err.Error()})
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "EnableDeviceDDMHandler: create opt-in: " + err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	InfoLogger(LogHolder{DeviceUDID: udid, DeviceSerial: device.SerialNumber, Message: "DDM migration: device promoted to DDM"})
+	InfoLogger(LogHolder{DeviceUDID: udid, DeviceSerial: device.SerialNumber, Message: "DDM enabled for device"})
 
-	// Reconcile now so declarations get created and the device switches protocol
+	// Reconcile now so declarations get created and the device switches to DDM.
 	if _, err := InstallAllProfiles(device); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DDMMigrateHandler: InstallAllProfiles: " + err.Error()})
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "EnableDeviceDDMHandler: InstallAllProfiles: " + err.Error()})
 	}
-	// Install applications via DDM declarations
+	// Install applications via DDM declarations.
 	if _, err := InstallBootstrapPackages(device); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DDMMigrateHandler: InstallBootstrapPackages: " + err.Error()})
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "EnableDeviceDDMHandler: InstallBootstrapPackages: " + err.Error()})
 	}
 
-	writeDDMMigrateStatus(w, udid, true)
+	writeDeviceDDMStatus(w, udid, true)
 }
 
-// DDMUnmigrateHandler (DELETE /device/{udid}/ddm-migrate) demotes a device back to
-// the classic protocol: removes the opt-in row, tears down its DDM declarations,
-// and reconciles so profiles/apps re-push via InstallProfile
-func DDMUnmigrateHandler(w http.ResponseWriter, r *http.Request) {
+// DisableDeviceDDMHandler (DELETE /device/{udid}/ddm) opts a device out of DDM: tears
+// down its DDM profile declarations, removes the opt-in row, and re-pushes profiles via
+// InstallProfile commands
+func DisableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	udid := mux.Vars(r)["udid"]
 	device, err := GetDevice(udid)
 	if err != nil {
@@ -219,33 +201,31 @@ func DDMUnmigrateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tear down DDM state while the device is still considered "DDM", then remove
-	// the opt-in row so subsequent operations use the classic path.
+	// Tear down DDM state while the device is still opted in
 	teardownDDMForDevice(device)
 
-	if err := db.DB.Where("device_udid = ?", udid).Delete(&DDMMigrationOptIn{}).Error; err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DDMUnmigrateHandler: delete opt-in: " + err.Error()})
+	if err := db.DB.Where("device_udid = ?", udid).Delete(&DDMOptIn{}).Error; err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DisableDeviceDDMHandler: delete opt-in: " + err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	InfoLogger(LogHolder{DeviceUDID: udid, DeviceSerial: device.SerialNumber, Message: "DDM migration: device demoted to classic InstallProfile"})
+	InfoLogger(LogHolder{DeviceUDID: udid, DeviceSerial: device.SerialNumber, Message: "DDM disabled for device"})
 
-	// Reconcile profiles now so they re-push via the classic path. Applications are
-	// intentionally left as-is: anything installed via a DDM declaration stays installed
+	// Re-push profiles via InstallProfile commands. Applications are intentionally left as is
 	if _, err := InstallAllProfiles(device); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DDMUnmigrateHandler: InstallAllProfiles: " + err.Error()})
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DisableDeviceDDMHandler: InstallAllProfiles: " + err.Error()})
 	}
 
-	writeDDMMigrateStatus(w, udid, false)
+	writeDeviceDDMStatus(w, udid, false)
 }
 
-func writeDDMMigrateStatus(w http.ResponseWriter, udid string, useDDM bool) {
+func writeDeviceDDMStatus(w http.ResponseWriter, udid string, useDDM bool) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"device_udid": udid,
 		"use_ddm":     useDDM,
 	}); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "writeDDMMigrateStatus: " + err.Error()})
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "writeDeviceDDMStatus: " + err.Error()})
 	}
 }
