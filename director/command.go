@@ -52,9 +52,9 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	if err != nil {
 		return command, err
 	}
-	req, _ := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
+	req, _ := http.NewRequest("POST", utils.MicroMDMURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
 
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -444,7 +444,7 @@ func clearCommandQueue(device types.Device) error {
 		Timeout: time.Second * 1,
 	}
 
-	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		return err
 	}
@@ -452,7 +452,7 @@ func clearCommandQueue(device types.Device) error {
 	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
 
 	req, _ := http.NewRequest("DELETE", endpoint.String(), bytes.NewBufferString("{}"))
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
@@ -472,14 +472,14 @@ func InspectCommandQueue(device types.Device) ([]byte, error) {
 	}
 
 	// MicroMDM implementation
-	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		return nil, err
 	}
 
 	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
 	req, _ := http.NewRequest("GET", endpoint.String(), nil)
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 
 	httpClient := &http.Client{
 		Timeout: time.Second * 10,

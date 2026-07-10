@@ -74,6 +74,9 @@ var EscrowURL string
 
 var ClearDeviceOnEnroll bool
 
+// DualWriteMicroMDM mirrors every checkin webhook to MicroMDM during the NanoMDM migration
+var DualWriteMicroMDM bool
+
 var ScepCertIssuer string
 
 var ScepCertMinValidity int
@@ -406,6 +409,12 @@ func main() {
 		env.String("MDM_SERVER_TYPE", "micromdm"),
 		"MDM server type: micromdm or nanomdm",
 	)
+	flag.BoolVar(
+		&DualWriteMicroMDM,
+		"dual-write-micromdm",
+		env.Bool("DUAL_WRITE_MICROMDM", false),
+		"Mirror checkin webhooks to MicroMDM (migration rollback safety net; requires mdm-server-type=nanomdm and micromdmurl/micromdmapikey)",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -455,6 +464,16 @@ func main() {
 		}
 	default:
 		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
+	}
+
+	if DualWriteMicroMDM {
+		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
+			log.Fatal("dual-write-micromdm requires mdm-server-type=nanomdm. Exiting.")
+		}
+		if MicroMDMURL == "" || MicroMDMAPIKey == "" {
+			log.Fatal("dual-write-micromdm requires micromdmurl/micromdmapikey (MICRO_URL/MICRO_API_KEY). Exiting.")
+		}
+		log.Infof("Dual-write to MicroMDM enabled at %s", MicroMDMURL)
 	}
 
 	if EnableReEnrollViaWebhook {

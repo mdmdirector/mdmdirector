@@ -120,6 +120,9 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return errors.Wrap(err, "handleCheckinEvent:plist.Unmarshal")
 	}
 
+	// Migration rollback safety net: mirror this checkin into MicroMDM (fire-and-forget)
+	syncCheckinToMicroMDM(topic, event.RawPayload)
+
 	if topic == "mdm.CheckOut" {
 		if err := ResetDevice(device); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})

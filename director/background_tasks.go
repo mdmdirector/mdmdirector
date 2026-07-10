@@ -107,14 +107,14 @@ func FetchDevicesFromMDM() {
 		Timeout: time.Second * 60,
 	}
 
-	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	endpoint.Path = path.Join(endpoint.Path, "v1", "devices")
 
 	req, _ := http.NewRequest("POST", endpoint.String(), bytes.NewBufferString("{}"))
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})

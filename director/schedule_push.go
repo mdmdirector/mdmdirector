@@ -282,7 +282,7 @@ func PushDevice(udid string) (err error) {
 	retry := now.Add(time.Minute * time.Duration(int64(utils.OnceIn())))
 	retryUnix := retry.Unix()
 
-	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		return errors.Wrap(err, "PushDevice")
 	}
@@ -295,7 +295,7 @@ func PushDevice(udid string) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "PushDevice")
 	}
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 
 	resp, err := client.Do(req)
 	if err != nil {
