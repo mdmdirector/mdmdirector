@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"path"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/bsm/redislock"
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/mdm"
@@ -35,7 +35,16 @@ var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
 	},
 })
 
-func ScheduledCheckin(ctx context.Context, pushQueue taskq.Queue, onceIn time.Duration) {
+// ScheduledCheckin runs the control plane: a periodic, fleet-wide scan that enqueues
+// due devices for push and performs DB cleanup. It runs once immediately and then every
+// `interval`. Each run is gated by a shared Redis lock (rc), so at most one replica runs
+// the scan per tick; the rest skip. This is what lets mdmdirector scale horizontally --
+// the data plane (the taskq consumer) scales with pod count while this control plane
+// stays single-flight with automatic failover, and no leader election.
+//
+// `interval` is the scan cadence (env CONTROL_PLANE_INTERVAL); it is NOT the per-device
+// push cadence, which stays bounded by `onceIn` (ONCE_IN) via the OnceInPeriod dedup.
+func ScheduledCheckin(ctx context.Context, rc redislock.RedisClient, pushQueue taskq.Queue, onceIn, interval time.Duration) {
 	task := pushTask
 
 	// Wait for the initial device fetch to complete, but bail out immediately if
@@ -51,40 +60,33 @@ func ScheduledCheckin(ctx context.Context, pushQueue taskq.Queue, onceIn time.Du
 		}
 	}
 
-	var wg sync.WaitGroup
-	sem := make(chan int, 1)
-
-	minInterval := time.Minute
-
-	fn := func(sem chan int, wg *sync.WaitGroup) {
-		defer wg.Done()
-		start := time.Now()
-		log.Info("Running scheduled checkin")
-		err := processScheduledCheckin(pushQueue, task, onceIn)
+	run := func() {
+		if ctx.Err() != nil {
+			return
+		}
+		ran, err := withControlPlaneLock(ctx, rc, func(context.Context) error {
+			log.Info("Running scheduled checkin")
+			return processScheduledCheckin(pushQueue, task, onceIn)
+		})
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
+			return
 		}
-		if elapsed := time.Since(start); elapsed < minInterval {
-			time.Sleep(minInterval - elapsed)
+		if !ran {
+			DebugLogger(LogHolder{Message: "Skipping scheduled checkin; another replica holds the control-plane lock"})
 		}
-		<-sem
 	}
 
+	// Run once immediately, then every interval, until shutdown.
+	run()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
-		// Check cancellation first so a shutdown signal always wins over
-		// scheduling another pass (select would otherwise pick randomly when
-		// both the semaphore and ctx.Done() are ready).
-		if ctx.Err() != nil {
-			wg.Wait()
-			return
-		}
 		select {
 		case <-ctx.Done():
-			wg.Wait()
 			return
-		case sem <- 1:
-			wg.Add(1)
-			go fn(sem, &wg)
+		case <-ticker.C:
+			run()
 		}
 	}
 }
