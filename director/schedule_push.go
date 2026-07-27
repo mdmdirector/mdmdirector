@@ -21,30 +21,33 @@ import (
 	"github.com/vmihailenco/taskq/v3"
 )
 
-func ScheduledCheckin(pushQueue taskq.Queue, onceIn time.Duration) {
+// pushTask is registered once at package load. taskq.RegisterTask panics on a
+// duplicate name, so it must not live inside ScheduledCheckin (which may be called
+// more than once, e.g. in tests).
+var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
+	Name: "push",
+	Handler: func(uuid string) error {
+		err := PushDevice(uuid)
+		if err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+		return nil
+	},
+})
 
-	var task = taskq.RegisterTask(&taskq.TaskOptions{
-		Name: "push",
-		Handler: func(uuid string) error {
-			err := PushDevice(uuid)
-			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-			}
-			return nil
-		},
-	})
+func ScheduledCheckin(ctx context.Context, pushQueue taskq.Queue, onceIn time.Duration) {
+	task := pushTask
 
+	// Wait for the initial device fetch to complete, but bail out immediately if
+	// the process is shutting down.
 	counter := 0
-	for {
-		if !DevicesFetchedFromMDM {
-			time.Sleep(30 * time.Second)
+	for !DevicesFetchedFromMDM && counter <= 10 {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
 			log.Info("Devices are still being fetched from MicroMDM")
 			counter++
-			if counter > 10 {
-				break
-			}
-		} else {
-			break
 		}
 	}
 
@@ -68,20 +71,39 @@ func ScheduledCheckin(pushQueue taskq.Queue, onceIn time.Duration) {
 	}
 
 	for {
-		sem <- 1
-		wg.Add(1)
-		go fn(sem, &wg)
+		// Check cancellation first so a shutdown signal always wins over
+		// scheduling another pass (select would otherwise pick randomly when
+		// both the semaphore and ctx.Done() are ready).
+		if ctx.Err() != nil {
+			wg.Wait()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return
+		case sem <- 1:
+			wg.Add(1)
+			go fn(sem, &wg)
+		}
 	}
 }
 
-func ProcessScheduledCheckinQueue(pushQueue taskq.Queue) {
-	ctx := context.Background()
+func ProcessScheduledCheckinQueue(ctx context.Context, pushQueue taskq.Queue) {
 	p := pushQueue.Consumer()
 	DebugLogger(LogHolder{Message: "Processing items from scheduled checkin Queue"})
 	err := p.Start(ctx)
 	if err != nil {
 		msg := fmt.Errorf("starting consumer: %v", err.Error())
 		ErrorLogger(LogHolder{Message: msg.Error()})
+		return
+	}
+
+	// Start is non-blocking; keep this goroutine alive until shutdown, then
+	// drain in-flight work gracefully.
+	<-ctx.Done()
+	if err := p.Stop(); err != nil {
+		ErrorLogger(LogHolder{Message: fmt.Errorf("stopping consumer: %v", err.Error()).Error()})
 	}
 }
 
