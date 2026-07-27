@@ -47,25 +47,16 @@ var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
 func ScheduledCheckin(ctx context.Context, rc redislock.RedisClient, pushQueue taskq.Queue, onceIn, interval time.Duration) {
 	task := pushTask
 
-	// Wait for the initial device fetch to complete, but bail out immediately if
-	// the process is shutting down.
-	counter := 0
-	for !DevicesFetchedFromMDM && counter <= 10 {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(30 * time.Second):
-			log.Info("Devices are still being fetched from MicroMDM")
-			counter++
-		}
-	}
-
 	run := func() {
 		if ctx.Err() != nil {
 			return
 		}
 		ran, err := withControlPlaneLock(ctx, rc, func(context.Context) error {
 			log.Info("Running scheduled checkin")
+			// Refresh the device inventory once per interval, fleet-wide, under the
+			// control-plane lock -- instead of once per replica at startup. Only the
+			// lock holder fetches, then scans and enqueues with fresh data.
+			FetchDevicesFromMDM()
 			return processScheduledCheckin(pushQueue, task, onceIn)
 		})
 		if err != nil {
@@ -119,30 +110,39 @@ func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task, onceIn tim
 		return errors.Wrap(err, "processScheduledCheckin::pushAll")
 	}
 
+	return runCleanup()
+}
+
+// runCleanup performs the periodic DB maintenance mutations: removing orphaned
+// certificate/profile-list rows, expiring random unlock PINs older than 30 minutes, and
+// clearing fixed unlock PINs on devices that are no longer being erased/locked. It runs
+// under the control-plane lock, so exactly one replica performs these mutations per
+// interval instead of every replica racing on the same rows.
+func runCleanup() error {
 	var certificates []types.Certificate
 
-	err = db.DB.Unscoped().Model(&certificates).Where("device_ud_id is NULL").Delete(&types.Certificate{}).Error
+	err := db.DB.Unscoped().Model(&certificates).Where("device_ud_id is NULL").Delete(&types.Certificate{}).Error
 	if err != nil {
-		return errors.Wrap(err, "processScheduledCheckin::CleanupNullCertificates")
+		return errors.Wrap(err, "runCleanup::CleanupNullCertificates")
 	}
 
 	var profileLists []types.ProfileList
 
 	err = db.DB.Unscoped().Model(&profileLists).Where("device_ud_id is NULL").Delete(&types.ProfileList{}).Error
 	if err != nil {
-		return errors.Wrap(err, "processScheduledCheckin::CleanupNullProfileLists")
+		return errors.Wrap(err, "runCleanup::CleanupNullProfileLists")
 	}
 
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 	err = db.DB.Where("unlock_pins.pin_set < ?", thirtyMinsAgo).Delete(&types.UnlockPin{}).Error
 	if err != nil {
-		return errors.Wrap(err, "processScheduledCheckin::DeleteRandomUnlockPins")
+		return errors.Wrap(err, "runCleanup::DeleteRandomUnlockPins")
 	}
 
 	var device types.Device
 	err = db.DB.Model(&device).Not("unlock_pin = ?", "").Where("erase = ? AND lock = ?", false, false).Update("unlock_pin", "").Error
 	if err != nil {
-		return errors.Wrap(err, "processScheduledCheckin::ResetFixedPin")
+		return errors.Wrap(err, "runCleanup::ResetFixedPin")
 	}
 
 	return nil
@@ -287,6 +287,27 @@ func PushDevice(udid string) (err error) {
 		}()
 	}
 
+	err = pushDevice(udid)
+	if err == nil {
+		// Record when this device is next eligible for a scheduled push. The
+		// control-plane scan (deviceNeedsPush) skips devices whose NextPush is still in
+		// the future, so this bounds per-device push cadence at ONCE_IN and stops
+		// pushAll re-enqueuing recently pushed devices on every scan.
+		updateNextPush(udid)
+	}
+	return err
+}
+
+// updateNextPush persists a device's next eligible scheduled-push time (now + ONCE_IN).
+// Best-effort: a failure is logged but does not fail the push that already succeeded.
+func updateNextPush(udid string) {
+	next := time.Now().Add(time.Minute * time.Duration(utils.OnceIn()))
+	if err := db.DB.Model(&types.Device{}).Where("ud_id = ?", udid).Update("next_push", next).Error; err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: errors.Wrap(err, "updateNextPush").Error()})
+	}
+}
+
+func pushDevice(udid string) error {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
 		nanoClient, err := mdm.Client()

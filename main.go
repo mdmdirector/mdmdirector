@@ -619,7 +619,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go director.FetchDevicesFromMDM()
+	// Device inventory is refreshed inside the control-plane scan (single-flight under
+	// the Redis lock), not once per replica at startup -- see director.ScheduledCheckin.
 
 	// Override OnceIn if --debug is passed
 	if debugMode {

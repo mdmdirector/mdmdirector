@@ -34,14 +34,16 @@ func TestScheduledCheckinReturnsOnContextCancel(t *testing.T) {
 	}
 }
 
-// TestScheduledCheckinReturnsWhileWaitingForDevices verifies that a shutdown while
-// still waiting for the initial device fetch also unblocks the wait loop.
-func TestScheduledCheckinReturnsWhileWaitingForDevices(t *testing.T) {
+// TestScheduledCheckinReturnsWhenCancelledBeforeDeviceFetch verifies that a shutdown
+// signal is honoured even before any devices have been fetched: the run guard skips the
+// scan (so the nil redis client is never dereferenced) and the loop returns promptly.
+func TestScheduledCheckinReturnsWhenCancelledBeforeDeviceFetch(t *testing.T) {
 	prev := DevicesFetchedFromMDM
 	DevicesFetchedFromMDM = false
 	defer func() { DevicesFetchedFromMDM = prev }()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	done := make(chan struct{})
 	go func() {
@@ -49,13 +51,9 @@ func TestScheduledCheckinReturnsWhileWaitingForDevices(t *testing.T) {
 		close(done)
 	}()
 
-	// Give the goroutine a moment to enter the wait loop, then signal shutdown.
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("ScheduledCheckin did not return from the device-fetch wait loop on cancellation")
+		t.Fatal("ScheduledCheckin did not return on cancellation before the first device fetch")
 	}
 }
