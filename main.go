@@ -103,6 +103,9 @@ var RedisTLS bool
 
 var OnceIn int
 
+// ControlPlaneInterval is the number of minutes between fleet-wide control-plane scans
+var ControlPlaneInterval int
+
 var InfoRequestInterval int
 
 // AcmeCertIssuer is the issuer of the ACME certificate
@@ -334,6 +337,12 @@ func main() {
 		"once-in",
 		env.Int("ONCE_IN", 60),
 		"Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.",
+	)
+	flag.IntVar(
+		&ControlPlaneInterval,
+		"control-plane-interval",
+		env.Int("CONTROL_PLANE_INTERVAL", 120),
+		"Minutes between fleet-wide control-plane scans (device push scheduling + cleanup). Runs single-flight across replicas via a shared Redis lock. Defaults to 120.",
 	)
 	flag.IntVar(
 		&InfoRequestInterval,
@@ -592,9 +601,12 @@ func main() {
 
 	var QueueFactory = redisq.NewFactory()
 
+	// One shared go-redis client backs both the taskq queue and the control-plane lock.
+	redisClient := director.RedisClient()
+
 	var PushQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
 		Name:  "pushnotifications",
-		Redis: director.RedisClient(), // go-redis client
+		Redis: redisClient, // go-redis client
 	})
 
 	if utils.Prometheus() {
@@ -615,7 +627,11 @@ func main() {
 	}
 
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
-	go director.ScheduledCheckin(ctx, PushQueue, onceInDuration)
+	controlPlaneInterval := (time.Minute * time.Duration(ControlPlaneInterval))
+	if debugMode {
+		controlPlaneInterval = time.Minute
+	}
+	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, controlPlaneInterval)
 	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)
 
 	srv := &http.Server{Addr: ":" + port, Handler: r}
