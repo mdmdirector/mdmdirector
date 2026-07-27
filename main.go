@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -592,15 +596,16 @@ func main() {
 		Name:  "pushnotifications",
 		Redis: director.RedisClient(), // go-redis client
 	})
-	err = PushQueue.Purge()
-	if err != nil {
-		log.Error(err)
-	}
 
 	if utils.Prometheus() {
 		director.PollGauges()
 		r.Handle("/metrics", promhttp.Handler())
 	}
+
+	// Root context cancelled on SIGINT/SIGTERM so background workers and the HTTP
+	// server shut down gracefully.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	go director.FetchDevicesFromMDM()
 
@@ -610,8 +615,24 @@ func main() {
 	}
 
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
-	go director.ScheduledCheckin(PushQueue, onceInDuration)
-	go director.ProcessScheduledCheckinQueue(PushQueue)
+	go director.ScheduledCheckin(ctx, PushQueue, onceInDuration)
+	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)
 
-	log.Info(http.ListenAndServe(":"+port, r))
+	srv := &http.Server{Addr: ":" + port, Handler: r}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Errorf("http server error: %v", err)
+		}
+	}()
+	director.InfoLogger(director.LogHolder{Message: "Listening on :" + port})
+
+	<-ctx.Done()
+	director.InfoLogger(director.LogHolder{Message: "Shutdown signal received, draining connections"})
+	stop() // restore default signal handling; a second signal now force-kills
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Errorf("graceful shutdown failed: %v", err)
+	}
 }
