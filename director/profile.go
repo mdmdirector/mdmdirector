@@ -277,6 +277,8 @@ func ProcessDeviceProfiles(
 	var profileMetadataList []types.ProfileMetadata
 	var profilesToSave []types.DeviceProfile
 
+	useDDM := ddmForDevice(device)
+
 	// metadata.Device = device
 	for i := range profiles {
 		var profileMetadata types.ProfileMetadata
@@ -302,7 +304,7 @@ func ProcessDeviceProfiles(
 					if err := SaveProfiles([]types.Device{device}, []types.DeviceProfile{profile}); err != nil {
 						return metadata, errors.Wrap(err, "Save profile before push")
 					}
-					_, err = PushProfiles(devices, []types.DeviceProfile{profile}, ddmForDevice(device))
+					_, err = PushProfiles(devices, []types.DeviceProfile{profile}, useDDM)
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 					}
@@ -340,7 +342,7 @@ func ProcessDeviceProfiles(
 
 			if pushNow && profilePresent {
 				deletedProfile := []types.DeviceProfile{profile}
-				_, err := DeleteDeviceProfiles(devices, deletedProfile, ddmForDevice(device))
+				_, err := DeleteDeviceProfiles(devices, deletedProfile, useDDM)
 				if err != nil {
 					return metadata, errors.Wrap(err, "Delete device profiles")
 				}
@@ -1103,22 +1105,24 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	devices = append(devices, device)
-	_, err = PushProfiles(devices, profilesToInstall, ddmForDevice(device))
+	useDDM := ddmForDevice(device)
+
+	_, err = PushProfiles(devices, profilesToInstall, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	_, err = PushSharedProfiles(devices, sharedProfilesToInstall, ddmForDevice(device))
+	_, err = PushSharedProfiles(devices, sharedProfilesToInstall, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	_, err = DeleteDeviceProfiles(devices, profilesToRemove, ddmForDevice(device))
+	_, err = DeleteDeviceProfiles(devices, profilesToRemove, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	_, err = DeleteSharedProfiles(devices, sharedProfilesToRemove, ddmForDevice(device))
+	_, err = DeleteSharedProfiles(devices, sharedProfilesToRemove, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
@@ -1385,6 +1389,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	var pushedCommands []types.Command
 
 	devices = append(devices, device)
+	useDDM := ddmForDevice(device)
 
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).
@@ -1395,7 +1400,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	log.Debugf("Pushing Profiles %v", device.UDID)
-	commands, err := PushProfiles(devices, profiles, ddmForDevice(device))
+	commands, err := PushProfiles(devices, profiles, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
@@ -1424,7 +1429,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	}
 
 	log.Debugf("Pushing Shared Profiles %v", device.UDID)
-	commands, err = PushSharedProfiles(devices, unskippedSharedProfiles, ddmForDevice(device))
+	commands, err = PushSharedProfiles(devices, unskippedSharedProfiles, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {

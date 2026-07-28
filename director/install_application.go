@@ -2,6 +2,7 @@ package director
 
 import (
 	"encoding/json"
+	intErrors "errors"
 	"net/http"
 
 	"github.com/mdmdirector/mdmdirector/db"
@@ -147,9 +148,10 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
 	// DDM-enabled devices install via declarations; the rest via InstallApplication.
 	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	var errs []error
 	if len(ddmDevices) > 0 {
 		if err := PushApplicationsViaDDM(ddmDevices, installApplication.ManifestURL); err != nil {
-			return nil, err
+			errs = append(errs, err)
 		}
 	}
 
@@ -185,7 +187,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		}
 
 	}
-	return sentCommands, nil
+	return sentCommands, intErrors.Join(errs...)
 }
 
 func SaveSharedInstallApplications(payload types.InstallApplicationPayload) error {
@@ -208,9 +210,10 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
 	// DDM-enabled devices install via declarations; the rest via InstallApplication.
 	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	var errs []error
 	if len(ddmDevices) > 0 {
 		if err := PushSharedApplicationsViaDDM(ddmDevices, installSharedApplication.ManifestURL); err != nil {
-			return nil, err
+			errs = append(errs, err)
 		}
 	}
 
@@ -234,12 +237,13 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 			metrics.ApplicationOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
 		}
 		if err != nil {
-			return sentCommands, errors.Wrap(err, "Push Shared Install Application")
+			errs = append(errs, errors.Wrap(err, "Push Shared Install Application"))
+			return sentCommands, intErrors.Join(errs...)
 		}
 		sentCommands = append(sentCommands, command)
 
 	}
-	return sentCommands, nil
+	return sentCommands, intErrors.Join(errs...)
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
