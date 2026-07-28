@@ -10,6 +10,7 @@ package director
 import (
 	"encoding/json"
 	intErrors "errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -71,12 +72,14 @@ func optedInSet(devices []types.Device) map[string]bool {
 	return set
 }
 
-// partitionByDDM splits devices into the DDM cohort and the non-DDM cohort for PROFILE operations
-func partitionByDDM(devices []types.Device) (ddmDevices, legacyDevices []types.Device) {
-	global := utils.UseDDM()
+// partitionByGlobalOrOptIn splits devices into the DDM cohort and the non-DDM cohort.
+func partitionByGlobalOrOptIn(devices []types.Device, global bool) (ddmDevices, legacyDevices []types.Device) {
+	if global {
+		return devices, nil
+	}
 	set := optedInSet(devices)
 	for i := range devices {
-		if global || set[devices[i].UDID] {
+		if set[devices[i].UDID] {
 			ddmDevices = append(ddmDevices, devices[i])
 		} else {
 			legacyDevices = append(legacyDevices, devices[i])
@@ -85,18 +88,14 @@ func partitionByDDM(devices []types.Device) (ddmDevices, legacyDevices []types.D
 	return
 }
 
+// partitionByDDM splits devices into the DDM cohort and the non-DDM cohort for PROFILE operations
+func partitionByDDM(devices []types.Device) (ddmDevices, legacyDevices []types.Device) {
+	return partitionByGlobalOrOptIn(devices, utils.UseDDM())
+}
+
 // partitionByDDMPackages splits devices into the DDM cohort and the non-DDM cohort for APPLICATION operations
 func partitionByDDMPackages(devices []types.Device) (ddmDevices, legacyDevices []types.Device) {
-	global := utils.UseDDMPackages()
-	set := optedInSet(devices)
-	for i := range devices {
-		if global || set[devices[i].UDID] {
-			ddmDevices = append(ddmDevices, devices[i])
-		} else {
-			legacyDevices = append(legacyDevices, devices[i])
-		}
-	}
-	return
+	return partitionByGlobalOrOptIn(devices, utils.UseDDMPackages())
 }
 
 // pushSharedProfilesPerDevice runs PushSharedProfiles split by each device's mode,
@@ -139,24 +138,32 @@ func deleteSharedProfilesPerDevice(devices []types.Device, profiles []types.Shar
 //
 // Applications are intentionally left in place: an app already installed via a DDM
 // declaration can stay installed
-func teardownDDMForDevice(device types.Device) {
+func teardownDDMForDevice(device types.Device) error {
+	var errs []error
+	fail := func(stage string, err error) {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "teardownDDMForDevice: " + stage + ": " + err.Error()})
+		errs = append(errs, fmt.Errorf("%s: %w", stage, err))
+	}
+
 	var deviceProfiles []types.DeviceProfile
 	if err := db.DB.Where("device_ud_id = ?", device.UDID).Find(&deviceProfiles).Error; err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "teardownDDMForDevice: load device profiles: " + err.Error()})
+		fail("load device profiles", err)
 	} else if len(deviceProfiles) > 0 {
 		if err := DeleteDeviceProfilesViaDDM([]types.Device{device}, deviceProfiles); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "teardownDDMForDevice: delete device profile declarations: " + err.Error()})
+			fail("delete device profile declarations", err)
 		}
 	}
 
 	var sharedProfiles []types.SharedProfile
 	if err := db.DB.Find(&sharedProfiles).Error; err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "teardownDDMForDevice: load shared profiles: " + err.Error()})
+		fail("load shared profiles", err)
 	} else if len(sharedProfiles) > 0 {
 		if err := DeleteSharedProfilesViaDDM([]types.Device{device}, sharedProfiles); err != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "teardownDDMForDevice: delete shared profile declarations: " + err.Error()})
+			fail("delete shared profile declarations", err)
 		}
 	}
+
+	return intErrors.Join(errs...)
 }
 
 // EnableDeviceDDMHandler (POST /device/{udid}/ddm) opts a device into DDM by inserting
@@ -178,16 +185,20 @@ func EnableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 
 	InfoLogger(LogHolder{DeviceUDID: udid, DeviceSerial: device.SerialNumber, Message: "DDM enabled for device"})
 
+	var reconcileErrs []error
+
 	// Reconcile now so declarations get created and the device switches to DDM.
 	if _, err := InstallAllProfiles(device); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "EnableDeviceDDMHandler: InstallAllProfiles: " + err.Error()})
+		reconcileErrs = append(reconcileErrs, fmt.Errorf("InstallAllProfiles: %w", err))
 	}
 	// Install applications via DDM declarations.
 	if _, err := InstallBootstrapPackages(device); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "EnableDeviceDDMHandler: InstallBootstrapPackages: " + err.Error()})
+		reconcileErrs = append(reconcileErrs, fmt.Errorf("InstallBootstrapPackages: %w", err))
 	}
 
-	writeDeviceDDMStatus(w, udid, true)
+	writeDeviceDDMStatus(w, udid, true, intErrors.Join(reconcileErrs...))
 }
 
 // DisableDeviceDDMHandler (DELETE /device/{udid}/ddm) opts a device out of DDM: tears
@@ -201,8 +212,12 @@ func DisableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var reconcileErrs []error
+
 	// Tear down DDM state while the device is still opted in
-	teardownDDMForDevice(device)
+	if err := teardownDDMForDevice(device); err != nil {
+		reconcileErrs = append(reconcileErrs, fmt.Errorf("teardownDDMForDevice: %w", err))
+	}
 
 	if err := db.DB.Where("device_udid = ?", udid).Delete(&DDMOptIn{}).Error; err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DisableDeviceDDMHandler: delete opt-in: " + err.Error()})
@@ -215,17 +230,44 @@ func DisableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	// Re-push profiles via InstallProfile commands. Applications are intentionally left as is
 	if _, err := InstallAllProfiles(device); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DisableDeviceDDMHandler: InstallAllProfiles: " + err.Error()})
+		reconcileErrs = append(reconcileErrs, fmt.Errorf("InstallAllProfiles: %w", err))
 	}
 
-	writeDeviceDDMStatus(w, udid, false)
+	writeDeviceDDMStatus(w, udid, false, intErrors.Join(reconcileErrs...))
 }
 
-func writeDeviceDDMStatus(w http.ResponseWriter, udid string, useDDM bool) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+// writeDeviceDDMStatus reports the device's mode along with whether the follow-up
+// reconcile fully succeeded. The mode change itself is already committed, so a failed
+// reconcile is a partial success (207) rather than an error: the opt-in state stands and
+// the device catches up on the next reconcile
+func writeDeviceDDMStatus(w http.ResponseWriter, udid string, useDDM bool, reconcileErr error) {
+	body := map[string]interface{}{
 		"device_udid": udid,
 		"use_ddm":     useDDM,
-	}); err != nil {
+		"reconciled":  reconcileErr == nil,
+	}
+
+	status := http.StatusOK
+	if reconcileErr != nil {
+		status = http.StatusMultiStatus
+		body["reconcile_errors"] = errorMessages(reconcileErr)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "writeDeviceDDMStatus: " + err.Error()})
 	}
+}
+
+// errorMessages flattens a joined error into one message per underlying failure
+func errorMessages(err error) []string {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		msgs := make([]string, 0, len(joined.Unwrap()))
+		for _, e := range joined.Unwrap() {
+			msgs = append(msgs, e.Error())
+		}
+		return msgs
+	}
+	return []string{err.Error()}
 }
