@@ -34,7 +34,7 @@ func deviceOptedIntoDDM(udid string) bool {
 		return false
 	}
 	var count int64
-	if err := db.DB.Model(&DDMOptIn{}).Where("device_udid = ?", udid).Count(&count).Error; err != nil {
+	if err := db.DB.Model(&DDMOptIn{}).Where("device_ud_id = ?", udid).Count(&count).Error; err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "deviceOptedIntoDDM: " + err.Error()})
 		return false
 	}
@@ -62,7 +62,7 @@ func optedInSet(devices []types.Device) map[string]bool {
 		udids = append(udids, devices[i].UDID)
 	}
 	var optIns []DDMOptIn
-	if err := db.DB.Where("device_udid IN (?)", udids).Find(&optIns).Error; err != nil {
+	if err := db.DB.Where("device_ud_id IN (?)", udids).Find(&optIns).Error; err != nil {
 		ErrorLogger(LogHolder{Message: "optedInSet: " + err.Error()})
 		return set
 	}
@@ -219,7 +219,7 @@ func DisableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 		reconcileErrs = append(reconcileErrs, fmt.Errorf("teardownDDMForDevice: %w", err))
 	}
 
-	if err := db.DB.Where("device_udid = ?", udid).Delete(&DDMOptIn{}).Error; err != nil {
+	if err := db.DB.Where("device_ud_id = ?", udid).Delete(&DDMOptIn{}).Error; err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DisableDeviceDDMHandler: delete opt-in: " + err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
