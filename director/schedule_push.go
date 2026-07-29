@@ -153,13 +153,17 @@ func runCleanup() error {
 // pushAll enqueues every device that is due for a scheduled push. It does not sleep:
 // the scan itself finishes in seconds (so the control-plane lock is held only briefly),
 // and the load is spread out by *delaying delivery* of each message instead. Each
-// message gets a delay of onceIn + rand[0, pushSpread), which taskq stores as a due
-// time in a Redis zset, so the consumer picks the pushes up gradually across the
-// pushSpread window rather than all at once.
+// message gets a delay of rand[0, pushSpread), which taskq stores as a due time in a
+// Redis zset, so the consumer picks the pushes up gradually across the pushSpread window
+// rather than all at once.
 //
-// OnceInPeriod still provides fleet-wide, per-device dedup for the onceIn window: it
-// derives the message name from the args + period + time slot. It also sets Delay, which
-// the following SetDelay overrides -- the name (and therefore the dedup) is unaffected.
+// The delay is deliberately not offset by onceIn: per-device cadence is enforced by
+// NextPush/deviceNeedsPush and by the OnceInPeriod dedup, so an extra onceIn of delay
+// would only make every push a full cadence late.
+//
+// OnceInPeriod provides fleet-wide, per-device dedup for the onceIn window: it derives
+// the message name from the args + period + time slot. It also sets Delay, which the
+// following SetDelay overrides -- the name (and therefore the dedup) is unaffected.
 func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Duration) error {
 	var devices []types.Device
 	var dbDevices []types.Device
@@ -179,7 +183,9 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 		needsPush := deviceNeedsPush(device)
 
 		if needsPush {
-			InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Adding Device to push list"})
+			// Debug, not Info: with the pacing sleeps gone this loop emits one line per
+			// device in the fleet within a couple of seconds.
+			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Adding Device to push list"})
 			devices = append(devices, device)
 		}
 
@@ -193,6 +199,14 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 	InfoLogger(LogHolder{Message: fmt.Sprintf("commands will only be queued for an individual device every %s at maximum", onceIn)})
 	InfoLogger(LogHolder{Message: fmt.Sprintf("%d pushes will be spread over %s", len(devices), pushSpread)})
 
+	// Reserve before enqueuing: the messages below are not delivered until up to
+	// pushSpread from now, and NextPush is otherwise only written once a push has
+	// actually been sent. Without this, a scan that starts while the previous scan's
+	// messages are still pending would see a stale NextPush and enqueue them again --
+	// and the dedup name may well have rolled into a new time slot by then, so the
+	// duplicate would not be suppressed.
+	reserveNextPush(devices, onceIn, pushSpread)
+
 	for i := range devices {
 		device := devices[i]
 
@@ -200,7 +214,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 		// Sets the dedup name from the args, period and time slot -- and Delay, which
 		// the SetDelay below then overrides without touching the name.
 		msg.OnceInPeriod(onceIn, device.UDID)
-		msg.SetDelay(onceIn + jitter(pushSpread))
+		msg.SetDelay(jitter(pushSpread))
 
 		err := pushQueue.Add(msg)
 		switch {
@@ -217,6 +231,36 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 	return nil
 }
 
+// reserveNextPushBatch is how many UDIDs go into one `next_push` UPDATE. Keeps the IN
+// clause a sane size on large fleets without issuing a statement per device.
+const reserveNextPushBatch = 1000
+
+// reserveNextPush marks the given devices as not due again until the whole spread window
+// has elapsed plus one onceIn cadence -- i.e. until the pushes being enqueued now must
+// have been delivered. It is deliberately conservative: every device gets the end of the
+// window rather than its own delay, so this is one UPDATE per batch instead of one per
+// device. Once a push is actually sent, updateNextPush overwrites this with the
+// authoritative now+onceIn.
+//
+// Best-effort: a failure is logged and the scan continues, exactly like updateNextPush.
+func reserveNextPush(devices []types.Device, onceIn, pushSpread time.Duration) {
+	next := time.Now().Add(pushSpread + onceIn)
+
+	for start := 0; start < len(devices); start += reserveNextPushBatch {
+		end := min(start+reserveNextPushBatch, len(devices))
+
+		udids := make([]string, 0, end-start)
+		for _, device := range devices[start:end] {
+			udids = append(udids, device.UDID)
+		}
+
+		err := db.DB.Model(&types.Device{}).Where("ud_id IN ?", udids).Update("next_push", next).Error
+		if err != nil {
+			ErrorLogger(LogHolder{Message: errors.Wrap(err, "reserveNextPush").Error()})
+		}
+	}
+}
+
 // jitter returns a random duration in [0, spread). A non-positive spread yields 0.
 func jitter(spread time.Duration) time.Duration {
 	if spread <= 0 {
@@ -229,21 +273,22 @@ func deviceNeedsPush(device types.Device) bool {
 	now := time.Now()
 	oneDayAgo := time.Now().Add(-24 * time.Hour)
 
-	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
+	// Debug, not Info: this runs once per device in the fleet per scan, all at once.
+	DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Considering device for scheduled push"})
 
 	if now.Before(device.NextPush) && !device.NextPush.IsZero() {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: device.NextPush.String()})
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not Pushing. Next push is in metric", Metric: device.NextPush.String()})
 		return false
 	}
 
 	if device.LastCertificateList.IsZero() || device.LastProfileList.IsZero() || device.LastSecurityInfo.IsZero() || device.LastDeviceInfo.IsZero() {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "One or more of the info commands hasn't ever been received"})
 		return true
 	}
 
 	// We've not had all of the info payloads within the last day
 	if (device.LastCertificateList.Before(oneDayAgo) || device.LastProfileList.Before(oneDayAgo) || device.LastSecurityInfo.Before(oneDayAgo) || device.LastDeviceInfo.Before(oneDayAgo)) && (!device.LastCertificateList.IsZero() && !device.LastProfileList.IsZero() && !device.LastSecurityInfo.IsZero() && !device.LastDeviceInfo.IsZero()) {
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Have not received all of the info commands within the last six hours."})
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Have not received all of the info commands within the last six hours."})
 		return true
 	}
 

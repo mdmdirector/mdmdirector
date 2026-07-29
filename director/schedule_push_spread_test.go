@@ -1,6 +1,7 @@
 package director
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -33,6 +34,7 @@ func (q *fakeQueue) Add(msg *taskq.Message) error {
 // expectDeviceScan stubs the `db.DB.Find(&devices)` in pushAll, returning `count` devices
 // whose info-command timestamps are all zero (so deviceNeedsPush is true). Exactly one
 // query is expected, which also pins the fix for the duplicated read pushAll used to do.
+// It then stubs the batched `next_push` reservation writes.
 func expectDeviceScan(mockSpy sqlmock.Sqlmock, count int) []string {
 	udids := make([]string, 0, count)
 	rows := sqlmock.NewRows([]string{"ud_id", "serial_number"})
@@ -43,6 +45,14 @@ func expectDeviceScan(mockSpy sqlmock.Sqlmock, count int) []string {
 	}
 
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).WillReturnRows(rows)
+
+	for remaining := count; remaining > 0; remaining -= reserveNextPushBatch {
+		mockSpy.ExpectBegin()
+		mockSpy.ExpectExec(`UPDATE "devices" SET "next_push"`).
+			WillReturnResult(sqlmock.NewResult(0, int64(min(remaining, reserveNextPushBatch))))
+		mockSpy.ExpectCommit()
+	}
+
 	return udids
 }
 
@@ -54,7 +64,7 @@ func TestPushAllSpreadsDelaysWithoutSleeping(t *testing.T) {
 	udids := expectDeviceScan(mockSpy, deviceCount)
 
 	onceIn := 60 * time.Minute
-	pushSpread := 30 * time.Minute
+	pushSpread := 90 * time.Minute
 
 	queue := &fakeQueue{}
 	task := taskq.RegisterTask(&taskq.TaskOptions{
@@ -77,9 +87,9 @@ func TestPushAllSpreadsDelaysWithoutSleeping(t *testing.T) {
 	for i, msg := range queue.added {
 		assert.Equal(t, udids[i], msg.Args[0], "messages enqueued in device order")
 
-		// Delivery is delayed by at least onceIn and at most onceIn+pushSpread.
-		assert.GreaterOrEqual(t, msg.Delay, onceIn, "delay below onceIn for %s", udids[i])
-		assert.Less(t, msg.Delay, onceIn+pushSpread, "delay beyond the spread window for %s", udids[i])
+		// Delivery lands inside the spread window, with no onceIn offset in front of it.
+		assert.GreaterOrEqual(t, msg.Delay, time.Duration(0), "negative delay for %s", udids[i])
+		assert.Less(t, msg.Delay, pushSpread, "delay beyond the spread window for %s", udids[i])
 
 		// OnceInPeriod's dedup name must survive the SetDelay override.
 		require.NotEmpty(t, msg.Name, "dedup name missing for %s", udids[i])
@@ -96,7 +106,7 @@ func TestPushAllSpreadsDelaysWithoutSleeping(t *testing.T) {
 	require.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
-func TestPushAllZeroSpreadUsesOnceInDelay(t *testing.T) {
+func TestPushAllZeroSpreadDeliversImmediately(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
@@ -111,9 +121,10 @@ func TestPushAllZeroSpreadUsesOnceInDelay(t *testing.T) {
 
 	require.NoError(t, pushAll(queue, task, onceIn, 0))
 
+	// A zero spread (debug mode) means no delay at all, not a one-cadence wait.
 	require.Len(t, queue.added, 3)
 	for _, msg := range queue.added {
-		assert.Equal(t, onceIn, msg.Delay)
+		assert.Zero(t, msg.Delay)
 		assert.NotEmpty(t, msg.Name)
 	}
 
@@ -164,4 +175,53 @@ func TestPushAllHasNoSleeps(t *testing.T) {
 		}
 		return true
 	})
+}
+
+// argMatcher adapts a func to go-sqlmock's Argument interface.
+type argMatcher func(driver.Value) bool
+
+func (m argMatcher) Match(v driver.Value) bool { return m(v) }
+
+// TestPushAllReservesNextPushBeforeEnqueuing pins the guard against a scan re-enqueuing
+// devices whose pushes are still sitting in the zset: NextPush is written for the whole
+// delivery window (pushSpread + onceIn) up front, not after the push is delivered.
+func TestPushAllReservesNextPushBeforeEnqueuing(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	onceIn := 60 * time.Minute
+	pushSpread := 90 * time.Minute
+	queue := &fakeQueue{}
+
+	rows := sqlmock.NewRows([]string{"ud_id", "serial_number"}).AddRow("UDID-1", "SERIAL1")
+	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).WillReturnRows(rows)
+
+	addsWhenReserved := -1
+	expectedNext := time.Now().Add(pushSpread + onceIn)
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`UPDATE "devices" SET "next_push"`).
+		WithArgs(
+			argMatcher(func(v driver.Value) bool {
+				// Reservation must happen before anything is handed to the queue.
+				addsWhenReserved = len(queue.added)
+				next, ok := v.(time.Time)
+				return ok && next.Sub(expectedNext).Abs() < time.Minute
+			}),
+			sqlmock.AnyArg(), // updated_at, set by gorm
+			"UDID-1",
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
+
+	task := taskq.RegisterTask(&taskq.TaskOptions{
+		Name:    "push-reserve-test",
+		Handler: func(string) error { return nil },
+	})
+
+	require.NoError(t, pushAll(queue, task, onceIn, pushSpread))
+
+	require.NoError(t, mockSpy.ExpectationsWereMet())
+	assert.Equal(t, 0, addsWhenReserved, "next_push must be reserved before the first enqueue")
+	assert.Len(t, queue.added, 1)
 }

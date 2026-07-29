@@ -344,8 +344,8 @@ func main() {
 	flag.IntVar(
 		&PushSpread,
 		"push-spread",
-		env.Int("PUSH_SPREAD", 30),
-		"Number of minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by ONCE_IN plus a random offset within this window, so a fleet-wide scan does not deliver every push at once. Defaults to 30. Ignored and overidden as 1 (minute) if --debug is passed.",
+		env.Int("PUSH_SPREAD", 90),
+		"Number of minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by a random offset within this window, so a fleet-wide scan does not deliver every push at once. Must be less than CONTROL_PLANE_INTERVAL; clamped if it is not. Defaults to 90. Ignored and overidden as 0 (immediate) if --debug is passed.",
 	)
 	flag.IntVar(
 		&ControlPlaneInterval,
@@ -635,10 +635,11 @@ func main() {
 	// Device inventory is refreshed inside the control-plane scan (single-flight under
 	// the Redis lock), not once per replica at startup -- see director.ScheduledCheckin.
 
-	// Override OnceIn and PushSpread if --debug is passed
+	// Override OnceIn and PushSpread if --debug is passed. Pushes go out immediately in
+	// debug mode -- waiting out a spread window defeats the point of debugging.
 	if debugMode {
 		OnceIn = 2
-		PushSpread = 1
+		PushSpread = 0
 	}
 
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
@@ -646,6 +647,18 @@ func main() {
 	controlPlaneInterval := (time.Minute * time.Duration(ControlPlaneInterval))
 	if debugMode {
 		controlPlaneInterval = time.Minute
+	}
+
+	// The spread window must close before the next scan starts, otherwise a scan runs
+	// while the previous scan's pushes are still pending delivery and re-enqueues them.
+	// Clamp rather than exit: a mistuned knob should not crash-loop the service.
+	if pushSpreadDuration >= controlPlaneInterval {
+		clamped := controlPlaneInterval / 2
+		log.Warnf(
+			"PUSH_SPREAD (%s) must be less than CONTROL_PLANE_INTERVAL (%s); clamping to %s",
+			pushSpreadDuration, controlPlaneInterval, clamped,
+		)
+		pushSpreadDuration = clamped
 	}
 	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, pushSpreadDuration, controlPlaneInterval)
 	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)

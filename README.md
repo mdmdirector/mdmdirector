@@ -113,7 +113,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 
 - `-push-new-build` - Re-push profiles if the device's build number changes. (default true) Env: `PUSH_NEW_BUILD`
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
-- `-push-spread int` - Minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by `once-in` plus a random offset within this window, so a fleet-wide scan does not deliver every push at once. (default 30, overridden to 1 if --debug) Env: `PUSH_SPREAD`
+- `-push-spread int` - Minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by a random offset within this window, so a fleet-wide scan does not deliver every push at once. Must be less than `control-plane-interval` (clamped to half of it if not), so the window closes before the next scan starts. (default 90, overridden to 0 — immediate — if --debug) Env: `PUSH_SPREAD`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
 
 #### PIN Escrow
