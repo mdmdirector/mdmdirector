@@ -24,17 +24,6 @@ var DevicesFetchedFromMDM bool
 
 var client = &http.Client{}
 
-// The delay between looping over the background goroutines (sending push notifications etc)
-func getDelay() time.Duration {
-	DelaySeconds := 7200
-
-	if utils.DebugMode() {
-		DelaySeconds = 20
-	}
-
-	return time.Duration(DelaySeconds)
-}
-
 func UnconfiguredDevices() {
 	ticker := time.NewTicker(30 * time.Second)
 

@@ -146,6 +146,13 @@ func OnceIn() int {
 	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
 }
 
+// PushSpread is the window, in minutes, over which scheduled pushes are spread out for
+// delivery. Each device's push is delayed by ONCE_IN plus a random offset within this
+// window, so a fleet-wide scan does not deliver every push at the same instant.
+func PushSpread() int {
+	return flag.Lookup("push-spread").Value.(flag.Getter).Get().(int)
+}
+
 func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }

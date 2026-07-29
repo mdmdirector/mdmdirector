@@ -22,7 +22,7 @@ func TestScheduledCheckinReturnsOnContextCancel(t *testing.T) {
 	go func() {
 		// rc and pushQueue are nil; the cancelled context guarantees we return
 		// before ever dereferencing them.
-		ScheduledCheckin(ctx, nil, nil, time.Minute, time.Minute)
+		ScheduledCheckin(ctx, nil, nil, time.Minute, time.Minute, time.Minute)
 		close(done)
 	}()
 
@@ -47,7 +47,7 @@ func TestScheduledCheckinReturnsWhenCancelledBeforeDeviceFetch(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		ScheduledCheckin(ctx, nil, nil, time.Minute, time.Minute)
+		ScheduledCheckin(ctx, nil, nil, time.Minute, time.Minute, time.Minute)
 		close(done)
 	}()
 

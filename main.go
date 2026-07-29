@@ -103,6 +103,9 @@ var RedisTLS bool
 
 var OnceIn int
 
+// PushSpread is the number of minutes over which scheduled pushes are spread out
+var PushSpread int
+
 // ControlPlaneInterval is the number of minutes between fleet-wide control-plane scans
 var ControlPlaneInterval int
 
@@ -337,6 +340,12 @@ func main() {
 		"once-in",
 		env.Int("ONCE_IN", 60),
 		"Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.",
+	)
+	flag.IntVar(
+		&PushSpread,
+		"push-spread",
+		env.Int("PUSH_SPREAD", 30),
+		"Number of minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by ONCE_IN plus a random offset within this window, so a fleet-wide scan does not deliver every push at once. Defaults to 30. Ignored and overidden as 1 (minute) if --debug is passed.",
 	)
 	flag.IntVar(
 		&ControlPlaneInterval,
@@ -626,17 +635,19 @@ func main() {
 	// Device inventory is refreshed inside the control-plane scan (single-flight under
 	// the Redis lock), not once per replica at startup -- see director.ScheduledCheckin.
 
-	// Override OnceIn if --debug is passed
+	// Override OnceIn and PushSpread if --debug is passed
 	if debugMode {
 		OnceIn = 2
+		PushSpread = 1
 	}
 
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
+	pushSpreadDuration := (time.Minute * time.Duration(PushSpread))
 	controlPlaneInterval := (time.Minute * time.Duration(ControlPlaneInterval))
 	if debugMode {
 		controlPlaneInterval = time.Minute
 	}
-	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, controlPlaneInterval)
+	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, pushSpreadDuration, controlPlaneInterval)
 	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)
 
 	srv := &http.Server{Addr: ":" + port, Handler: r}

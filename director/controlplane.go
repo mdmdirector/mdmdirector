@@ -16,8 +16,8 @@ const (
 	controlPlaneLockKey = "mdmdirector:control-plane"
 
 	// controlPlaneLockTTL is how long the lock is held before it must be refreshed. A
-	// scan can run for many minutes (pushAll paces itself with ~1m sleeps per chunk), so
-	// a background refresher keeps the lock alive while the holder works. If the holder
+	// scan is normally quick (pushAll enqueues without sleeping), but a background
+	// refresher keeps the lock alive while the holder works. If the holder
 	// dies mid-scan, the lock expires within this TTL and another pod takes over on its
 	// next tick -- automatic failover, no SPOF.
 	controlPlaneLockTTL = 30 * time.Second

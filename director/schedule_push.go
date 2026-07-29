@@ -3,7 +3,7 @@ package director
 import (
 	"context"
 	"fmt"
-	"math"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"path"
@@ -44,7 +44,9 @@ var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
 //
 // `interval` is the scan cadence (env CONTROL_PLANE_INTERVAL); it is NOT the per-device
 // push cadence, which stays bounded by `onceIn` (ONCE_IN) via the OnceInPeriod dedup.
-func ScheduledCheckin(ctx context.Context, rc redislock.RedisClient, pushQueue taskq.Queue, onceIn, interval time.Duration) {
+// `pushSpread` (PUSH_SPREAD) is the window across which the enqueued pushes are spread
+// out for delivery; see pushAll.
+func ScheduledCheckin(ctx context.Context, rc redislock.RedisClient, pushQueue taskq.Queue, onceIn, pushSpread, interval time.Duration) {
 	task := pushTask
 
 	run := func() {
@@ -57,7 +59,7 @@ func ScheduledCheckin(ctx context.Context, rc redislock.RedisClient, pushQueue t
 			// control-plane lock -- instead of once per replica at startup. Only the
 			// lock holder fetches, then scans and enqueues with fresh data.
 			FetchDevicesFromMDM()
-			return processScheduledCheckin(pushQueue, task, onceIn)
+			return processScheduledCheckin(pushQueue, task, onceIn, pushSpread)
 		})
 		if err != nil {
 			ErrorLogger(LogHolder{Message: err.Error()})
@@ -100,12 +102,12 @@ func ProcessScheduledCheckinQueue(ctx context.Context, pushQueue taskq.Queue) {
 	}
 }
 
-func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) error {
+func processScheduledCheckin(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Duration) error {
 	if utils.DebugMode() {
 		DebugLogger(LogHolder{Message: "Processing scheduledCheckin in debug mode"})
 	}
 
-	err := pushAll(pushQueue, task, onceIn)
+	err := pushAll(pushQueue, task, onceIn, pushSpread)
 	if err != nil {
 		return errors.Wrap(err, "processScheduledCheckin::pushAll")
 	}
@@ -148,28 +150,19 @@ func runCleanup() error {
 	return nil
 }
 
-func deviceChunkSlice(slice []types.Device, chunkSize int) [][]types.Device {
-	var chunks [][]types.Device
-	for i := 0; i < len(slice); i += chunkSize {
-		end := i + chunkSize
-
-		// necessary check to avoid slicing beyond
-		// slice capacity
-		if end > len(slice) {
-			end = len(slice)
-		}
-
-		chunks = append(chunks, slice[i:end])
-	}
-
-	return chunks
-}
-
-func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) error {
+// pushAll enqueues every device that is due for a scheduled push. It does not sleep:
+// the scan itself finishes in seconds (so the control-plane lock is held only briefly),
+// and the load is spread out by *delaying delivery* of each message instead. Each
+// message gets a delay of onceIn + rand[0, pushSpread), which taskq stores as a due
+// time in a Redis zset, so the consumer picks the pushes up gradually across the
+// pushSpread window rather than all at once.
+//
+// OnceInPeriod still provides fleet-wide, per-device dedup for the onceIn window: it
+// derives the message name from the args + period + time slot. It also sets Delay, which
+// the following SetDelay overrides -- the name (and therefore the dedup) is unaffected.
+func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Duration) error {
 	var devices []types.Device
 	var dbDevices []types.Device
-
-	DelaySeconds := getDelay() // nolint:staticcheck
 
 	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
 	if err != nil {
@@ -196,54 +189,40 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 		Message: "Pushing to all in debug mode",
 	})
 
-	counter := 0
-	total := 0
-	devicesPerSecond := float64(len(devices)) / float64((DelaySeconds - 1))
-	DebugLogger(LogHolder{Message: "Processed devices per 0.5 seconds", Metric: strconv.Itoa(int(devicesPerSecond))})
-
-	devicesPerMinute := int(math.Ceil(float64(len(devices)) / 60))
-	InfoLogger(LogHolder{Message: fmt.Sprintf("%d will be processed each minute", devicesPerMinute)})
-	deviceChunks := deviceChunkSlice(devices, devicesPerMinute)
-	InfoLogger(LogHolder{Message: fmt.Sprintf("%d chunks of %d devices each will be processed", len(deviceChunks), devicesPerMinute)})
 	ctx := context.Background()
-	msgTxt := fmt.Sprintf("commands will only be queued for an individual device every %s at maximum", onceIn)
-	InfoLogger(LogHolder{Message: msgTxt})
-	for i := range deviceChunks {
-		for j := range deviceChunks[i] {
-			device := deviceChunks[i][j]
-			if float64(counter) >= devicesPerSecond {
-				DebugLogger(LogHolder{Message: "Sleeping due to having processed devices", Metric: strconv.Itoa(total)})
-				time.Sleep(500 * time.Millisecond)
-				counter = 0
-			}
-			DebugLogger(LogHolder{Message: "pushAll processed", Metric: strconv.Itoa(counter)})
+	InfoLogger(LogHolder{Message: fmt.Sprintf("commands will only be queued for an individual device every %s at maximum", onceIn)})
+	InfoLogger(LogHolder{Message: fmt.Sprintf("%d pushes will be spread over %s", len(devices), pushSpread)})
 
-			msg := task.WithArgs(ctx, device.UDID)
+	for i := range devices {
+		device := devices[i]
 
-			msg.OnceInPeriod(onceIn)
-			err := pushQueue.Add(msg)
-			switch {
-			case errors.Is(msg.Err, taskq.ErrDuplicate):
-				// handle duplicate task
-				DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
-			case err != nil:
-				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
-			case msg.Err != nil:
-				// handle duplicate task
-				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
-			}
+		msg := task.WithArgs(ctx, device.UDID)
+		// Sets the dedup name from the args, period and time slot -- and Delay, which
+		// the SetDelay below then overrides without touching the name.
+		msg.OnceInPeriod(onceIn, device.UDID)
+		msg.SetDelay(onceIn + jitter(pushSpread))
 
-			counter++
-			total++
+		err := pushQueue.Add(msg)
+		switch {
+		case errors.Is(msg.Err, taskq.ErrDuplicate):
+			// handle duplicate task
+			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
+		case err != nil:
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		case msg.Err != nil:
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: msg.Err.Error()})
 		}
-		// Wait 1 minute before processing the next chunk of devices
-		msg := fmt.Sprintf("%d/%d devices processed", (i+1)*devicesPerMinute, len(devices))
-		InfoLogger(LogHolder{Message: msg})
-		InfoLogger(LogHolder{Message: "Sleeping 1 minute before processing next chunk of devices"})
-		time.Sleep(time.Minute * 1)
 	}
 	InfoLogger(LogHolder{Message: "Completed scheduling pushes", Metric: strconv.Itoa(len(devices))})
 	return nil
+}
+
+// jitter returns a random duration in [0, spread). A non-positive spread yields 0.
+func jitter(spread time.Duration) time.Duration {
+	if spread <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(spread))) // nolint:gosec // not security sensitive
 }
 
 func deviceNeedsPush(device types.Device) bool {
