@@ -30,25 +30,19 @@ func (q *fakeQueue) Add(msg *taskq.Message) error {
 	return nil
 }
 
-// expectDeviceScan stubs the `db.DB.Find(&devices).Scan(&devices)` in pushAll, returning
-// `count` devices whose info-command timestamps are all zero (so deviceNeedsPush is true).
-// `Find(&x).Scan(&x)` runs the same statement twice, so both runs are stubbed.
+// expectDeviceScan stubs the `db.DB.Find(&devices)` in pushAll, returning `count` devices
+// whose info-command timestamps are all zero (so deviceNeedsPush is true). Exactly one
+// query is expected, which also pins the fix for the duplicated read pushAll used to do.
 func expectDeviceScan(mockSpy sqlmock.Sqlmock, count int) []string {
 	udids := make([]string, 0, count)
+	rows := sqlmock.NewRows([]string{"ud_id", "serial_number"})
 	for i := 0; i < count; i++ {
-		udids = append(udids, fmt.Sprintf("UDID-%04d", i))
+		udid := fmt.Sprintf("UDID-%04d", i)
+		udids = append(udids, udid)
+		rows.AddRow(udid, fmt.Sprintf("SERIAL%04d", i))
 	}
 
-	newRows := func() *sqlmock.Rows {
-		rows := sqlmock.NewRows([]string{"ud_id", "serial_number"})
-		for i, udid := range udids {
-			rows.AddRow(udid, fmt.Sprintf("SERIAL%04d", i))
-		}
-		return rows
-	}
-
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).WillReturnRows(newRows())
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).WillReturnRows(newRows())
+	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).WillReturnRows(rows)
 	return udids
 }
 

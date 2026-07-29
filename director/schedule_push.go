@@ -164,7 +164,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 	var devices []types.Device
 	var dbDevices []types.Device
 
-	err := db.DB.Find(&dbDevices).Scan(&dbDevices).Error
+	err := db.DB.Find(&dbDevices).Error
 	if err != nil {
 		return errors.Wrap(err, "PushAll: Scan devices")
 	}
