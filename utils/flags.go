@@ -153,6 +153,12 @@ func PushSpread() int {
 	return flag.Lookup("push-spread").Value.(flag.Getter).Get().(int)
 }
 
+// PushRateLimit is the fleet-wide ceiling on device pushes per minute, enforced across
+// replicas by the taskq consumer. 0 means unlimited.
+func PushRateLimit() int {
+	return flag.Lookup("push-rate-limit").Value.(flag.Getter).Get().(int)
+}
+
 func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }

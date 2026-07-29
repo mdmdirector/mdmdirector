@@ -17,7 +17,6 @@ import (
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
 
 	"github.com/micromdm/go4/env"
@@ -105,6 +104,9 @@ var OnceIn int
 
 // PushSpread is the number of minutes over which scheduled pushes are spread out
 var PushSpread int
+
+// PushRateLimit is the fleet-wide ceiling on pushes per minute (0 disables it)
+var PushRateLimit int
 
 // ControlPlaneInterval is the number of minutes between fleet-wide control-plane scans
 var ControlPlaneInterval int
@@ -346,6 +348,12 @@ func main() {
 		"push-spread",
 		env.Int("PUSH_SPREAD", 90),
 		"Number of minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by a random offset within this window, so a fleet-wide scan does not deliver every push at once. Must be less than CONTROL_PLANE_INTERVAL; clamped if it is not. Defaults to 90. Ignored and overidden as 0 (immediate) if --debug is passed.",
+	)
+	flag.IntVar(
+		&PushRateLimit,
+		"push-rate-limit",
+		env.Int("PUSH_RATE_LIMIT", 600),
+		"Fleet-wide ceiling on how many device pushes may be sent per minute, enforced across all replicas via Redis. A safety ceiling for retry storms and misconfiguration, not the normal pacing mechanism -- that is PUSH_SPREAD. Should stay comfortably above (enrolled devices / PUSH_SPREAD). Defaults to 600. Set to 0 to disable.",
 	)
 	flag.IntVar(
 		&ControlPlaneInterval,
@@ -617,10 +625,9 @@ func main() {
 	// One shared go-redis client backs both the taskq queue and the control-plane lock.
 	redisClient := director.RedisClient()
 
-	var PushQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
-		Name:  "pushnotifications",
-		Redis: redisClient, // go-redis client
-	})
+	var PushQueue = QueueFactory.RegisterQueue(
+		director.PushQueueOptions(director.PushQueueName, redisClient, PushRateLimit),
+	)
 
 	if utils.Prometheus() {
 		director.PollGauges()
@@ -660,6 +667,15 @@ func main() {
 		)
 		pushSpreadDuration = clamped
 	}
+	// Make the spread/ceiling relationship visible: PUSH_SPREAD sets the operating point,
+	// PUSH_RATE_LIMIT is the ceiling. Past this fleet size the ceiling becomes the pacer.
+	if capacity := director.ImpliedFleetCapacity(PushRateLimit, pushSpreadDuration); capacity > 0 {
+		log.Infof(
+			"PUSH_RATE_LIMIT of %d/min over a PUSH_SPREAD of %s paces up to ~%d devices per scan; above that the rate limit sets the pace and pushes run past the window",
+			PushRateLimit, pushSpreadDuration, capacity,
+		)
+	}
+
 	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, pushSpreadDuration, controlPlaneInterval)
 	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)
 

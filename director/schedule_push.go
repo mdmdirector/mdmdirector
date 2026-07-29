@@ -197,7 +197,13 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn, pushSpread time.Du
 
 	ctx := context.Background()
 	InfoLogger(LogHolder{Message: fmt.Sprintf("commands will only be queued for an individual device every %s at maximum", onceIn)})
-	InfoLogger(LogHolder{Message: fmt.Sprintf("%d pushes will be spread over %s", len(devices), pushSpread)})
+	// The implied rate is the number to compare against PUSH_RATE_LIMIT: if it exceeds
+	// the ceiling, the limiter -- not this spread -- is what paces delivery, and pushes
+	// will run past the window.
+	InfoLogger(LogHolder{Message: fmt.Sprintf(
+		"%d pushes will be spread over %s (~%.0f/min)",
+		len(devices), pushSpread, impliedPushRate(len(devices), pushSpread),
+	)})
 
 	// Reserve before enqueuing: the messages below are not delivered until up to
 	// pushSpread from now, and NextPush is otherwise only written once a push has

@@ -114,6 +114,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-push-new-build` - Re-push profiles if the device's build number changes. (default true) Env: `PUSH_NEW_BUILD`
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
 - `-push-spread int` - Minutes over which the scheduled pushes are spread out for delivery. Each device's push is delayed by a random offset within this window, so a fleet-wide scan does not deliver every push at once. Must be less than `control-plane-interval` (clamped to half of it if not), so the window closes before the next scan starts. (default 90, overridden to 0 — immediate — if --debug) Env: `PUSH_SPREAD`
+- `-push-rate-limit int` - Fleet-wide ceiling on device pushes per minute, enforced across all replicas via Redis. This is a safety ceiling for retry storms and misconfiguration, not the normal pacing mechanism — `push-spread` is what sets the operating point. Keep it comfortably above `enrolled devices / push-spread`; a ceiling of 600 over a 90 minute spread paces up to ~54,000 devices per scan. Above that the ceiling becomes the pacer and pushes run past the window. (default 600, 0 disables) Env: `PUSH_RATE_LIMIT`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
 
 #### PIN Escrow
