@@ -13,8 +13,10 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
+	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -434,6 +436,138 @@ func TestProfileDownloadHandler_NoProfileFound(t *testing.T) {
 	serveProfileDownload(rr, req)
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+// withPrometheusEnabled turns the prometheus flag on for the duration of a test so the
+// instrumentation at the call site actually runs
+func withPrometheusEnabled(t *testing.T) {
+	t.Helper()
+	require.NoError(t, flag.Set("prometheus", "true"))
+	t.Cleanup(func() {
+		_ = flag.Set("prometheus", "false")
+	})
+}
+
+func TestProfileDownloadHandler_RecordsUnauthorizedMetric(t *testing.T) {
+	_ = flag.Set("sign", "false")
+	withPrometheusEnabled(t)
+
+	counter := metrics.ProfileDownloadRequests(profileScopeNone, "unauthorized")
+	before := prometheustestutil.ToFloat64(counter)
+
+	rr, req := newProfileDownloadRequest("device-udid-123", "com.example.profile", "different-udid-456")
+	serveProfileDownload(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
+}
+
+func TestProfileDownloadHandler_RecordsNotFoundMetric(t *testing.T) {
+	_ = flag.Set("sign", "false")
+	withPrometheusEnabled(t)
+
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1 AND payload_identifier = \$2`).
+		WithArgs("device-udid-123", "com.example.dangling").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier", "device_ud_id", "installed", "mobileconfig_data"}))
+	mockSpy.ExpectQuery(`^SELECT \* FROM "shared_profiles" WHERE payload_identifier = \$1`).
+		WithArgs("com.example.dangling").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "payload_identifier", "installed", "mobileconfig_data"}))
+
+	counter := metrics.ProfileDownloadRequests(profileScopeNone, "not_found")
+	before := prometheustestutil.ToFloat64(counter)
+
+	rr, req := newProfileDownloadRequest("device-udid-123", "com.example.dangling", "device-udid-123")
+	serveProfileDownload(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
+}
+
+func TestProfileDownloadHandler_RecordsSuccessMetricWithScope(t *testing.T) {
+	_ = flag.Set("sign", "false")
+	withPrometheusEnabled(t)
+
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	profileData := []byte("<?xml version=\"1.0\"?><plist><dict><key>shared</key></dict></plist>")
+
+	// Device profile not found, so the shared profile is served
+	mockSpy.ExpectQuery(`^SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1 AND payload_identifier = \$2`).
+		WithArgs("device-udid-125", "com.example.shared").
+		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier", "device_ud_id", "installed", "mobileconfig_data"}))
+	mockSpy.ExpectQuery(`^SELECT \* FROM "shared_profiles" WHERE payload_identifier = \$1`).
+		WithArgs("com.example.shared").
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "payload_identifier", "installed", "mobileconfig_data"}).
+				AddRow("00000000-0000-0000-0000-000000000001", "com.example.shared", true, profileData),
+		)
+
+	sharedCounter := metrics.ProfileDownloadRequests(profileScopeShared, "success")
+	deviceCounter := metrics.ProfileDownloadRequests(profileScopeDevice, "success")
+	sharedBefore := prometheustestutil.ToFloat64(sharedCounter)
+	deviceBefore := prometheustestutil.ToFloat64(deviceCounter)
+
+	rr, req := newProfileDownloadRequest("device-udid-125", "com.example.shared", "device-udid-125")
+	serveProfileDownload(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, sharedBefore+1, prometheustestutil.ToFloat64(sharedCounter))
+	assert.Equal(t, deviceBefore, prometheustestutil.ToFloat64(deviceCounter))
+}
+
+func TestWithProfileAPIMetrics_RecordsResultFromStatus(t *testing.T) {
+	withPrometheusEnabled(t)
+
+	tests := []struct {
+		name   string
+		method string
+		status int
+		result string
+	}{
+		{name: "post success", method: "post", status: http.StatusOK, result: "success"},
+		{name: "delete error", method: "delete", status: http.StatusInternalServerError, result: "error"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			counter := metrics.ProfileAPIRequests(test.method, test.result)
+			before := prometheustestutil.ToFloat64(counter)
+
+			handler := WithProfileAPIMetrics(test.method, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(test.status)
+			})
+			handler(httptest.NewRecorder(), httptest.NewRequest("POST", "/profile", nil))
+
+			assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
+		})
+	}
+}
+
+// A handler that writes an error status and keeps going (as several /profile branches do)
+// is counted once, by the first status written
+func TestWithProfileAPIMetrics_UsesFirstStatusWritten(t *testing.T) {
+	withPrometheusEnabled(t)
+
+	counter := metrics.ProfileAPIRequests("post", "error")
+	before := prometheustestutil.ToFloat64(counter)
+
+	handler := WithProfileAPIMetrics("post", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+		_, _ = w.Write([]byte("continued anyway"))
+	})
+	handler(httptest.NewRecorder(), httptest.NewRequest("POST", "/profile", nil))
+
+	assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
 }
 
 func TestSignIfRequired_SigningDisabled(t *testing.T) {

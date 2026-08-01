@@ -1277,15 +1277,10 @@ func signIfRequired(mobileconfigData []byte) ([]byte, error) {
 	if !utils.Sign() {
 		return mobileconfigData, nil
 	}
-	priv, cert, err := loadSigningKey(
-		utils.KeyPassword(),
-		utils.KeyPath(),
-		utils.CertPath(),
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "loading signing key")
+	if signingPrivKey == nil || signingCert == nil {
+		return nil, errors.New("signing is enabled but the signing key was not loaded at startup")
 	}
-	signed, err := SignProfile(priv, cert, mobileconfigData)
+	signed, err := SignProfile(signingPrivKey, signingCert, mobileconfigData)
 	if err != nil {
 		return nil, errors.Wrap(err, "signing profile")
 	}
@@ -1444,32 +1439,49 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	return pushedCommands, nil
 }
 
-func findMobileconfigData(udid, profileIdentifier string) ([]byte, error) {
+// Scopes reported on the profile_download_requests_total metric. "none" means nothing was
+// served, so the request had no scope.
+const (
+	profileScopeDevice = "device"
+	profileScopeShared = "shared"
+	profileScopeNone   = "none"
+)
+
+// findMobileconfigData returns the mobileconfig to serve for a device/identifier pair
+// along with the scope it was found in (profileScopeDevice or profileScopeShared).
+func findMobileconfigData(udid, profileIdentifier string) ([]byte, string, error) {
 	var deviceProfile types.DeviceProfile
 	err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", udid, profileIdentifier).First(&deviceProfile).Error
 	if err == nil {
 		if !deviceProfile.Installed {
-			return nil, gorm.ErrRecordNotFound
+			return nil, profileScopeNone, gorm.ErrRecordNotFound
 		}
-		return deviceProfile.MobileconfigData, nil
+		return deviceProfile.MobileconfigData, profileScopeDevice, nil
 	}
 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("device profile lookup: %w", err)
+		return nil, profileScopeNone, fmt.Errorf("device profile lookup: %w", err)
 	}
 
 	var sharedProfile types.SharedProfile
 	err = db.DB.Where("payload_identifier = ?", profileIdentifier).First(&sharedProfile).Error
 	if err == nil {
 		if !sharedProfile.Installed {
-			return nil, gorm.ErrRecordNotFound
+			return nil, profileScopeNone, gorm.ErrRecordNotFound
 		}
-		return sharedProfile.MobileconfigData, nil
+		return sharedProfile.MobileconfigData, profileScopeShared, nil
 	}
 	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("shared profile lookup: %w", err)
+		return nil, profileScopeNone, fmt.Errorf("shared profile lookup: %w", err)
 	}
 
-	return nil, gorm.ErrRecordNotFound
+	return nil, profileScopeNone, gorm.ErrRecordNotFound
+}
+
+// recordProfileDownload counts the terminal outcome of a /profiledownload request
+func recordProfileDownload(scope, outcome string) {
+	if utils.Prometheus() {
+		metrics.ProfileDownloadRequests(scope, outcome).Inc()
+	}
 }
 
 func ProfileDownloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -1478,28 +1490,72 @@ func ProfileDownloadHandler(w http.ResponseWriter, r *http.Request) {
 	profileIdentifier := vars["profileIdentifier"]
 
 	if r.Header.Get("X-Enrollment-ID") != udid {
+		InfoLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           "Profile download rejected: X-Enrollment-ID does not match the requested device",
+			},
+		)
+		recordProfileDownload(profileScopeNone, "unauthorized")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	mobileconfigData, err := findMobileconfigData(udid, profileIdentifier)
+	mobileconfigData, scope, err := findMobileconfigData(udid, profileIdentifier)
 	if intErrors.Is(err, gorm.ErrRecordNotFound) {
+		// The device was given a ProfileURL for a profile we don't have, or that is
+		// marked as not installed - the declaration is dangling
+		InfoLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           "Profile download: no installed profile found for identifier",
+			},
+		)
+		recordProfileDownload(profileScopeNone, "not_found")
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		log.Errorf("profile download lookup: %v", err)
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download lookup: %v", err),
+			},
+		)
+		recordProfileDownload(profileScopeNone, "error")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	responseData, err := signIfRequired(mobileconfigData)
 	if err != nil {
-		log.Errorf("profile download signing: %v", err)
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download signing: %v", err),
+			},
+		)
+		recordProfileDownload(scope, "error")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/x-apple-aspen-config")
-	_, _ = w.Write(responseData)
+	if _, err := w.Write(responseData); err != nil {
+		// Headers are already sent, so the device sees a truncated response
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download write: %v", err),
+			},
+		)
+		recordProfileDownload(scope, "error")
+		return
+	}
+	recordProfileDownload(scope, "success")
 }
