@@ -142,6 +142,49 @@ func ProfileVerificationMismatches(scope string) prometheus.Counter {
 	return profileVerificationMismatchesTotal.WithLabelValues(scope)
 }
 
+// profileDownloadRequestsTotal counts /profiledownload requests made by devices fetching
+// the mobileconfig referenced by a DDM legacy-profile declaration's ProfileURL
+// Labels:
+//   - scope:   "device" (served from device_profiles), "shared" (served from shared_profiles),
+//     "none" (nothing served)
+//   - outcome: "success", "unauthorized" (X-Enrollment-ID mismatch), "not_found"
+//     (dangling declaration - no installed profile for the identifier), "error"
+//
+//nolint:gochecknoglobals
+var profileDownloadRequestsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "profile_download_requests_total",
+		Help:      "Total /profiledownload requests served to devices, by scope and outcome.",
+	},
+	[]string{"scope", "outcome"},
+)
+
+// ProfileDownloadRequests - accessor for profileDownloadRequestsTotal
+func ProfileDownloadRequests(scope, outcome string) prometheus.Counter {
+	return profileDownloadRequestsTotal.WithLabelValues(scope, outcome)
+}
+
+// profileAPIRequestsTotal counts operator-driven requests to the /profile API
+// Labels:
+//   - method: "post" or "delete"
+//   - result: "success" or "error"
+//
+//nolint:gochecknoglobals
+var profileAPIRequestsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "profile_api_requests_total",
+		Help:      "Total /profile API requests by method and result.",
+	},
+	[]string{"method", "result"},
+)
+
+// ProfileAPIRequests - accessor for profileAPIRequestsTotal
+func ProfileAPIRequests(method, result string) prometheus.Counter {
+	return profileAPIRequestsTotal.WithLabelValues(method, result)
+}
+
 // initialTasksTotal counts RunInitialTasks invocations by terminal result
 // result: "success", "error", "lease_contention"
 //
@@ -270,6 +313,22 @@ var profilesTotal = promauto.NewGaugeVec(
 // ProfilesTotal - accessor for profilesTotal
 func ProfilesTotal(scope, installed string) prometheus.Gauge {
 	return profilesTotal.WithLabelValues(scope, installed)
+}
+
+// ddmEnabledDevicesTotal reports the current number of devices explicitly opted into DDM
+//
+//nolint:gochecknoglobals
+var ddmEnabledDevicesTotal = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Subsystem: subsystem,
+		Name:      "ddm_enabled_devices_total",
+		Help:      "Current number of devices explicitly opted into DDM.",
+	},
+)
+
+// DDMEnabledDevices - accessor for ddmEnabledDevicesTotal
+func DDMEnabledDevices() prometheus.Gauge {
+	return ddmEnabledDevicesTotal
 }
 
 // ResultLabel maps an HTTP status code or error presence to the canonical result label.

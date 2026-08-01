@@ -10,10 +10,12 @@ import (
 
 const gaugePollInterval = time.Minute
 
-// PollGauges starts background pollers that populate - mdmdirector_devices_total and mdmdirector_profiles_total
+// PollGauges starts background pollers that populate - mdmdirector_devices_total,
+// mdmdirector_profiles_total and mdmdirector_ddm_enabled_devices_total
 func PollGauges() {
 	go pollDevices()
 	go pollProfiles()
+	go pollDDMOptIns()
 }
 
 func pollDevices() {
@@ -31,6 +33,18 @@ func pollProfiles() {
 	for range time.Tick(gaugePollInterval) {
 		setProfilesGauge("shared", &types.SharedProfile{})
 		setProfilesGauge("device", &types.DeviceProfile{})
+	}
+}
+
+// pollDDMOptIns tracks how far the per-device DDM rollout has progressed
+func pollDDMOptIns() {
+	for range time.Tick(gaugePollInterval) {
+		var count int64
+		if err := db.DB.Model(&DDMOptIn{}).Count(&count).Error; err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+			continue
+		}
+		metrics.DDMEnabledDevices().Set(float64(count))
 	}
 }
 
