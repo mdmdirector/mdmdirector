@@ -162,17 +162,28 @@ func FetchDevicesFromMDM() {
 	log.Info("Finished fetching devices from MicroMDM...")
 }
 
-// fetchDevicesFromNanoMDM fetches all enrollments from NanoMDM and upserts them into the DB
+// fetchDevicesFromNanoMDM fetches the device-channel enrollments from NanoMDM and
+// upserts them into the DB. User-channel enrollments are deliberately excluded: they
+// describe a user account signed in on a Mac, not a device.
 func fetchDevicesFromNanoMDM(nanoClient *mdm.NanoMDMClient) {
-	resp, err := nanoClient.GetAllEnrollments(nil)
+	filter := &mdm.EnrollmentFilter{Types: mdm.DeviceChannelEnrollmentTypes}
+	resp, err := nanoClient.QueryEnrollments(filter, nil)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: errors.Wrap(err, "FetchDevicesFromMDM via NanoMDM").Error()})
 		return
 	}
 
 	var devices []types.Device
+	var skippedUserChannel int
 	for _, enrollment := range resp.Enrollments {
 		if enrollment.ID == "" {
+			continue
+		}
+
+		// Belt and braces alongside the type filter above: if the server ever returns a
+		// user-channel enrollment regardless, its ID shape still identifies it.
+		if mdm.IsUserChannelEnrollmentID(enrollment.ID) {
+			skippedUserChannel++
 			continue
 		}
 
@@ -191,6 +202,12 @@ func fetchDevicesFromNanoMDM(nanoClient *mdm.NanoMDMClient) {
 		}
 
 		devices = append(devices, device)
+	}
+
+	if skippedUserChannel > 0 {
+		log.WithFields(log.Fields{
+			"skipped_user_channel_enrollments": skippedUserChannel,
+		}).Info("Skipped user-channel enrollments returned by NanoMDM")
 	}
 
 	// Batch upsert
