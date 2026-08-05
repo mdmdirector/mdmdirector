@@ -151,6 +151,15 @@ var DDMDeclarationPrefix string
 // MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
 var MDMServerType string
 
+// kmfddmConfigured reports whether the KMFDDM client can be initialized. DDM needs NanoMDM
+// plus a complete KMFDDM config;
+func kmfddmConfigured(mdmServerType, kmfddmURL, kmfddmAPIKey, declarationPrefix string) bool {
+	return mdmServerType == string(mdm.ServerTypeNanoMDM) &&
+		kmfddmURL != "" &&
+		kmfddmAPIKey != "" &&
+		declarationPrefix != ""
+}
+
 func main() {
 	var port string
 	var debugMode bool
@@ -514,7 +523,17 @@ func main() {
 		if DDMDeclarationPrefix == "" {
 			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
 		}
+	}
+
+	// Initialize the KMFDDM client whenever KMFDDM is fully configured,
+	if kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
 		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
+		director.InfoLogger(director.LogHolder{Message: "KMFDDM client initialized"})
+	} else {
+		log.Warn(
+			"KMFDDM is not fully configured (needs mdm-server-type=nanomdm, kmfddm-url, " +
+				"kmfddm-api-key and ddm-declaration-prefix); per-device DDM opt-in will not work",
+		)
 	}
 
 	if utils.Sign() {
