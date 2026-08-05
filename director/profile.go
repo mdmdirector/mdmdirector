@@ -306,9 +306,17 @@ func ProcessDeviceProfiles(
 					}
 					_, err = PushProfiles(devices, []types.DeviceProfile{profile}, useDDM)
 					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
+						ErrorLogger(LogHolder{
+							Message:           err.Error(),
+							DeviceUDID:        device.UDID,
+							DeviceSerial:      device.SerialNumber,
+							ProfileIdentifier: profile.PayloadIdentifier,
+							ProfileUUID:       profile.HashedPayloadUUID,
+						})
+						status = "error"
+					} else {
+						status = "pushed"
 					}
-					status = "pushed"
 				} else {
 					profilesToSave = append(profilesToSave, profile)
 					status = "saved"

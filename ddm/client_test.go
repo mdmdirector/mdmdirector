@@ -262,3 +262,26 @@ func TestDeleteSetDeclaration_NotFound(t *testing.T) {
 	// Not found is not an error for deletion - association already gone
 	require.NoError(t, err)
 }
+
+// TestClientRequiresInit pins the contract that callers depend on: Client() reports
+// ErrClientNotInitialized until InitClient has run. The per-device DDM opt-in path relies
+// on the client being initialized whenever KMFDDM is configured, not only when the global
+// USE_DDM flags are on — see kmfddmConfigured in main.go.
+func TestClientRequiresInit(t *testing.T) {
+	saved := kmfddmClient
+	t.Cleanup(func() { kmfddmClient = saved })
+
+	kmfddmClient = nil
+	client, err := Client()
+	assert.Nil(t, client)
+	assert.ErrorIs(t, err, ErrClientNotInitialized)
+
+	InitClient("http://kmfddm.example.com:9002/", "test-api-key")
+	client, err = Client()
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	// InitClient trims the trailing slash so joined paths don't double up
+	assert.Equal(t, "http://kmfddm.example.com:9002", client.baseURL)
+	assert.Equal(t, "test-api-key", client.apiKey)
+	assert.Equal(t, KMFDDMAuthUsername, client.username)
+}
