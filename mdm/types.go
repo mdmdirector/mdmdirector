@@ -1,5 +1,7 @@
 package mdm
 
+import "strings"
+
 // EnrollmentStatus is the per-enrollment ID results of Push or Enqueue APIs
 type EnrollmentStatus struct {
 	PushError    string `json:"push_error,omitempty"`
@@ -110,6 +112,35 @@ type Enrollment struct {
 	Enabled          bool              `json:"enabled"`
 	TokenUpdateTally int               `json:"token_update_tally,omitempty"`
 	LastSeen         string            `json:"last_seen,omitempty"`
+}
+
+// Enrollment types as reported by NanoMDM. "Device" and "User Enrollment (Device)" are
+// device channels (one physical device); the rest are user channels, which represent a
+// user account signed in on a device rather than a device of their own.
+const (
+	EnrollmentTypeDevice               = "Device"
+	EnrollmentTypeUser                 = "User"
+	EnrollmentTypeUserEnrollmentDevice = "User Enrollment (Device)"
+	EnrollmentTypeUserEnrollment       = "User Enrollment"
+	EnrollmentTypeSharedIPad           = "Shared iPad"
+)
+
+// DeviceChannelEnrollmentTypes are the enrollment types that correspond to a physical
+// device, suitable for an EnrollmentFilter when only devices are wanted.
+var DeviceChannelEnrollmentTypes = []string{
+	EnrollmentTypeDevice,
+	EnrollmentTypeUserEnrollmentDevice,
+}
+
+// userChannelIDSeparator separates the device UDID from the user ID in the enrollment ID
+// NanoMDM assigns to a user channel, e.g.
+// "6F1A0F12-A055-5EF0-B534-E0A6D0770BA5:E21CD48A-064F-434D-BB05-9E195044FB55".
+const userChannelIDSeparator = ":"
+
+// IsUserChannelEnrollmentID reports whether an enrollment ID belongs to a user channel
+// rather than a device. Device UDIDs never contain the separator.
+func IsUserChannelEnrollmentID(id string) bool {
+	return strings.Contains(id, userChannelIDSeparator)
 }
 
 // EnrollmentFilter is the filter for querying enrollments
