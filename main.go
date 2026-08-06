@@ -639,6 +639,10 @@ func main() {
 		r.Handle("/metrics", promhttp.Handler())
 	}
 
+	if utils.Sign() {
+		director.PollSigningCertExpiry()
+	}
+
 	// Root context cancelled on SIGINT/SIGTERM so background workers and the HTTP
 	// server shut down gracefully.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
