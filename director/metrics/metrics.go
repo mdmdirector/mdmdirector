@@ -331,6 +331,27 @@ func DDMEnabledDevices() prometheus.Gauge {
 	return ddmEnabledDevicesTotal
 }
 
+// signingCertNotAfter reports the expiry (NotAfter) of the profile signing certificate as
+// a Unix timestamp, so alerting can warn before it lapses.
+//
+// This exists because expiry is otherwise SILENT: SignProfile signs via pkcs7, which does
+// not validate NotAfter, so an expired certificate keeps signing successfully and no error
+// counter moves. The only downstream evidence is devices rejecting the profiles.
+//
+//nolint:gochecknoglobals
+var signingCertNotAfter = promauto.NewGauge(
+	prometheus.GaugeOpts{
+		Subsystem: subsystem,
+		Name:      "signing_cert_not_after_timestamp_seconds",
+		Help:      "Expiry (NotAfter) of the loaded profile signing certificate, as a Unix timestamp.",
+	},
+)
+
+// SigningCertNotAfter - accessor for signingCertNotAfter
+func SigningCertNotAfter() prometheus.Gauge {
+	return signingCertNotAfter
+}
+
 // ResultLabel maps an HTTP status code or error presence to the canonical result label.
 func ResultLabel(statusCode int) string {
 	if statusCode >= 400 {

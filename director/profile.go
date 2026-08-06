@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/pkcs12"
 
@@ -41,7 +42,41 @@ func InitSigningKey() error {
 		utils.KeyPath(),
 		utils.CertPath(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	reportSigningCertExpiry()
+
+	return nil
+}
+
+const signingCertExpiryInterval = 6 * time.Hour
+
+// PollSigningCertExpiry re-reports the signing certificate's expiry every 6 hours.
+func PollSigningCertExpiry() {
+	go func() {
+		for range time.Tick(signingCertExpiryInterval) {
+			reportSigningCertExpiry()
+		}
+	}()
+}
+
+// reportSigningCertExpiry publishes the loaded signing certificate's expiry as both a
+// gauge and a structured log line. No-op when signing is disabled or the certificate was
+// never loaded - deliberately leaving the gauge UNSET rather than writing 0
+func reportSigningCertExpiry() {
+	if signingCert == nil {
+		return
+	}
+
+	metrics.SigningCertNotAfter().Set(float64(signingCert.NotAfter.Unix()))
+
+	log.WithFields(log.Fields{
+		"cert":              "profile_signing",
+		"not_after":         signingCert.NotAfter.UTC().Format(time.RFC3339),
+		"days_until_expiry": int(time.Until(signingCert.NotAfter).Hours() / 24),
+	}).Info("signing cert expiry check")
 }
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
