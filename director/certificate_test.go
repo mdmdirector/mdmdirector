@@ -114,7 +114,6 @@ func certTestDevice() types.Device {
 func configureCertFlags(
 	t *testing.T,
 	certList []types.CertificateList,
-	acmeMinValidity string,
 ) *int {
 	t.Helper()
 	registerCertFlags(t)
@@ -132,7 +131,7 @@ func configureCertFlags(
 	setFlag(t, "enroll-webhook-url", server.URL)
 	setFlag(t, "enroll-webhook-token", "test-token")
 	setFlag(t, "scep-cert-min-validity", "10000")
-	setFlag(t, "acme-cert-min-validity", acmeMinValidity)
+	setFlag(t, "acme-cert-min-validity", "180")
 	setFlag(t, "scep-cert-issuer", issuerString(t, findByIssuerCN(t, certList, certTestScepIssuerCN)))
 	setFlag(t, "acme-cert-issuer", issuerString(t, findByIssuerCN(t, certList, certTestAcmeIssuerCN)))
 
@@ -179,7 +178,7 @@ func scepBeforeAcmeCertList(t *testing.T, acmeDays int) []types.CertificateList 
 // not depend on reinstallEnrollmentProfile's transport.
 func TestCollectEnrollmentCerts_FindsAcmeAfterScepInList(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 3646)
-	configureCertFlags(t, certList, "180")
+	configureCertFlags(t, certList)
 
 	found := collectEnrollmentCerts(certList, certTestDevice())
 
@@ -194,7 +193,7 @@ func TestCollectEnrollmentCerts_FindsAcmeAfterScepInList(t *testing.T) {
 // the fix this fetched a fresh enrollment profile on every check-in, forever.
 func TestValidateEnrollmentCertExpiry_HealthyAcmeWinsOverStaleScep(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 3646)
-	fetches := configureCertFlags(t, certList, "180")
+	fetches := configureCertFlags(t, certList)
 
 	err := validateEnrollmentCertExpiry(certList, certTestDevice())
 
@@ -206,7 +205,7 @@ func TestValidateEnrollmentCertExpiry_HealthyAcmeWinsOverStaleScep(t *testing.T)
 // scep-cert-min-validity keeps working as a way to move devices off SCEP.
 func TestValidateEnrollmentCertExpiry_ScepOnlyStillTriggers(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 3646)
-	fetches := configureCertFlags(t, certList, "180")
+	fetches := configureCertFlags(t, certList)
 
 	// Drop the ACME identity, leaving the ordering otherwise intact.
 	scepOnly := certList[:len(certList)-1]
@@ -220,7 +219,7 @@ func TestValidateEnrollmentCertExpiry_ScepOnlyStillTriggers(t *testing.T) {
 // An expiring ACME identity is a genuine renewal and must trigger.
 func TestValidateEnrollmentCertExpiry_ExpiringAcmeTriggers(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 30)
-	fetches := configureCertFlags(t, certList, "180")
+	fetches := configureCertFlags(t, certList)
 
 	err := validateEnrollmentCertExpiry(certList, certTestDevice())
 
@@ -231,7 +230,7 @@ func TestValidateEnrollmentCertExpiry_ExpiringAcmeTriggers(t *testing.T) {
 // One malformed entry must not abandon the whole check.
 func TestCollectEnrollmentCerts_SkipsUnparseableCert(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 3646)
-	configureCertFlags(t, certList, "180")
+	configureCertFlags(t, certList)
 
 	withGarbage := append([]types.CertificateList{{Data: []byte("not-a-certificate")}}, certList...)
 
@@ -244,7 +243,7 @@ func TestCollectEnrollmentCerts_SkipsUnparseableCert(t *testing.T) {
 // Longest-lived wins, so a stale duplicate cannot force a needless re-enrollment.
 func TestCollectEnrollmentCerts_PrefersLongestLived(t *testing.T) {
 	certList := scepBeforeAcmeCertList(t, 3646)
-	configureCertFlags(t, certList, "180")
+	configureCertFlags(t, certList)
 
 	withStaleDupe := append([]types.CertificateList{makeCert(t, certTestAcmeIssuerCN, 10)}, certList...)
 
