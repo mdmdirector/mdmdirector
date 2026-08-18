@@ -67,6 +67,12 @@ var DBMaxIdleConnections int
 
 var DBMaxConnections int
 
+// DBConnMaxIdleTimeSeconds bounds how long a connection may sit idle in the pool.
+var DBConnMaxIdleTimeSeconds int
+
+// DBConnMaxLifetimeSeconds bounds how long a connection may be reused.
+var DBConnMaxLifetimeSeconds int
+
 // DBSSLMode is used to connect to the database
 var DBSSLMode string
 
@@ -279,6 +285,18 @@ func main() {
 		"db-max-connections",
 		100,
 		"Maximum number of database connections",
+	)
+	flag.IntVar(
+		&DBConnMaxIdleTimeSeconds,
+		"db-conn-max-idle-time",
+		env.Int("DB_CONN_MAX_IDLE_TIME", 240),
+		"Maximum seconds a connection may sit idle in the pool before being closed. Keep below the Istio/NLB idle timeout so the pool recycles connections before the mesh resets them. 0 disables the limit.",
+	)
+	flag.IntVar(
+		&DBConnMaxLifetimeSeconds,
+		"db-conn-max-lifetime",
+		env.Int("DB_CONN_MAX_LIFETIME", 1800),
+		"Maximum seconds a connection may be reused before being closed. 0 means connections are reused forever.",
 	)
 	flag.StringVar(
 		&LogLevel,

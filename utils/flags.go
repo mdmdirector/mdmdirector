@@ -86,6 +86,14 @@ func DBMaxConnections() int {
 	return flag.Lookup("db-max-connections").Value.(flag.Getter).Get().(int)
 }
 
+func DBConnMaxIdleTime() int {
+	return flag.Lookup("db-conn-max-idle-time").Value.(flag.Getter).Get().(int)
+}
+
+func DBConnMaxLifetime() int {
+	return flag.Lookup("db-conn-max-lifetime").Value.(flag.Getter).Get().(int)
+}
+
 func EscrowURL() string {
 	return flag.Lookup("escrowurl").Value.(flag.Getter).Get().(string)
 }
