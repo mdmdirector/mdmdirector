@@ -75,7 +75,13 @@ func Open() error {
 	sqlDB.SetMaxOpenConns(utils.DBMaxConnections())
 
 	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused.
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(time.Duration(utils.DBConnMaxLifetime()) * time.Second)
+
+	// SetConnMaxIdleTime closes idle connections before an in-mesh proxy (Istio
+	// sidecar / NLB) resets them out from under the pool. Without this, the pool
+	// hands a silently-dead connection to the next query, which fails with
+	// "connection reset by peer" / "unexpected EOF".
+	sqlDB.SetConnMaxIdleTime(time.Duration(utils.DBConnMaxIdleTime()) * time.Second)
 
 	return nil
 }
