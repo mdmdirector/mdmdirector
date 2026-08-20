@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 
@@ -76,6 +77,16 @@ func Open() error {
 
 	// SetConnMaxLifetime sets the maximum amount of time a connection may be reused.
 	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	if utils.Prometheus() {
+		if err := metrics.RegisterDBStats(sqlDB, utils.DBName()); err != nil {
+			return errors.Wrap(err, "registering db pool metrics")
+		}
+
+		if err := registerMetricsCallbacks(DB); err != nil {
+			return errors.Wrap(err, "registering db metrics callbacks")
+		}
+	}
 
 	return nil
 }
