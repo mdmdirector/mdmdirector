@@ -617,6 +617,9 @@ func main() {
 	// Bare DDM activation: send only the DeclarativeManagement command for one device (no
 	// conversion, no state). Whole-fleet activation is the activate-ddm-fleet startup flag.
 	r.HandleFunc("/device/{udid}/ddm/activate", utils.BasicAuth(director.ActivateDeviceDDMHandler)).Methods("POST")
+	// DDM enabled status: reports whether the device turned on the declarative engine,
+	// per KMFDDM status reports (device-confirmed, not just what we sent).
+	r.HandleFunc("/device/{udid}/ddm/status", utils.BasicAuth(director.DeviceDDMStatusHandler)).Methods("GET")
 
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {

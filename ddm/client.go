@@ -244,6 +244,46 @@ func (c *KMFDDMClient) NotifyEnrollment(udid string) error {
 	}
 }
 
+// StatusValue is one status value an enrollment reported on the DDM status channel, as
+// returned by KMFDDM's GET /v1/status-values. Value is left raw because KMFDDM reports
+// strings, numbers and booleans in the same field.
+type StatusValue struct {
+	Path      string          `json:"path"`
+	Value     json.RawMessage `json:"value"`
+	Timestamp string          `json:"timestamp"`
+	StatusID  string          `json:"status_id"`
+}
+
+// GetStatusValues retrieves the status values an enrollment reported, optionally filtered
+// by a SQL LIKE path prefix (use '%' as the wildcard). KMFDDM keys the response by
+// enrollment ID; this returns just the slice for the requested enrollment (nil if the
+// enrollment has reported nothing under the prefix).
+func (c *KMFDDMClient) GetStatusValues(enrollmentID, pathPrefix string) ([]StatusValue, error) {
+	params := url.Values{}
+	if pathPrefix != "" {
+		params.Set("prefix", pathPrefix)
+	}
+
+	resp, err := c.doRequest("GET", "/v1/status-values/"+enrollmentID, params, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("KMFDDM GET /v1/status-values/%s returned unexpected status %d: %s", enrollmentID, resp.StatusCode, string(respBody))
+	}
+
+	// Response shape: { "<enrollmentID>": [ {path,value,timestamp,status_id}, ... ] }
+	var byEnrollment map[string][]StatusValue
+	if err := json.NewDecoder(resp.Body).Decode(&byEnrollment); err != nil {
+		return nil, errors.Wrap(err, "decoding KMFDDM status values")
+	}
+
+	return byEnrollment[enrollmentID], nil
+}
+
 // PutEnrollmentSet associates an enrollment ID with a set
 func (c *KMFDDMClient) PutEnrollmentSet(enrollmentID, setName string, noNotify bool) error {
 	params := url.Values{}
