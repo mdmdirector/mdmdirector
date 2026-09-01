@@ -98,9 +98,9 @@ func TestDeviceDDMStatusHandler_UnknownDevice(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	expectDeviceNotFound(mockSpy, "missing-udid")
+	expectDeviceNotFound(mockSpy, "missing-status-udid")
 
-	rr := serveDDMStatus(t, "missing-udid")
+	rr := serveDDMStatus(t, "missing-status-udid")
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
