@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -156,6 +157,18 @@ func validateEnrollmentCertExpiry(certList []types.CertificateList, device types
 	case found.acme != nil:
 		cert, minValidity, kind = found.acme, utils.AcmeCertMinValidity(), "ACME"
 	case found.scep != nil:
+		// intel devices are not allowed to re-enroll
+		if !canReEnrollViaACME(device) {
+			arch := deviceArchitecture(device)
+			InfoLogger(LogHolder{
+				DeviceSerial: device.SerialNumber,
+				DeviceUDID:   device.UDID,
+				Message:      fmt.Sprintf("SCEP enrollment certificate on a %s device (model %q); ACME re-enrollment is not possible, leaving enrollment alone", arch, device.Model),
+				Metric:       strconv.Itoa(daysUntil(found.scep.NotAfter)),
+			})
+			metrics.ReenrollSkipped("cert_expiry", string(arch)).Inc()
+			return nil
+		}
 		cert, minValidity, kind = found.scep, utils.ScepCertMinValidity(), "SCEP"
 	default:
 		// Neither enrollment certificate is on the device; nothing to renew.
