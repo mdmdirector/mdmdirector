@@ -21,7 +21,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	var device types.Device
 	var oldDevice types.Device
 
-	if newDevice.UDID == "" && device.SerialNumber == "" {
+	if newDevice.UDID == "" && newDevice.SerialNumber == "" {
 		err := fmt.Errorf("no device UDID or serial set")
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
@@ -31,7 +31,10 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				db.DB.Create(&newDevice)
+				if err := db.DB.Create(&newDevice).Error; err != nil {
+					return &newDevice, errors.Wrap(err, "Update device create udid")
+				}
+				device = newDevice
 			}
 		} else {
 			err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
@@ -44,7 +47,10 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	if newDevice.SerialNumber != "" {
 		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Scan(&oldDevice).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				db.DB.Create(&newDevice)
+				if err := db.DB.Create(&newDevice).Error; err != nil {
+					return &newDevice, errors.Wrap(err, "Update device create serial")
+				}
+				device = newDevice
 			}
 		} else {
 			err := db.DB.Model(&device).Where("serial_number = ?", newDevice.SerialNumber).Assign(&newDevice).FirstOrCreate(&device).Error
@@ -57,20 +63,6 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	err := UpdateDeviceBools(&newDevice)
 	if err != nil {
 		return &device, errors.Wrap(err, "UpdateDevice")
-	}
-
-	if newDevice.AwaitingConfiguration && newDevice.InitialTasksRun {
-		err := SendDeviceConfigured(newDevice)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:SendDeviceConfigured")
-		}
-	}
-
-	if !newDevice.InitialTasksRun && newDevice.AwaitingConfiguration {
-		err := RunInitialTasks(newDevice.UDID)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:RunInitialTasks")
-		}
 	}
 
 	return &device, nil
@@ -552,10 +544,8 @@ func InspectDeviceCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
-	response, err := InspectCommandQueue(client, device)
+
+	response, err := InspectCommandQueue(device)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

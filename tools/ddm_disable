@@ -1,0 +1,11 @@
+#!/bin/bash
+# Opt a device out of DDM: tears down its DDM profile declarations in KMFDDM, removes the
+# opt-in, and re-pushes profiles via InstallProfile commands. Applications already
+# installed via DDM are intentionally left in place.
+# Example:
+#          ./tools/ddm_disable $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/$1/ddm"
+
+curl -u "mdmdirector:$API_TOKEN" -X DELETE "$SERVER_URL/$endpoint"

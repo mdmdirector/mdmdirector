@@ -1,0 +1,5 @@
+[tools]
+golangci-lint = "v2.11.4"
+
+[tasks.lint]
+run = "golangci-lint run"

@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/director"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -61,6 +68,12 @@ var DBMaxIdleConnections int
 
 var DBMaxConnections int
 
+// DBConnMaxIdleTimeSeconds bounds how long a connection may sit idle in the pool.
+var DBConnMaxIdleTimeSeconds int
+
+// DBConnMaxLifetimeSeconds bounds how long a connection may be reused.
+var DBConnMaxLifetimeSeconds int
+
 // DBSSLMode is used to connect to the database
 var DBSSLMode string
 
@@ -71,6 +84,9 @@ var LogLevel string
 var EscrowURL string
 
 var ClearDeviceOnEnroll bool
+
+// DualWriteMicroMDM mirrors every checkin webhook to MicroMDM during the NanoMDM migration
+var DualWriteMicroMDM bool
 
 var ScepCertIssuer string
 
@@ -90,9 +106,70 @@ var RedisPort string
 
 var RedisPassword string
 
+var RedisTLS bool
+
 var OnceIn int
 
+// ControlPlaneInterval is the number of minutes between fleet-wide control-plane scans
+var ControlPlaneInterval int
+
 var InfoRequestInterval int
+
+// AcmeCertIssuer is the issuer of the ACME certificate
+var AcmeCertIssuer string
+
+// AcmeCertMinValidity is the minimum number of days before ACME cert expiry to trigger re-enrollment
+var AcmeCertMinValidity int
+
+// EnrollWebhookURL is the full URL of the enrollment profile webhook endpoint
+var EnrollWebhookURL string
+
+// EnrollWebhookToken is the Bearer token for the enrollment profile webhook
+var EnrollWebhookToken string
+
+// EnableReEnrollViaWebhook enables fetching enrollment profiles via a remote webhook for re-enrollment
+var EnableReEnrollViaWebhook bool
+
+// KMFDDMURL is the base URL for the KMFDDM server
+var KMFDDMURL string
+
+// KMFDDMAPIKey is the API key for KMFDDM basic auth
+var KMFDDMAPIKey string
+
+// NanoMDMURL is the internal API URL of the NanoMDM server (server-to-server)
+var NanoMDMURL string
+
+// NanoMDMProfileURL is the public URL devices use to fetch profiles via DDM LegacyProfile declarations.
+// Defaults to NanoMDMURL if not set.
+var NanoMDMProfileURL string
+
+// NanoMDMAPIKey is the API key for the NanoMDM server
+var NanoMDMAPIKey string
+
+// UseDDM controls whether profile management uses DDM instead of InstallProfile
+var UseDDM bool
+
+// UseDDMPackages controls whether package installation uses DDM instead of InstallApplication commands
+var UseDDMPackages bool
+
+// ActivateDDMFleet, when set, sends a bare DeclarativeManagement command to every device
+// at startup so the whole fleet enters declarative mode. It converts nothing.
+var ActivateDDMFleet bool
+
+// DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
+var DDMDeclarationPrefix string
+
+// MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
+var MDMServerType string
+
+// kmfddmConfigured reports whether the KMFDDM client can be initialized. DDM needs NanoMDM
+// plus a complete KMFDDM config;
+func kmfddmConfigured(mdmServerType, kmfddmURL, kmfddmAPIKey, declarationPrefix string) bool {
+	return mdmServerType == string(mdm.ServerTypeNanoMDM) &&
+		kmfddmURL != "" &&
+		kmfddmAPIKey != "" &&
+		declarationPrefix != ""
+}
 
 func main() {
 	var port string
@@ -190,6 +267,12 @@ func main() {
 		env.String("REDIS_PASSWORD", ""),
 		"Redis password",
 	)
+	flag.BoolVar(
+		&RedisTLS,
+		"redis-tls",
+		env.Bool("REDIS_TLS", false),
+		"Enable TLS for Redis connection",
+	)
 	flag.StringVar(
 		&DBSSLMode,
 		"db-sslmode",
@@ -207,6 +290,18 @@ func main() {
 		"db-max-connections",
 		100,
 		"Maximum number of database connections",
+	)
+	flag.IntVar(
+		&DBConnMaxIdleTimeSeconds,
+		"db-conn-max-idle-time",
+		env.Int("DB_CONN_MAX_IDLE_TIME", 240),
+		"Maximum seconds a connection may sit idle in the pool before being closed. Keep below the Istio/NLB idle timeout so the pool recycles connections before the mesh resets them. 0 disables the limit.",
+	)
+	flag.IntVar(
+		&DBConnMaxLifetimeSeconds,
+		"db-conn-max-lifetime",
+		env.Int("DB_CONN_MAX_LIFETIME", 1800),
+		"Maximum seconds a connection may be reused before being closed. 0 means connections are reused forever.",
 	)
 	flag.StringVar(
 		&LogLevel,
@@ -245,6 +340,18 @@ func main() {
 		"The number of days at which the SCEP certificate has remaining before the enrollment profile is re-sent.",
 	)
 	flag.StringVar(
+		&AcmeCertIssuer,
+		"acme-cert-issuer",
+		env.String("ACME_CERT_ISSUER", ""),
+		"The issuer of your ACME certificate. When set, ACME cert expiry will also be checked.",
+	)
+	flag.IntVar(
+		&AcmeCertMinValidity,
+		"acme-cert-min-validity",
+		env.Int("ACME_CERT_MIN_VALIDITY", 180),
+		"The number of days at which the ACME certificate has remaining before the enrollment profile is re-sent.",
+	)
+	flag.StringVar(
 		&EnrollmentProfile,
 		"enrollment-profile",
 		env.String("ENROLLMENT_PROFILE", ""),
@@ -264,10 +371,100 @@ func main() {
 		"Number of minutes to wait before queuing an additional command for any device which already has commands queued. Defaults to 60. Ignored and overidden as 2 (minutes) if --debug is passed.",
 	)
 	flag.IntVar(
+		&ControlPlaneInterval,
+		"control-plane-interval",
+		env.Int("CONTROL_PLANE_INTERVAL", 120),
+		"Minutes between fleet-wide control-plane scans (device push scheduling + cleanup). Runs single-flight across replicas via a shared Redis lock. Defaults to 120.",
+	)
+	flag.IntVar(
 		&InfoRequestInterval,
 		"info-request-interval",
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
+	)
+	flag.StringVar(
+		&EnrollWebhookURL,
+		"enroll-webhook-url",
+		env.String("ENROLL_WEBHOOK_URL", ""),
+		"URL of the enrollment profile webhook endpoint",
+	)
+	flag.StringVar(
+		&EnrollWebhookToken,
+		"enroll-webhook-token",
+		env.String("ENROLL_WEBHOOK_TOKEN", ""),
+		"Bearer token for the enrollment profile webhook",
+	)
+	flag.BoolVar(
+		&EnableReEnrollViaWebhook,
+		"enable-reenroll-via-webhook",
+		env.Bool("ENABLE_REENROLL_VIA_WEBHOOK", false),
+		"Enable fetching the enrollment profile from a remote webhook for re-enrollment",
+	)
+	flag.StringVar(
+		&KMFDDMURL,
+		"kmfddm-url",
+		env.String("KMFDDM_URL", ""),
+		"KMFDDM server base URL (required if DDM enabled)",
+	)
+	flag.StringVar(
+		&KMFDDMAPIKey,
+		"kmfddm-api-key",
+		env.String("KMFDDM_API_KEY", ""),
+		"KMFDDM API key for basic auth (required if DDM enabled)",
+	)
+	flag.StringVar(
+		&NanoMDMURL,
+		"nanomdm-url",
+		env.String("NANOMDM_URL", ""),
+		"NanoMDM server URL for server-to-server API calls (required if mdm-server-type=nanomdm)",
+	)
+	flag.StringVar(
+		&NanoMDMProfileURL,
+		"nanomdm-profile-url",
+		env.String("NANOMDM_PROFILE_URL", ""),
+		"Public NanoMDM URL for DDM profile download URLs (devices fetch directly); defaults to nanomdm-url if not set",
+	)
+	flag.StringVar(
+		&NanoMDMAPIKey,
+		"nanomdm-api-key",
+		env.String("NANOMDM_API_KEY", ""),
+		"NanoMDM server API key (required if mdm-server-type=nanomdm)",
+	)
+	flag.BoolVar(
+		&UseDDM,
+		"use-ddm",
+		env.Bool("USE_DDM", false),
+		"Enable DDM profile management via KMFDDM instead of InstallProfile commands",
+	)
+	flag.BoolVar(
+		&UseDDMPackages,
+		"use-ddm-packages",
+		env.Bool("USE_DDM_PACKAGES", false),
+		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
+	)
+	flag.BoolVar(
+		&ActivateDDMFleet,
+		"activate-ddm-fleet",
+		env.Bool("ACTIVATE_DDM_FLEET", false),
+		"At startup, send a bare DeclarativeManagement command to every device so the whole fleet enters declarative mode (converts nothing)",
+	)
+	flag.StringVar(
+		&DDMDeclarationPrefix,
+		"ddm-declaration-prefix",
+		env.String("DDM_DECLARATION_PREFIX", ""),
+		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
+	)
+	flag.StringVar(
+		&MDMServerType,
+		"mdm-server-type",
+		env.String("MDM_SERVER_TYPE", "micromdm"),
+		"MDM server type: micromdm or nanomdm",
+	)
+	flag.BoolVar(
+		&DualWriteMicroMDM,
+		"dual-write-micromdm",
+		env.Bool("DUAL_WRITE_MICROMDM", false),
+		"Mirror checkin webhooks to MicroMDM (migration rollback safety net; requires mdm-server-type=nanomdm and micromdmurl/micromdmapikey)",
 	)
 	flag.Parse()
 
@@ -288,14 +485,6 @@ func main() {
 		})
 	}
 
-	if MicroMDMURL == "" {
-		log.Fatal("MicroMDM Server URL missing. Exiting.")
-	}
-
-	if MicroMDMAPIKey == "" {
-		log.Fatal("MicroMDM API Key missing. Exiting.")
-	}
-
 	if BasicAuthPass == "" {
 		log.Fatal("Basic Auth password missing. Exiting.")
 	}
@@ -309,10 +498,96 @@ func main() {
 		log.Fatal("loglevel value is not one of debug, info, warn or error.")
 	}
 
+	switch MDMServerType {
+	case string(mdm.ServerTypeMicroMDM):
+		if MicroMDMURL == "" {
+			log.Fatal("MicroMDM Server URL missing. Exiting.")
+		}
+		if MicroMDMAPIKey == "" {
+			log.Fatal("MicroMDM API Key missing. Exiting.")
+		}
+	case string(mdm.ServerTypeNanoMDM):
+		if NanoMDMURL == "" {
+			log.Fatal("NanoMDM Server URL missing. Exiting.")
+		}
+		if NanoMDMAPIKey == "" {
+			log.Fatal("NanoMDM API Key missing. Exiting.")
+		}
+	default:
+		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
+	}
+
+	if DualWriteMicroMDM {
+		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
+			log.Fatal("dual-write-micromdm requires mdm-server-type=nanomdm. Exiting.")
+		}
+		if MicroMDMURL == "" || MicroMDMAPIKey == "" {
+			log.Fatal("dual-write-micromdm requires micromdmurl/micromdmapikey (MICRO_URL/MICRO_API_KEY). Exiting.")
+		}
+		log.Infof("Dual-write to MicroMDM enabled at %s", MicroMDMURL)
+	}
+
+	if EnableReEnrollViaWebhook {
+		if EnrollWebhookURL == "" {
+			log.Fatal("ENROLL_WEBHOOK_URL is required when --enable-reenroll-via-webhook is set")
+		}
+		if EnrollWebhookToken == "" {
+			log.Fatal("ENROLL_WEBHOOK_TOKEN is required when --enable-reenroll-via-webhook is set")
+		}
+		log.Infof("Using enrollment profile webhook at %s", EnrollWebhookURL)
+	} else if EnrollmentProfile != "" {
+		log.Infof("Using local enrollment profile at %s", EnrollmentProfile)
+	}
+
+	if UseDDM || UseDDMPackages {
+		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
+			log.Fatal("DDM requires mdm-server-type=nanomdm. Exiting.")
+		}
+		if KMFDDMURL == "" {
+			log.Fatal("KMFDDM URL is required when DDM is enabled. Exiting.")
+		}
+		if KMFDDMAPIKey == "" {
+			log.Fatal("KMFDDM API Key is required when DDM is enabled. Exiting.")
+		}
+		if DDMDeclarationPrefix == "" {
+			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
+		}
+	}
+
+	// Initialize the KMFDDM client whenever KMFDDM is fully configured,
+	if kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
+		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
+		director.InfoLogger(director.LogHolder{Message: "KMFDDM client initialized"})
+	} else {
+		log.Warn(
+			"KMFDDM is not fully configured (needs mdm-server-type=nanomdm, kmfddm-url, " +
+				"kmfddm-api-key and ddm-declaration-prefix); per-device DDM opt-in will not work",
+		)
+	}
+
+	if utils.Sign() {
+		if err := director.InitSigningKey(); err != nil {
+			log.Fatalf("Failed to load signing key: %v", err)
+		}
+	}
+
+	// Initialize NanoMDM client only if configured to use NanoMDM
+	if MDMServerType == string(mdm.ServerTypeNanoMDM) {
+		if NanoMDMProfileURL == "" {
+			NanoMDMProfileURL = NanoMDMURL
+		}
+		mdm.InitClient(NanoMDMURL, NanoMDMAPIKey)
+		director.InfoLogger(director.LogHolder{Message: "NanoMDM client initialized"})
+	} else {
+		director.InfoLogger(director.LogHolder{Message: "Using MicroMDM (default)"})
+	}
+
 	r := mux.NewRouter()
 	r.HandleFunc("/webhook", director.WebhookHandler).Methods("POST")
-	r.HandleFunc("/profile", utils.BasicAuth(director.PostProfileHandler)).Methods("POST")
-	r.HandleFunc("/profile", utils.BasicAuth(director.DeleteProfileHandler)).Methods("DELETE")
+	r.HandleFunc("/profile", utils.BasicAuth(director.WithProfileAPIMetrics("post", director.PostProfileHandler))).
+		Methods("POST")
+	r.HandleFunc("/profile", utils.BasicAuth(director.WithProfileAPIMetrics("delete", director.DeleteProfileHandler))).
+		Methods("DELETE")
 	r.HandleFunc("/profile", utils.BasicAuth(director.GetSharedProfiles)).Methods("GET")
 	r.HandleFunc("/profile/{udid}", utils.BasicAuth(director.GetDeviceProfiles)).Methods("GET")
 	r.HandleFunc("/device", utils.BasicAuth(director.DeviceHandler)).Methods("GET")
@@ -325,6 +600,8 @@ func main() {
 	r.HandleFunc("/device/{udid}/commands", utils.BasicAuth(director.InspectDeviceCommands)).Methods("GET")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.PostInstallApplicationHandler)).
 		Methods("POST")
+	r.HandleFunc("/installapplication", utils.BasicAuth(director.DeleteInstallApplicationHandler)).
+		Methods("DELETE")
 	r.HandleFunc("/installapplication", utils.BasicAuth(director.GetSharedApplicationss)).
 		Methods("GET")
 	r.HandleFunc("/command/pending", utils.BasicAuth(director.GetPendingCommands)).Methods("GET")
@@ -333,6 +610,16 @@ func main() {
 	r.HandleFunc("/command/error", utils.BasicAuth(director.GetErrorCommands)).Methods("GET")
 	r.HandleFunc("/command", utils.BasicAuth(director.GetAllCommands)).Methods("GET")
 	r.HandleFunc("/health", director.HealthCheck).Methods("GET")
+	r.HandleFunc("/profiledownload/{udid}/{profileIdentifier}", director.ProfileDownloadHandler).Methods("GET")
+	// Per-device DDM opt-in management.
+	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.EnableDeviceDDMHandler)).Methods("POST")
+	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.DisableDeviceDDMHandler)).Methods("DELETE")
+	// Bare DDM activation: send only the DeclarativeManagement command for one device (no
+	// conversion, no state). Whole-fleet activation is the activate-ddm-fleet startup flag.
+	r.HandleFunc("/device/{udid}/ddm/activate", utils.BasicAuth(director.ActivateDeviceDDMHandler)).Methods("POST")
+	// DDM enabled status: reports whether the device turned on the declarative engine,
+	// per KMFDDM status reports (device-confirmed, not just what we sent).
+	r.HandleFunc("/device/{udid}/ddm/status", utils.BasicAuth(director.DeviceDDMStatusHandler)).Methods("GET")
 
 	director.InfoLogger(director.LogHolder{Message: "Connecting to database"})
 	if err := db.Open(); err != nil {
@@ -361,6 +648,7 @@ func main() {
 		&types.Certificate{},
 		&types.ProfileList{},
 		&types.UnlockPin{},
+		&director.DDMOptIn{},
 	)
 	if err != nil {
 		director.ErrorLogger(director.LogHolder{Message: err.Error()})
@@ -371,23 +659,51 @@ func main() {
 		director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."},
 	)
 
+	// Whole-fleet DDM activation: send a bare DeclarativeManagement command to every
+	// device so it enters declarative mode. Runs in the background so it never blocks
+	// startup, and it converts nothing.
+	if ActivateDDMFleet {
+		if !kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
+			log.Warn("activate-ddm-fleet is set but KMFDDM is not fully configured; skipping fleet DDM activation")
+		} else {
+			go func() {
+				director.InfoLogger(director.LogHolder{Message: "Activating DDM for the whole fleet"})
+				activated, ferr := director.ActivateDDMFleet()
+				if ferr != nil {
+					director.ErrorLogger(director.LogHolder{Message: fmt.Sprintf("fleet DDM activation completed with errors (%d activated): %v", activated, ferr)})
+					return
+				}
+				director.InfoLogger(director.LogHolder{Message: fmt.Sprintf("fleet DDM activation complete: %d devices activated", activated)})
+			}()
+		}
+	}
+
 	var QueueFactory = redisq.NewFactory()
+
+	// One shared go-redis client backs both the taskq queue and the control-plane lock.
+	redisClient := director.RedisClient()
 
 	var PushQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
 		Name:  "pushnotifications",
-		Redis: director.RedisClient(), // go-redis client
+		Redis: redisClient, // go-redis client
 	})
-	err = PushQueue.Purge()
-	if err != nil {
-		log.Error(err)
-	}
 
 	if utils.Prometheus() {
-		director.Metrics()
+		director.PollGauges()
 		r.Handle("/metrics", promhttp.Handler())
 	}
 
-	go director.FetchDevicesFromMDM()
+	if utils.Sign() {
+		director.PollSigningCertExpiry()
+	}
+
+	// Root context cancelled on SIGINT/SIGTERM so background workers and the HTTP
+	// server shut down gracefully.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Device inventory is refreshed inside the control-plane scan (single-flight under
+	// the Redis lock), not once per replica at startup -- see director.ScheduledCheckin.
 
 	// Override OnceIn if --debug is passed
 	if debugMode {
@@ -395,8 +711,28 @@ func main() {
 	}
 
 	onceInDuration := (time.Minute * time.Duration(OnceIn))
-	go director.ScheduledCheckin(PushQueue, onceInDuration)
-	go director.ProcessScheduledCheckinQueue(PushQueue)
+	controlPlaneInterval := (time.Minute * time.Duration(ControlPlaneInterval))
+	if debugMode {
+		controlPlaneInterval = time.Minute
+	}
+	go director.ScheduledCheckin(ctx, redisClient, PushQueue, onceInDuration, controlPlaneInterval)
+	go director.ProcessScheduledCheckinQueue(ctx, PushQueue)
 
-	log.Info(http.ListenAndServe(":"+port, r))
+	srv := &http.Server{Addr: ":" + port, Handler: r}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Errorf("http server error: %v", err)
+		}
+	}()
+	director.InfoLogger(director.LogHolder{Message: "Listening on :" + port})
+
+	<-ctx.Done()
+	director.InfoLogger(director.LogHolder{Message: "Shutdown signal received, draining connections"})
+	stop() // restore default signal handling; a second signal now force-kills
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Errorf("graceful shutdown failed: %v", err)
+	}
 }

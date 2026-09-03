@@ -6,11 +6,13 @@ import (
 	"strings"
 )
 
-func ServerURL() string {
+// MicroMDMURL returns the MicroMDM server URL (flag micromdmurl / env MICRO_URL)
+func MicroMDMURL() string {
 	return strings.TrimRight(flag.Lookup("micromdmurl").Value.(flag.Getter).Get().(string), "/")
 }
 
-func APIKey() string {
+// MicroMDMAPIKey returns the MicroMDM API key (flag micromdmapikey / env MICRO_API_KEY)
+func MicroMDMAPIKey() string {
 	return flag.Lookup("micromdmapikey").Value.(flag.Getter).Get().(string)
 }
 
@@ -84,6 +86,14 @@ func DBMaxConnections() int {
 	return flag.Lookup("db-max-connections").Value.(flag.Getter).Get().(int)
 }
 
+func DBConnMaxIdleTime() int {
+	return flag.Lookup("db-conn-max-idle-time").Value.(flag.Getter).Get().(int)
+}
+
+func DBConnMaxLifetime() int {
+	return flag.Lookup("db-conn-max-lifetime").Value.(flag.Getter).Get().(int)
+}
+
 func EscrowURL() string {
 	return flag.Lookup("escrowurl").Value.(flag.Getter).Get().(string)
 }
@@ -94,6 +104,14 @@ func LogLevel() string {
 
 func ClearDeviceOnEnroll() bool {
 	return flag.Lookup("clear-device-on-enroll").Value.(flag.Getter).Get().(bool)
+}
+
+func DualWriteMicroMDM() bool {
+	f := flag.Lookup("dual-write-micromdm")
+	if f == nil {
+		return false
+	}
+	return f.Value.(flag.Getter).Get().(bool)
 }
 
 func ScepCertIssuer() string {
@@ -128,12 +146,72 @@ func RedisPassword() string {
 	return flag.Lookup("redis-password").Value.(flag.Getter).Get().(string)
 }
 
+func RedisTLS() bool {
+	return flag.Lookup("redis-tls").Value.(flag.Getter).Get().(bool)
+}
+
 func OnceIn() int {
 	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
 }
 
 func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
+}
+
+func EnrollWebhookURL() string {
+	return strings.TrimRight(flag.Lookup("enroll-webhook-url").Value.(flag.Getter).Get().(string), "/")
+}
+
+func EnrollWebhookToken() string {
+	return flag.Lookup("enroll-webhook-token").Value.(flag.Getter).Get().(string)
+}
+
+func EnableReEnrollViaWebhook() bool {
+	return flag.Lookup("enable-reenroll-via-webhook").Value.(flag.Getter).Get().(bool)
+}
+
+func AcmeCertIssuer() string {
+	return flag.Lookup("acme-cert-issuer").Value.(flag.Getter).Get().(string)
+}
+
+func AcmeCertMinValidity() int {
+	return flag.Lookup("acme-cert-min-validity").Value.(flag.Getter).Get().(int)
+}
+
+func NanoMDMURL() string {
+	return strings.TrimRight(flag.Lookup("nanomdm-url").Value.(flag.Getter).Get().(string), "/")
+}
+
+func NanoMDMProfileURL() string {
+	v := strings.TrimRight(flag.Lookup("nanomdm-profile-url").Value.(flag.Getter).Get().(string), "/")
+	if v == "" {
+		return NanoMDMURL()
+	}
+	return v
+}
+
+func NanoMDMAPIKey() string {
+	return flag.Lookup("nanomdm-api-key").Value.(flag.Getter).Get().(string)
+}
+
+func UseDDM() bool {
+	return flag.Lookup("use-ddm").Value.(flag.Getter).Get().(bool)
+}
+
+func UseDDMPackages() bool {
+	return flag.Lookup("use-ddm-packages").Value.(flag.Getter).Get().(bool)
+}
+
+func DDMDeclarationPrefix() string {
+	return flag.Lookup("ddm-declaration-prefix").Value.(flag.Getter).Get().(string)
+}
+
+func MDMServerType() string {
+	f := flag.Lookup("mdm-server-type")
+	if f == nil {
+		return "micromdm" // Default to micromdm if flag not defined (e.g., in tests)
+	}
+	return f.Value.(flag.Getter).Get().(string)
 }
 
 // Code for testing goes down here

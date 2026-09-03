@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -36,6 +37,7 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		cert, err := parseCertificate(certListItem)
 		if err != nil {
 			log.Errorf("processCertificateList:parseCertificate: %v", err)
+			continue
 		}
 
 		certificate.Data = certListItem.Data
@@ -47,18 +49,14 @@ func processCertificateList(certificateListData types.CertificateListData, devic
 		certificates = append(certificates, certificate)
 	}
 
-	// DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: certificates})
-
 	err := db.DB.Model(&device).Association("Certificates").Replace(certificates)
 	if err != nil {
 		return errors.Wrap(err, "processCertificateList:SaveCerts")
 	}
 
-	for _, certListItem := range certificateListData.CertificateList {
-		scepErr := validateScepCert(certListItem, device)
-		if scepErr != nil {
-			return errors.Wrap(scepErr, "processCertificateList:validateScepCert")
-		}
+	err = validateEnrollmentCertExpiry(certificateListData.CertificateList, device)
+	if err != nil {
+		return errors.Wrap(err, "processCertificateList:validateEnrollmentCertExpiry")
 	}
 
 	return nil
@@ -72,40 +70,128 @@ func parseCertificate(certListItem types.CertificateList) (*x509.Certificate, er
 	return cert, nil
 }
 
-func validateScepCert(certListItem types.CertificateList, device types.Device) error {
-	enrollmentProfile := utils.EnrollmentProfile()
-	if enrollmentProfile == "" {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No emrollment profile set, not continuing with SCEP Cert Validation"})
+// enrollmentCerts holds the two certificates that matter to the enrollment decision,
+// picked out of a device's full CertificateList
+type enrollmentCerts struct {
+	// acme is the certificate issued by acme-cert-issuer
+	acme *x509.Certificate
+	// scep is the certificate issued by scep-cert-issuer
+	scep *x509.Certificate
+}
+
+// daysUntil returns whole days from now until t, negative once t has passed.
+func daysUntil(t time.Time) int {
+	return int(time.Until(t).Hours() / 24)
+}
+
+// collectEnrollmentCerts scans a device's whole CertificateList for its ACME identity and
+// its legacy SCEP identity
+func collectEnrollmentCerts(certList []types.CertificateList, device types.Device) enrollmentCerts {
+	scepIssuer := utils.ScepCertIssuer()
+	acmeIssuer := utils.AcmeCertIssuer()
+
+	var found enrollmentCerts
+
+	for _, certListItem := range certList {
+		cert, err := parseCertificate(certListItem)
+		if err != nil {
+			DebugLogger(LogHolder{
+				DeviceSerial: device.SerialNumber,
+				DeviceUDID:   device.UDID,
+				Message:      fmt.Sprintf("Skipping unparseable certificate: %v", err),
+			})
+			continue
+		}
+
+		issuer := cert.Issuer.String()
+		DebugLogger(LogHolder{
+			DeviceSerial: device.SerialNumber,
+			DeviceUDID:   device.UDID,
+			Message:      fmt.Sprintf("Certificate issued by %s issuer", issuer),
+			Metric:       strconv.Itoa(daysUntil(cert.NotAfter)),
+		})
+
+		switch {
+		case acmeIssuer != "" && issuer == acmeIssuer:
+			if found.acme == nil || cert.NotAfter.After(found.acme.NotAfter) {
+				found.acme = cert
+			}
+		case issuer == scepIssuer:
+			if found.scep == nil || cert.NotAfter.After(found.scep.NotAfter) {
+				found.scep = cert
+			}
+		}
+	}
+
+	return found
+}
+
+// validateEnrollmentCertExpiry triggers re-enrollment when the certificate that actually
+// manages the device is nearing expiry
+//
+// The ACME identity takes precedence: once a device holds one it has migrated, and only
+// that certificate's expiry matters. The legacy SCEP certificate is consulted only when
+// the device has no ACME identity
+func validateEnrollmentCertExpiry(certList []types.CertificateList, device types.Device) error {
+	if !utils.EnableReEnrollViaWebhook() {
+		enrollmentProfile := utils.EnrollmentProfile()
+		if enrollmentProfile == "" {
+			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "No enrollment profile set, not continuing with enrollment cert expiry check"})
+			return nil
+		}
+
+		if !utils.FileExists(enrollmentProfile) {
+			return errors.New("Enrollment profile isn't present at path")
+		}
+	}
+
+	found := collectEnrollmentCerts(certList, device)
+
+	var (
+		cert        *x509.Certificate
+		minValidity int
+		kind        string
+	)
+
+	switch {
+	case found.acme != nil:
+		cert, minValidity, kind = found.acme, utils.AcmeCertMinValidity(), "ACME"
+	case found.scep != nil:
+		// intel devices are not allowed to re-enroll
+		if !canReEnrollViaACME(device) {
+			arch := deviceArchitecture(device)
+			InfoLogger(LogHolder{
+				DeviceSerial: device.SerialNumber,
+				DeviceUDID:   device.UDID,
+				Message:      fmt.Sprintf("SCEP enrollment certificate on a %s device (model %q); ACME re-enrollment is not possible, leaving enrollment alone", arch, device.Model),
+				Metric:       strconv.Itoa(daysUntil(found.scep.NotAfter)),
+			})
+			metrics.ReenrollSkipped("cert_expiry", string(arch)).Inc()
+			return nil
+		}
+		cert, minValidity, kind = found.scep, utils.ScepCertMinValidity(), "SCEP"
+	default:
+		// Neither enrollment certificate is on the device; nothing to renew.
 		return nil
 	}
 
-	if !utils.FileExists(enrollmentProfile) {
-		err := errors.New("Enrollment profile isn't present at path")
-		return err
-	}
-	cert, err := parseCertificate(certListItem)
-	if err != nil {
-		return errors.Wrap(err, "failed to parse certificate")
+	days := daysUntil(cert.NotAfter)
+	if days > minValidity {
+		DebugLogger(LogHolder{
+			DeviceSerial: device.SerialNumber,
+			DeviceUDID:   device.UDID,
+			Message:      fmt.Sprintf("%s enrollment certificate is valid, not re-enrolling", kind),
+			Metric:       strconv.Itoa(days),
+		})
+		return nil
 	}
 
-	if cert.Issuer.String() == utils.ScepCertIssuer() {
-		days := int(time.Until(cert.NotAfter).Hours() / 24)
-		errMsg := fmt.Sprintf("Certificate issued by %v.", utils.ScepCertIssuer())
-		DebugLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg, Metric: strconv.Itoa(days)})
-		if days <= utils.ScepCertMinValidity() {
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errMsg, Metric: strconv.Itoa(days)})
+	InfoLogger(LogHolder{
+		DeviceSerial: device.SerialNumber,
+		DeviceUDID:   device.UDID,
+		Message:      fmt.Sprintf("Certificate issued by %s issuer", cert.Issuer.String()),
+		Metric:       strconv.Itoa(days),
+	})
 
-			err := reinstallEnrollmentProfile(device)
-			if err != nil {
-				return errors.Wrap(err, "reinstallEnrollmentProfile")
-			}
-
-		} else {
-			InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Days remaining is greater or equal than the minimum SCEP validity", Metric: strconv.Itoa(days)})
-		}
-	} else {
-		msg := fmt.Sprintf("Incoming cert issuer %v does not match our SCEP issuer %v", cert.Issuer.String(), utils.ScepCertIssuer())
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: msg})
-	}
-	return nil
+	return reinstallEnrollmentProfile(device)
 }

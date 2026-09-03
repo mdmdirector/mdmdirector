@@ -1,0 +1,11 @@
+#!/bin/bash
+# Report whether a device has actually turned on the declarative management engine,
+# confirmed from KMFDDM status reports (not just whether mdmdirector sent the command).
+# Returns JSON: {device_udid, ddm_enabled, status_count, last_status_at}.
+# Example:
+#          ./tools/ddm_status $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/$1/ddm/status"
+
+curl -u "mdmdirector:$API_TOKEN" -X GET "$SERVER_URL/$endpoint"

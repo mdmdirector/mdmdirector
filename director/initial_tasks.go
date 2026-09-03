@@ -4,38 +4,94 @@ import (
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	"gorm.io/gorm"
 )
 
-func RunInitialTasks(udid string) error {
+// initialTasksLeaseTTL- maximum time RunInitialTasks is presumed before another caller may take the lease
+const initialTasksLeaseTTL = "5 minutes"
+
+// tryAcquireInitialTasksLease attempts to atomically claim the RunInitialTasks lease for this UDID
+// Returns true if the caller now owns the lease, false if another invocation holds it
+func tryAcquireInitialTasksLease(udid string) (bool, error) {
+	res := db.DB.Exec(`
+		UPDATE devices
+		SET    run_initial_tasks_starttime = NOW()
+		WHERE  ud_id = ?
+		  AND  initial_tasks_run = false
+		  AND  ( run_initial_tasks_starttime IS NULL
+				 OR run_initial_tasks_starttime < NOW() - INTERVAL '`+initialTasksLeaseTTL+`' )
+	`, udid)
+	if res.Error != nil {
+		return false, errors.Wrap(res.Error, "tryAcquireInitialTasksLease")
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// releaseInitialTasksLease clears the lease so a retry isn't blocked for the full TTL
+func releaseInitialTasksLease(udid string) {
+	err := db.DB.Exec(`
+		UPDATE devices
+		SET    run_initial_tasks_starttime = NULL
+		WHERE  ud_id = ?
+		  AND  initial_tasks_run = false
+	`, udid).Error
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: errors.Wrap(err, "releaseInitialTasksLease").Error()})
+	}
+}
+
+func RunInitialTasks(udid string) (retErr error) {
 	if udid == "" {
 		err := errors.New("No Device UDID")
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
 		return errors.Wrap(err, "RunInitialTasks")
 	}
+
+	acquired, err := tryAcquireInitialTasksLease(udid)
+	if err != nil {
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
+		return errors.Wrap(err, "RunInitialTasks")
+	}
+	if !acquired {
+		InfoLogger(LogHolder{DeviceUDID: udid, Message: "RunInitialTasks lease not acquired - already running or already complete; skipping"})
+		if utils.Prometheus() {
+			metrics.InitialTasks("lease_contention").Inc()
+		}
+		return nil
+	}
+
+	completed := false
+	defer func() {
+		if !completed {
+			releaseInitialTasksLease(udid)
+		}
+		if utils.Prometheus() {
+			metrics.InitialTasks(metrics.ResultFromError(retErr)).Inc()
+		}
+	}()
 
 	device, err := GetDevice(udid)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
-	// if device.InitialTasksRun == true {
-	// 	log.Infof("Initial tasks already run for %v", device.UDID)
-	// 	return nil
-	// }
 	InfoLogger(LogHolder{Message: "Running initial tasks", DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID})
 	err = ClearCommands(&device)
 	if err != nil {
 		return err
 	}
 
-	// if device.Erase || device.Lock {
-	// 	// Got a device checking in that should be wiped or locked. Make it so.
-	// 	err = EraseLockDevice(&device)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	return nil
-	// }
+	err = RequestAllDeviceInfo(device)
+	if err != nil {
+		return errors.Wrap(err, "RunInitialTasks:RequestAllDeviceInfo")
+	}
 
 	_, err = InstallAllProfiles(device)
 	if err != nil {
@@ -51,6 +107,8 @@ func RunInitialTasks(udid string) error {
 		return errors.Wrap(err, "RunInitialTasks:processDeviceConfigured")
 	}
 
+	// processDeviceConfigured -> SaveDeviceConfigured already set initial_tasks_run = true
+	completed = true
 	return nil
 }
 
@@ -107,20 +165,15 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Resetting device"})
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false, "active": false}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
+		"token_update_recieved":       false,
+		"authenticate_recieved":       false,
+		"initial_tasks_run":           false,
+		"active":                      false,
+		"run_initial_tasks_starttime": gorm.Expr("NULL"),
+	}).Error
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}
-
-	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.Certificate{}).Error
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// }
-
-	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.ProfileList{}).Error
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// }
-
 	return nil
 }
