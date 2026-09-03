@@ -3,11 +3,13 @@ package director
 import (
 	"crypto/x509"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/fullsailor/pkcs7"
 	"github.com/groob/plist"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -149,6 +151,19 @@ func ensureCertOnEnrollmentProfile(
 	}
 
 	if !certMatched {
+		// Reinstalling means fetching a fresh enrollment profile from mdmenroll, which only an
+		// Apple Silicon Mac can complete (ACME). An Intel Mac migrated from MicroMDM keeps the
+		// enrollment profile it has, whoever signed it
+		if !canReEnrollViaACME(device) {
+			arch := deviceArchitecture(device)
+			InfoLogger(LogHolder{
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+				Message:      fmt.Sprintf("Enrollment profile signing certificate does not match local certificate, but the device is %s (model %q) and cannot re-enroll via ACME; leaving enrollment alone", arch, device.Model),
+			})
+			metrics.ReenrollSkipped("signer_mismatch", string(arch)).Inc()
+			return nil
+		}
 		InfoLogger(LogHolder{
 			DeviceUDID:   device.UDID,
 			DeviceSerial: device.SerialNumber,

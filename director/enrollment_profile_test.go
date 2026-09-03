@@ -1,6 +1,7 @@
 package director
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"net/http"
@@ -249,4 +250,68 @@ func TestGetEnrollmentProfile_NotFound(t *testing.T) {
 
 	_, found := getEnrollmentProfile(profileLists)
 	assert.False(t, found, "expected no enrollment profile to be found")
+}
+
+// signerMismatchFixture builds a ProfileList carrying an enrollment (com.apple.mdm) profile
+// signed by a certificate that is NOT the local signing certificate, wired to a webhook stub
+// that counts fetches. One fetch is one attempted re-enrollment.
+func signerMismatchFixture(t *testing.T) (profileLists []types.ProfileList, localSigner *x509.Certificate, fetches *int) {
+	t.Helper()
+	registerEnrollmentProfileFlags(t)
+
+	n := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	setFlag(t, "sign", "true")
+	setFlag(t, "enable-reenroll-via-webhook", "true")
+	setFlag(t, "enroll-webhook-url", server.URL)
+	setFlag(t, "enroll-webhook-token", "test-token")
+
+	// Two distinct self-signed certificates: one on the device's profile, one "ours".
+	onDevice := makeCert(t, "Legacy MicroMDM Signer", 365)
+	local := makeCert(t, "MDMDirector Signer", 365)
+	localCert, err := x509.ParseCertificate(local.Data)
+	require.NoError(t, err)
+
+	profileLists = []types.ProfileList{{
+		PayloadIdentifier:  "com.github.micromdm.micromdm.enroll",
+		PayloadContent:     []types.PayloadContentItem{{PayloadType: "com.apple.mdm"}},
+		SignerCertificates: [][]byte{onDevice.Data},
+	}}
+	return profileLists, localCert, &n
+}
+
+// An Intel Mac's enrollment profile was signed by the legacy stack and never will be signed by
+// us. That mismatch must not turn into a re-enrollment: the device cannot complete ACME.
+func TestEnsureCertOnEnrollmentProfile_IntelMismatchDoesNotReinstall(t *testing.T) {
+	profileLists, localCert, fetches := signerMismatchFixture(t)
+
+	err := ensureCertOnEnrollmentProfile(intelTestDevice(), profileLists, localCert)
+
+	assert.NoError(t, err)
+	assert.Zero(t, *fetches, "an Intel device must never be sent to mdmenroll")
+}
+
+// A device whose model is not yet known fails safe the same way.
+func TestEnsureCertOnEnrollmentProfile_UnknownModelMismatchDoesNotReinstall(t *testing.T) {
+	profileLists, localCert, fetches := signerMismatchFixture(t)
+
+	err := ensureCertOnEnrollmentProfile(unknownModelTestDevice(), profileLists, localCert)
+
+	assert.NoError(t, err)
+	assert.Zero(t, *fetches)
+}
+
+// The existing behaviour is preserved for Apple Silicon: a signer mismatch reinstalls.
+func TestEnsureCertOnEnrollmentProfile_SiliconMismatchReinstalls(t *testing.T) {
+	profileLists, localCert, fetches := signerMismatchFixture(t)
+
+	err := ensureCertOnEnrollmentProfile(certTestDevice(), profileLists, localCert)
+
+	require.Error(t, err, "the webhook stub answers 500, so a fired reinstall surfaces here")
+	assert.Equal(t, 1, *fetches)
 }

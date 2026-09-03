@@ -109,6 +109,13 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-acme-cert-issuer string` - Issuer of your ACME certificate. When set, ACME cert expiry will also be checked. Env: `ACME_CERT_ISSUER`
 - `-acme-cert-min-validity int` - Days remaining on ACME certificate before re-enrollment is triggered. (default 180) Env: `ACME_CERT_MIN_VALIDITY`
 
+  Re-enrollment (both the certificate-expiry check and the enrollment-profile signer check) is
+  only ever attempted for devices positively identified as Apple Silicon from their reported
+  `Model`. Intel Macs cannot complete the ACME enrollment profile mdmenroll returns and keep their
+  existing (SCEP) identity untouched; a device whose model is not yet known is treated the same
+  way until its next `DeviceInformation`. Suppressed attempts are counted in
+  `mdmdirector_reenroll_skipped_total{trigger,arch}`.
+
 #### Scheduling and Intervals
 
 - `-push-new-build` - Re-push profiles if the device's build number changes. (default true) Env: `PUSH_NEW_BUILD`

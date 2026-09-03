@@ -100,7 +100,20 @@ func makeCert(t *testing.T, issuerCN string, validForDays int) types.Certificate
 	return types.CertificateList{Data: der}
 }
 
+// certTestDevice is an Apple Silicon Mac: the population whose SCEP identity is meant to be
+// replaced by ACME.
 func certTestDevice() types.Device {
+	return types.Device{UDID: certTestUDID, SerialNumber: certTestSerial, Model: "MacBookPro18,3"}
+}
+
+// intelTestDevice is an Intel Mac migrated from MicroMDM. It can never complete ACME, so its
+// SCEP identity is the only one it will ever have.
+func intelTestDevice() types.Device {
+	return types.Device{UDID: certTestUDID, SerialNumber: certTestSerial, Model: "MacBookPro16,1"}
+}
+
+// unknownModelTestDevice has not reported DeviceInformation yet.
+func unknownModelTestDevice() types.Device {
 	return types.Device{UDID: certTestUDID, SerialNumber: certTestSerial}
 }
 
@@ -251,4 +264,44 @@ func TestCollectEnrollmentCerts_PrefersLongestLived(t *testing.T) {
 
 	require.NotNil(t, found.acme)
 	assert.Equal(t, 3646, daysUntil(found.acme.NotAfter), "the longer-lived identity should win")
+}
+
+// An Intel Mac holds only a SCEP identity and always will. However far inside
+// scep-cert-min-validity that certificate is, it must not be re-enrolled: mdmenroll would hand
+// back a profile the device cannot complete.
+func TestValidateEnrollmentCertExpiry_ScepOnlyIntelNeverTriggers(t *testing.T) {
+	certList := scepBeforeAcmeCertList(t, 3646)
+	fetches := configureCertFlags(t, certList)
+	scepOnly := certList[:len(certList)-1]
+
+	err := validateEnrollmentCertExpiry(scepOnly, intelTestDevice())
+
+	assert.NoError(t, err)
+	assert.Zero(t, *fetches, "an Intel device must never be sent to mdmenroll")
+}
+
+// Until DeviceInformation has populated the model, the architecture is unknown. Treat that like
+// Intel: for a Silicon Mac it only defers ACME renewal to the next info cycle, for an Intel Mac
+// it is the only safe answer.
+func TestValidateEnrollmentCertExpiry_ScepOnlyUnknownModelDoesNotTrigger(t *testing.T) {
+	certList := scepBeforeAcmeCertList(t, 3646)
+	fetches := configureCertFlags(t, certList)
+	scepOnly := certList[:len(certList)-1]
+
+	err := validateEnrollmentCertExpiry(scepOnly, unknownModelTestDevice())
+
+	assert.NoError(t, err)
+	assert.Zero(t, *fetches, "an unknown model must fail safe and not re-enroll")
+}
+
+// The architecture gate applies to the SCEP branch only: a Silicon Mac whose ACME identity is
+// expiring is a genuine renewal even if, for whatever reason, its model is unreadable.
+func TestValidateEnrollmentCertExpiry_ExpiringAcmeTriggersRegardlessOfModel(t *testing.T) {
+	certList := scepBeforeAcmeCertList(t, 30)
+	fetches := configureCertFlags(t, certList)
+
+	err := validateEnrollmentCertExpiry(certList, unknownModelTestDevice())
+
+	require.Error(t, err)
+	assert.Equal(t, 1, *fetches, "an ACME identity proves the device can do ACME")
 }

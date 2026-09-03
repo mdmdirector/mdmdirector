@@ -367,3 +367,27 @@ func ResultFromError(err error) string {
 	}
 	return "success"
 }
+
+// reenrollSkippedTotal counts re-enrollment attempts that were suppressed because the device
+// cannot complete the enrollment profile mdmenroll would return. An Intel Mac, or one whose
+// model is not yet known, cannot do ACME against stepca, so pushing it a fresh enrollment
+// profile can only fail or re-enroll it into the legacy stack.
+// Labels:
+//   - trigger: "cert_expiry" (validateEnrollmentCertExpiry) or "signer_mismatch"
+//     (ensureCertOnEnrollmentProfile)
+//   - arch:    "intel" or "unknown"
+//
+//nolint:gochecknoglobals
+var reenrollSkippedTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "reenroll_skipped_total",
+		Help:      "Total re-enrollments suppressed because the device architecture cannot complete ACME enrollment, by trigger and architecture.",
+	},
+	[]string{"trigger", "arch"},
+)
+
+// ReenrollSkipped - accessor for reenrollSkippedTotal
+func ReenrollSkipped(trigger, arch string) prometheus.Counter {
+	return reenrollSkippedTotal.WithLabelValues(trigger, arch)
+}
