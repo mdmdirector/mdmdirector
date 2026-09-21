@@ -233,7 +233,14 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.DeviceUDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
+						// An unknown UDID is a client error, not a director failure: 404 and
+						// log at info rather than error.
+						if intErrors.Is(err, gorm.ErrRecordNotFound) {
+							InfoLogger(LogHolder{DeviceUDID: item, Message: "PostProfileHandler: device not found"})
+							http.Error(w, "device not found", http.StatusNotFound)
+							return
+						}
+						ErrorLogger(LogHolder{DeviceUDID: item, Message: "PostProfileHandler: " + err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 						return
 					}

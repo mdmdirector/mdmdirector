@@ -356,8 +356,16 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	device, err = GetDevice(vars["udid"])
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		// An unknown UDID is a client error, not a director failure: 404 and
+		// log at info rather than error.
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			InfoLogger(LogHolder{DeviceUDID: vars["udid"], Message: "SingleDeviceHandler: device not found"})
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		ErrorLogger(LogHolder{DeviceUDID: vars["udid"], Message: "SingleDeviceHandler: " + err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	err = SingleDeviceOutput(device, w, r)
@@ -365,7 +373,6 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
-
 }
 
 func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
