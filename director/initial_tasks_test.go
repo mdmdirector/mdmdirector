@@ -3,8 +3,10 @@ package director
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,4 +122,25 @@ func TestRunInitialTasks_AcquireErrorPropagates(t *testing.T) {
 	assert.Contains(t, err.Error(), "RunInitialTasks")
 	assert.Contains(t, err.Error(), "db down")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInitialTasksInFlight(t *testing.T) {
+	fresh := time.Now().Add(-30 * time.Second)
+	stale := time.Now().Add(-initialTasksLeaseDuration - time.Second)
+
+	cases := []struct {
+		name   string
+		device *types.Device
+		want   bool
+	}{
+		{"nil device", nil, false},
+		{"no lease", &types.Device{}, false},
+		{"fresh lease", &types.Device{RunInitialTasksStarttime: &fresh}, true},
+		{"stale lease", &types.Device{RunInitialTasksStarttime: &stale}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, initialTasksInFlight(tc.device))
+		})
+	}
 }

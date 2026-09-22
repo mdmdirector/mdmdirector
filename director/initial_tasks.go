@@ -14,6 +14,24 @@ import (
 // initialTasksLeaseTTL- maximum time RunInitialTasks is presumed before another caller may take the lease
 const initialTasksLeaseTTL = "5 minutes"
 
+// initialTasksLeaseDuration is initialTasksLeaseTTL as a Go duration, for in-process
+// checks that mirror the SQL lease window. Keep the two in sync.
+const initialTasksLeaseDuration = 5 * time.Minute
+
+// initialTasksInFlight reports whether a RunInitialTasks invocation for this device is
+// presumed to still be running: the lease start time is set and younger than the TTL.
+// It is a read of the already-loaded device row, so callers can skip the lease
+// UPDATE (and the lease_contention count it produces) for the many device events -
+// mostly command acknowledgements - that arrive while the run is still in progress.
+// A stale start time (older than the TTL) returns false so the normal lease path can
+// take over from a holder that died mid-run.
+func initialTasksInFlight(device *types.Device) bool {
+	if device == nil || device.RunInitialTasksStarttime == nil {
+		return false
+	}
+	return time.Since(*device.RunInitialTasksStarttime) < initialTasksLeaseDuration
+}
+
 // tryAcquireInitialTasksLease attempts to atomically claim the RunInitialTasks lease for this UDID
 // Returns true if the caller now owns the lease, false if another invocation holds it
 func tryAcquireInitialTasksLease(udid string) (bool, error) {

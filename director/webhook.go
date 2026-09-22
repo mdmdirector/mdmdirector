@@ -96,6 +96,14 @@ func checkinMessageType(topic string) string {
 // reconcileDeviceState handles post-enrollment lifecycle transitions after any device event
 func reconcileDeviceState(currentDevice *types.Device) error {
 	if !currentDevice.InitialTasksRun && currentDevice.TokenUpdateRecieved {
+		// RunInitialTasks sends dozens of commands, and every acknowledgement comes back
+		// through this webhook while initial_tasks_run is still false. Without this check
+		// each one re-enters RunInitialTasks, loses the lease, and counts as
+		// lease_contention - ~50 spurious skips per enrollment across 6 replicas.
+		if initialTasksInFlight(currentDevice) {
+			DebugLogger(LogHolder{DeviceSerial: currentDevice.SerialNumber, DeviceUDID: currentDevice.UDID, Message: "Initial tasks already in flight; not re-entering"})
+			return nil
+		}
 		InfoLogger(LogHolder{DeviceSerial: currentDevice.SerialNumber, DeviceUDID: currentDevice.UDID, Message: "Running initial tasks"})
 		if err := RunInitialTasks(currentDevice.UDID); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
