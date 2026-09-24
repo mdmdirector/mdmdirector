@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
@@ -76,6 +77,51 @@ func TestReconcileDeviceState_InitialTasksAlreadyRun(t *testing.T) {
 	err := reconcileDeviceState(currentDevice)
 
 	assert.NoError(t, err)
+}
+
+// A lease start time younger than the TTL means another invocation is still running
+// RunInitialTasks (typically: this event is one of its own command acknowledgements).
+// reconcileDeviceState must return without touching the DB - no lease UPDATE, no
+// lease_contention count. No mock DB is installed, so any DB access would fail the test.
+func TestReconcileDeviceState_InitialTasksInFlightSkips(t *testing.T) {
+	started := time.Now().Add(-1 * time.Minute)
+	currentDevice := &types.Device{
+		UDID:                     "1234-5678-123456",
+		SerialNumber:             "C02ABCDEFGH",
+		InitialTasksRun:          false,
+		TokenUpdateRecieved:      true,
+		RunInitialTasksStarttime: &started,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	assert.NoError(t, err)
+}
+
+// A lease start time older than the TTL is a holder that died mid-run. The in-flight
+// check must NOT short-circuit; RunInitialTasks runs and attempts the lease UPDATE.
+func TestReconcileDeviceState_StaleInitialTasksLeaseRetries(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	// RunInitialTasks tries the lease; sqlmock returns 0 rows so it stops right there.
+	mock.ExpectExec(acquireSQL).
+		WithArgs("1234-5678-123456").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	started := time.Now().Add(-initialTasksLeaseDuration - time.Minute)
+	currentDevice := &types.Device{
+		UDID:                     "1234-5678-123456",
+		SerialNumber:             "C02ABCDEFGH",
+		InitialTasksRun:          false,
+		TokenUpdateRecieved:      true,
+		RunInitialTasksStarttime: &started,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet(), "expected RunInitialTasks to attempt the lease")
 }
 
 // AwaitingConfiguration=false → SendDeviceConfigured must NOT be called even when InitialTasksRun=true.
