@@ -15,7 +15,7 @@ This env file will be sourced by the scripts.
 Contents of `env` file:
 
 ```
-# the value of the -api-key flag that MDMDirector was started with.
+# the value of the -password flag (env DIRECTOR_PASSWORD) that MDMDirector was started with.
 export API_TOKEN=supersecret
 export SERVER_URL=https://mdmdirector.acme.co
 ```
@@ -34,6 +34,38 @@ chmod 600 filename
 ```
 
 ## Usage examples
+
+All scripts print the raw JSON response. `$udid` is the device UDID as shown by `GET /device`.
+
+### Profiles
+
+```
+./tools/post_profile $udid ./path/to/profile.mobileconfig       # one device, push now
+./tools/post_shared_profile ./path/to/profile.mobileconfig      # all devices (udids ["*"]), push now
+./tools/delete_profile $udid com.example.payload.identifier     # one device
+./tools/delete_shared_profile com.example.payload.identifier    # all devices
+```
+
+Profiles are base64-encoded by the script. If MDMDirector runs with `-sign`, it signs them before install.
+
+### Applications
+
+```
+./tools/post_install_application $udid https://example.com/app.plist   # one device, not bootstrap-only
+```
+
+### Device commands
+
+```
+./tools/device_lock $udid 123456      # DeviceLock with a 6 digit PIN (escrowed if -escrowurl is set)
+./tools/device_unlock $udid           # cancel a pending lock (value=false)
+./tools/erase_device $udid            # EraseDevice, PIN generated and escrowed
+./tools/unerase_device $udid          # cancel a pending erase (DELETE)
+./tools/clear_device_queue $udid      # clear the device's pending command queue on the MDM server
+./tools/inspect_device_queue $udid    # show the device's pending command queue
+```
+
+Lock and erase are queued and sent on the next push; `push_now` is set so the push happens immediately.
 
 ### Install a shared application on all devices
 
