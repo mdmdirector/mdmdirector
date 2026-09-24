@@ -1,9 +1,11 @@
 module github.com/mdmdirector/mdmdirector
 
-go 1.24.5
+go 1.25.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.0
+	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/bsm/redislock v0.7.2
 	github.com/fullsailor/pkcs7 v0.0.0-20190404230743-d7302db945fa
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/uuid v1.3.0
@@ -17,7 +19,7 @@ require (
 	github.com/sirupsen/logrus v1.8.3
 	github.com/stretchr/testify v1.7.1
 	github.com/vmihailenco/taskq/v3 v3.2.8
-	golang.org/x/crypto v0.45.0
+	golang.org/x/crypto v0.52.0
 	gopkg.in/ajg/form.v1 v1.5.1
 	gorm.io/driver/postgres v1.3.6
 	gorm.io/gorm v1.23.5
@@ -25,7 +27,6 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bsm/redislock v0.7.2 // indirect
 	github.com/capnm/sysinfo v0.0.0-20130621111458-5909a53897f3 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -52,8 +53,9 @@ require (
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

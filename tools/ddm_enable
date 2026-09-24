@@ -1,0 +1,11 @@
+#!/bin/bash
+# Opt a device into DDM: converts its profiles and applications into declarations via
+# KMFDDM and switches the device to declarative management. Unlike ddm_activate, this
+# DOES convert existing profiles/apps and persists the opt-in so future pushes use DDM.
+# Example:
+#          ./tools/ddm_enable $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/$1/ddm"
+
+curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint"

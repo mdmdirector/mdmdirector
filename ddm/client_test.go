@@ -1,0 +1,287 @@
+package ddm
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPutDeclaration_Changed(t *testing.T) {
+	var (
+		capturedMethod   string
+		capturedPath     string
+		capturedNoNotify string
+		capturedUser     string
+		capturedPass     string
+		capturedAuthOK   bool
+		capturedDecl     Declaration
+		capturedBodyErr  error
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		capturedNoNotify = r.URL.Query().Get("nonotify")
+		capturedUser, capturedPass, capturedAuthOK = r.BasicAuth()
+
+		body, _ := io.ReadAll(r.Body)
+		capturedBodyErr = json.Unmarshal(body, &capturedDecl)
+
+		// 204 = changed/new in KMFDDM
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	decl := Declaration{
+		Identifier: "test.declaration.id",
+		Type:       TypeLegacyProfile,
+		Payload: LegacyProfilePayload{
+			ProfileURL: "https://example.com/profiledownload/udid/profile",
+		},
+	}
+
+	changed, err := kmfddmClient.PutDeclaration(decl, true)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	assert.Equal(t, "PUT", capturedMethod)
+	assert.Equal(t, "/v1/declarations", capturedPath)
+	assert.Equal(t, "true", capturedNoNotify)
+	assert.True(t, capturedAuthOK)
+	assert.Equal(t, "kmfddm", capturedUser)
+	assert.Equal(t, "test-api-key", capturedPass)
+	require.NoError(t, capturedBodyErr)
+	assert.Equal(t, "test.declaration.id", capturedDecl.Identifier)
+	assert.Equal(t, TypeLegacyProfile, capturedDecl.Type)
+}
+
+func TestPutDeclaration_Unchanged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 304 = unchanged in KMFDDM
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	decl := Declaration{
+		Identifier: "test.declaration.id",
+		Type:       TypeLegacyProfile,
+		Payload:    LegacyProfilePayload{ProfileURL: "https://example.com/profile"},
+	}
+
+	changed, err := kmfddmClient.PutDeclaration(decl, true)
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+func TestPutDeclaration_NoNotifyFalse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// nonotify should not be in query params
+		assert.Empty(t, r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	decl := Declaration{
+		Identifier: "test.id",
+		Type:       TypeActivationSimple,
+		Payload:    ActivationSimplePayload{StandardConfigurations: []string{"test.config"}},
+	}
+
+	changed, err := kmfddmClient.PutDeclaration(decl, false)
+	require.NoError(t, err)
+	assert.True(t, changed)
+}
+
+func TestPutDeclaration_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal error"}`))
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	decl := Declaration{Identifier: "test.id", Type: TypeLegacyProfile, Payload: LegacyProfilePayload{}}
+
+	_, err := kmfddmClient.PutDeclaration(decl, true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestTouchDeclaration_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/v1/declarations/com.example.udid123.legacy_profile.com.test/touch", r.URL.Path)
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.TouchDeclaration("com.example.udid123.legacy_profile.com.test", true)
+	require.NoError(t, err)
+}
+
+func TestTouchDeclaration_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.TouchDeclaration("nonexistent.declaration", true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestPutSetDeclaration_Changed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "PUT", r.Method)
+		assert.Equal(t, "/v1/set-declarations/device-udid-123", r.URL.Path)
+		assert.Equal(t, "com.example.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		// 204 = changed for set-declarations
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.PutSetDeclaration("device-udid-123", "com.example.device-udid-123.legacy_profile.com.test", true)
+	require.NoError(t, err)
+}
+
+func TestPutSetDeclaration_Unchanged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 304 = unchanged for set-declarations
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.PutSetDeclaration("device-udid-123", "some.declaration", true)
+	require.NoError(t, err)
+}
+
+func TestPutSetDeclaration_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"fail"}`))
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.PutSetDeclaration("udid", "decl", false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestPutEnrollmentSet_Changed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "PUT", r.Method)
+		assert.Equal(t, "/v1/enrollment-sets/device-udid-123", r.URL.Path)
+		assert.Equal(t, "device-udid-123", r.URL.Query().Get("set"))
+		assert.Empty(t, r.URL.Query().Get("nonotify"))
+		// 204 = changed
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.PutEnrollmentSet("device-udid-123", "device-udid-123", false)
+	require.NoError(t, err)
+}
+
+func TestPutEnrollmentSet_Unchanged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNotModified)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.PutEnrollmentSet("device-udid-123", "device-udid-123", true)
+	require.NoError(t, err)
+}
+
+func TestDeleteDeclaration_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/v1/declarations/com.example.udid123.legacy_profile.com.test", r.URL.Path)
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.DeleteDeclaration("com.example.udid123.legacy_profile.com.test", true)
+	require.NoError(t, err)
+}
+
+func TestDeleteDeclaration_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.DeleteDeclaration("nonexistent.declaration", true)
+	// Not found is not an error for deletion - declaration already gone
+	require.NoError(t, err)
+}
+
+func TestDeleteSetDeclaration_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/v1/set-declarations/device-udid-123", r.URL.Path)
+		assert.Equal(t, "com.example.device-udid-123.legacy_profile.com.test", r.URL.Query().Get("declaration"))
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.DeleteSetDeclaration("device-udid-123", "com.example.device-udid-123.legacy_profile.com.test", true)
+	require.NoError(t, err)
+}
+
+func TestDeleteSetDeclaration_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	err := kmfddmClient.DeleteSetDeclaration("device-udid-123", "nonexistent.declaration", true)
+	// Not found is not an error for deletion - association already gone
+	require.NoError(t, err)
+}
+
+// TestClientRequiresInit pins the contract that callers depend on: Client() reports
+// ErrClientNotInitialized until InitClient has run. The per-device DDM opt-in path relies
+// on the client being initialized whenever KMFDDM is configured, not only when the global
+// USE_DDM flags are on — see kmfddmConfigured in main.go.
+func TestClientRequiresInit(t *testing.T) {
+	saved := kmfddmClient
+	t.Cleanup(func() { kmfddmClient = saved })
+
+	kmfddmClient = nil
+	client, err := Client()
+	assert.Nil(t, client)
+	assert.ErrorIs(t, err, ErrClientNotInitialized)
+
+	InitClient("http://kmfddm.example.com:9002/", "test-api-key")
+	client, err = Client()
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	// InitClient trims the trailing slash so joined paths don't double up
+	assert.Equal(t, "http://kmfddm.example.com:9002", client.baseURL)
+	assert.Equal(t, "test-api-key", client.apiKey)
+	assert.Equal(t, KMFDDMAuthUsername, client.username)
+}

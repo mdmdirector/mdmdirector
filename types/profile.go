@@ -9,24 +9,26 @@ import (
 // DeviceProfile (s) are profiles that are individual to the device.
 type DeviceProfile struct {
 	// ID                uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
-	PayloadUUID       string
-	PayloadIdentifier string `gorm:"primaryKey"`
-	HashedPayloadUUID string
-	MobileconfigData  []byte
-	MobileconfigHash  []byte
-	DeviceUDID        string `gorm:"primaryKey"`
-	Installed         bool   `gorm:"default:true"`
+	PayloadUUID              string
+	PayloadIdentifier        string `gorm:"primaryKey"`
+	HashedPayloadUUID        string
+	MobileconfigData         []byte
+	MobileconfigHash         []byte
+	OriginalMobileconfigHash []byte
+	DeviceUDID               string `gorm:"primaryKey"`
+	Installed                bool   `gorm:"default:true"`
 }
 
 // SharedProfile (s) are profiles that go on every device.
 type SharedProfile struct {
-	ID                uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
-	PayloadUUID       string
-	HashedPayloadUUID string
-	PayloadIdentifier string
-	MobileconfigData  []byte
-	MobileconfigHash  []byte
-	Installed         bool `gorm:"default:true"`
+	ID                       uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
+	PayloadUUID              string
+	HashedPayloadUUID        string
+	PayloadIdentifier        string
+	MobileconfigData         []byte
+	MobileconfigHash         []byte
+	OriginalMobileconfigHash []byte
+	Installed                bool `gorm:"default:true"`
 }
 
 // ProfilePayload - struct to unpack the payload sent to mdmdirector
