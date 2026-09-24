@@ -1,6 +1,7 @@
 package director
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
@@ -11,12 +12,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// initialTasksLeaseTTL- maximum time RunInitialTasks is presumed before another caller may take the lease
-const initialTasksLeaseTTL = "5 minutes"
-
-// initialTasksLeaseDuration is initialTasksLeaseTTL as a Go duration, for in-process
-// checks that mirror the SQL lease window. Keep the two in sync.
+// initialTasksLeaseDuration is the maximum time RunInitialTasks is presumed to be running
+// before another caller may take the lease. It is the single source of truth for the lease
+// window: the in-process check (initialTasksInFlight) uses it directly and the SQL lease
+// UPDATE uses initialTasksLeaseInterval, which is derived from it.
 const initialTasksLeaseDuration = 5 * time.Minute
+
+// initialTasksLeaseInterval is initialTasksLeaseDuration rendered as a PostgreSQL interval
+// literal (e.g. "300 seconds") for tryAcquireInitialTasksLease.
+var initialTasksLeaseInterval = fmt.Sprintf("%d seconds", int64(initialTasksLeaseDuration/time.Second))
 
 // initialTasksInFlight reports whether a RunInitialTasks invocation for this device is
 // presumed to still be running: the lease start time is set and younger than the TTL.
@@ -41,7 +45,7 @@ func tryAcquireInitialTasksLease(udid string) (bool, error) {
 		WHERE  ud_id = ?
 		  AND  initial_tasks_run = false
 		  AND  ( run_initial_tasks_starttime IS NULL
-				 OR run_initial_tasks_starttime < NOW() - INTERVAL '`+initialTasksLeaseTTL+`' )
+				 OR run_initial_tasks_starttime < NOW() - INTERVAL '`+initialTasksLeaseInterval+`' )
 	`, udid)
 	if res.Error != nil {
 		return false, errors.Wrap(res.Error, "tryAcquireInitialTasksLease")
