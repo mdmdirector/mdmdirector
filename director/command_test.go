@@ -208,8 +208,8 @@ func TestExpireStaleCommands_DeletesOldUnresolved(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"}).
 		AddRow("stale-uuid-1", "", "1234-5678-123456", "InstallProfile", time.Now().Add(-time.Hour))
-	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2`).
-		WithArgs("", sqlmock.AnyArg()).
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", sqlmock.AnyArg(), "DeviceLock", "EraseDevice").
 		WillReturnRows(rows)
 
 	mockSpy.ExpectBegin()
@@ -255,8 +255,8 @@ func TestExpireStaleCommands_RespectsConfiguredThreshold(t *testing.T) {
 
 	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"})
 	wantCutoff := time.Now().Add(-5 * time.Minute)
-	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2`).
-		WithArgs("", cutoffNear{wantCutoff}).
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", cutoffNear{wantCutoff}, "DeviceLock", "EraseDevice").
 		WillReturnRows(rows)
 
 	err = expireStaleCommands()
@@ -280,8 +280,8 @@ func TestExpireStaleCommands_NoneStale(t *testing.T) {
 	db.DB = DB
 
 	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"})
-	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2`).
-		WithArgs("", sqlmock.AnyArg()).
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", sqlmock.AnyArg(), "DeviceLock", "EraseDevice").
 		WillReturnRows(rows)
 
 	err = expireStaleCommands()

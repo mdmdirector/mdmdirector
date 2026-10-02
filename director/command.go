@@ -356,26 +356,36 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// staleCommandExemptRequestTypes are never expired by expireStaleCommands,
+// regardless of how long they've sat unresolved. DeviceLock/EraseDevice are
+// one-shot, high-consequence commands - CommandInQueue treating one as
+// expired would let a retry path enqueue a second lock/wipe for the same
+// device while the original might still be in flight, which could wipe a
+// device twice or stack conflicting lock PINs. Better to leave the row
+// blocking retries than risk a duplicate.
+var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
+
 // expireStaleCommands deletes local Command bookkeeping rows that have sat
 // with an empty (never-acknowledged) status for longer than
 // utils.StaleCommandThreshold() minutes (defaults to 5 days; override with
-// --stale-command-threshold or STALE_COMMAND_THRESHOLD). NanoMDM's own
-// Authenticate check-in handler unconditionally clears any unresolved queue
-// entries for a device, per the MDM spec, to avoid stale commands surviving
-// an unenrollment. If a device re-authenticates while
-// RunInitialTasks/InstallAllProfiles is still mid-flight sending its serial
-// batch of commands, NanoMDM can silently deactivate the not-yet-acknowledged
-// ones before the device ever requests them. mdmdirector has no visibility
-// into that: the local Command row is left at status="" forever, and
-// CommandInQueue then treats it as "already queued", permanently blocking
-// any future retry of that device+profile. Expiring the row here unblocks
-// CommandInQueue so the next scheduled push or ProfileList verification can
-// retry instead of treating the device as permanently caught up.
+// --stale-command-threshold or STALE_COMMAND_THRESHOLD), excluding
+// staleCommandExemptRequestTypes. NanoMDM's own Authenticate check-in handler
+// unconditionally clears any unresolved queue entries for a device, per the
+// MDM spec, to avoid stale commands surviving an unenrollment. If a device
+// re-authenticates while RunInitialTasks/InstallAllProfiles is still
+// mid-flight sending its serial batch of commands, NanoMDM can silently
+// deactivate the not-yet-acknowledged ones before the device ever requests
+// them. mdmdirector has no visibility into that: the local Command row is
+// left at status="" forever, and CommandInQueue then treats it as "already
+// queued", permanently blocking any future retry of that device+profile.
+// Expiring the row here unblocks CommandInQueue so the next scheduled push or
+// ProfileList verification can retry instead of treating the device as
+// permanently caught up.
 func expireStaleCommands() error {
 	var commands []types.Command
 	threshold := time.Duration(utils.StaleCommandThreshold()) * time.Minute
 	cutoff := time.Now().Add(-threshold)
-	err := db.DB.Where("status = ? AND updated_at < ?", "", cutoff).Find(&commands).Error
+	err := db.DB.Where("status = ? AND updated_at < ? AND request_type NOT IN ?", "", cutoff, staleCommandExemptRequestTypes).Find(&commands).Error
 	if err != nil {
 		return errors.Wrap(err, "expireStaleCommands: find")
 	}
