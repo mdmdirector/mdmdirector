@@ -47,6 +47,10 @@ func TestRunCleanup(t *testing.T) {
 	mockSpy.ExpectExec(`UPDATE "devices" SET "unlock_pin"`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2`).
+		WithArgs("", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"}))
+
 	err := runCleanup()
 	require.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
