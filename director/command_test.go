@@ -165,9 +165,16 @@ func TestInspectCommandQueue(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	// These need to be set due to global variable referencing
-	flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
-	flag.String("micromdmapikey", "", "MicroMDM Server API Key")
+	// These need to be set due to global variable referencing. Guard registration since
+	// other tests in this package may have already registered them.
+	if flag.Lookup("micromdmurl") == nil {
+		flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
+	} else {
+		_ = flag.Set("micromdmurl", server.URL)
+	}
+	if flag.Lookup("micromdmapikey") == nil {
+		flag.String("micromdmapikey", "", "MicroMDM Server API Key")
+	}
 	device := types.Device{
 		UDID: "1234-5678-123456",
 	}

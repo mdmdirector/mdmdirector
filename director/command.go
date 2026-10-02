@@ -247,22 +247,26 @@ OuterLoop:
 	return nil
 }
 
-func CommandInQueue(device types.Device, command string, afterDate time.Time) bool {
+// CommandInQueue reports whether a command of requestType is already pending for the
+// device. For profile commands ("InstallProfile"/"RemoveProfile"), pass the profile's
+// identifier so distinct profiles aren't deduped against each other; for commands that
+// aren't profile-scoped (e.g. "SecurityInfo", "DeviceInformation"), pass "".
+func CommandInQueue(device types.Device, requestType string, identifier string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ?", device.UDID, command).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ?", device.UDID, requestType, identifier).
 		Where("status = ? OR status = ?", "", "NotNow").
-		Where("updated_at > ?", afterDate).
 		First(&commandModel).
 		Error
 	if err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			return false
+			return false, nil
 		}
+		return false, errors.Wrap(err, "command in queue")
 	}
 
-	return true
+	return true, nil
 }
 
 func InstallAppInQueue(device types.Device, manifestURL string) (bool, error) {

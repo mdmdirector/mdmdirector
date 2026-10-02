@@ -705,8 +705,18 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
+
+			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("InstallProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.RequestType = "InstallProfile"
+			commandPayload.Identifier = profileData.PayloadIdentifier
 
 			InfoLogger(
 				LogHolder{
@@ -817,6 +827,14 @@ func DeleteSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("RemoveProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -865,6 +883,14 @@ func DeleteDeviceProfiles(
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("RemoveProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -932,10 +958,19 @@ func PushSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
+			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("InstallProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
+			commandPayload.Identifier = profileData.PayloadIdentifier
 
 			InfoLogger(
 				LogHolder{
@@ -1411,12 +1446,22 @@ func loadSigningKey(
 
 func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
+
+	inQueue, err := CommandInQueue(device, requestType, "")
+	if err != nil {
+		return errors.Wrap(err, "RequestProfileList: CommandInQueue")
+	}
+	if inQueue {
+		log.Infof("%v already in queue for %v", requestType, device.UDID)
+		return nil
+	}
+
 	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
 
-	_, err := SendCommand(commandPayload)
+	_, err = SendCommand(commandPayload)
 	if err != nil {
 		return errors.Wrap(err, "RequestProfileList: SendCommand")
 	}

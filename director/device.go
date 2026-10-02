@@ -443,6 +443,16 @@ func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
+
+	inQueue, err := CommandInQueue(device, requestType, "")
+	if err != nil {
+		return errors.Wrap(err, "RequestDeviceInformation:CommandInQueue")
+	}
+	if inQueue {
+		log.Infof("%v already in queue for %v", requestType, device.UDID)
+		return nil
+	}
+
 	InfoLogger(
 		LogHolder{
 			Message:            "Requesting DeviceInfo",
@@ -455,7 +465,7 @@ func RequestDeviceInformation(device types.Device) error {
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
 	payload.Queries = types.DeviceInformationQueries
-	_, err := SendCommand(payload)
+	_, err = SendCommand(payload)
 	if err != nil {
 		return errors.Wrap(err, "RequestDeviceInformation:SendCommand")
 	}
