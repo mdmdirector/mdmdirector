@@ -145,6 +145,10 @@ func runCleanup() error {
 		return errors.Wrap(err, "runCleanup::ResetFixedPin")
 	}
 
+	if err := expireStaleCommands(); err != nil {
+		return errors.Wrap(err, "runCleanup::ExpireStaleCommands")
+	}
+
 	return nil
 }
 

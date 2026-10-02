@@ -25,9 +25,21 @@ func setupOnceInFlag(t *testing.T) {
 	}
 }
 
+// setupStaleCommandThresholdFlag registers/sets the stale-command-threshold flag so
+// utils.StaleCommandThreshold() works in tests.
+func setupStaleCommandThresholdFlag(t *testing.T) {
+	t.Helper()
+	if flag.Lookup("stale-command-threshold") == nil {
+		flag.Int("stale-command-threshold", 30, "stale command threshold")
+	} else {
+		_ = flag.Set("stale-command-threshold", "30")
+	}
+}
+
 // TestRunCleanup verifies the maintenance mutations are issued in order: delete orphaned
 // certificates and profile lists, expire stale random unlock PINs, and reset fixed PINs.
 func TestRunCleanup(t *testing.T) {
+	setupStaleCommandThresholdFlag(t)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
@@ -46,6 +58,10 @@ func TestRunCleanup(t *testing.T) {
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`UPDATE "devices" SET "unlock_pin"`).WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
+
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", sqlmock.AnyArg(), "DeviceLock", "EraseDevice").
+		WillReturnRows(sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"}))
 
 	err := runCleanup()
 	require.NoError(t, err)
