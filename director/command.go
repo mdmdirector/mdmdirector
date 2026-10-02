@@ -82,6 +82,8 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
 	command.RequestType = commandPayload.RequestType
+	command.Identifier = commandPayload.Identifier
+	command.ManifestURL = commandPayload.ManifestURL
 
 	InfoLogger(
 		LogHolder{
@@ -146,6 +148,8 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = resp.CommandUUID
 	command.RequestType = resp.RequestType
+	command.Identifier = commandPayload.Identifier
+	command.ManifestURL = commandPayload.ManifestURL
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
