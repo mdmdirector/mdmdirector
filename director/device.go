@@ -60,14 +60,21 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		}
 	}
 
-	err := UpdateDeviceBools(&newDevice)
-	if err != nil {
-		return &device, errors.Wrap(err, "UpdateDevice")
-	}
-
 	return &device, nil
 }
 
+// UpdateDeviceBools persists the boolean fields that are only ever populated
+// by an actual DeviceInformation query response (IsSupervised,
+// IsActivationLockEnabled, etc.) via an explicit map-based Updates call,
+// bypassing GORM's default skip-zero-value behavior for struct updates so a
+// legitimate true -> false transition can still persist.
+//
+// Callers MUST only invoke this with a Device decoded from a DeviceInformation
+// QueryResponses payload. Checkin and other Acknowledge payloads (ProfileList,
+// SecurityInfo, CertificateList, command acks, etc.) don't carry these fields
+// at all, so a Device decoded from one of those has them at their Go zero
+// value (false) rather than any real value from the device - calling this with
+// such a Device would silently clobber a correct value back to false.
 func UpdateDeviceBools(newDevice *types.Device) error {
 	var deviceModel types.Device
 	err := db.DB.Model(&deviceModel).

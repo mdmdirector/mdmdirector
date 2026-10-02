@@ -275,6 +275,13 @@ func processAcknowledgePayload(event *types.AcknowledgeEvent, device types.Devic
 		if _, err := UpdateDevice(deviceInformationQueryResponses.QueryResponses); err != nil {
 			return errors.Wrap(err, "processAcknowledgePayload:UpdateDeviceInfo")
 		}
+		// Only a real DeviceInformation response carries IsSupervised et al.;
+		// UpdateDevice no longer writes them itself so that every other
+		// checkin/acknowledge type (which lack these fields entirely) can't
+		// clobber a correct value back to false.
+		if err := UpdateDeviceBools(&deviceInformationQueryResponses.QueryResponses); err != nil {
+			return errors.Wrap(err, "processAcknowledgePayload:UpdateDeviceBools")
+		}
 		return device.UpdateLastDeviceInfo()
 	}
 
