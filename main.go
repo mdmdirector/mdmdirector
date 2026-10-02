@@ -115,6 +115,11 @@ var ControlPlaneInterval int
 
 var InfoRequestInterval int
 
+// StaleCommandThreshold is the number of minutes a Command may sit unresolved
+// (status="") before expireStaleCommands treats it as dropped by NanoMDM and
+// deletes it so it can be retried.
+var StaleCommandThreshold int
+
 // AcmeCertIssuer is the issuer of the ACME certificate
 var AcmeCertIssuer string
 
@@ -381,6 +386,12 @@ func main() {
 		"info-request-interval",
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
+	)
+	flag.IntVar(
+		&StaleCommandThreshold,
+		"stale-command-threshold",
+		env.Int("STALE_COMMAND_THRESHOLD", 30),
+		"Minutes a Command may sit unresolved before it's treated as dropped by NanoMDM and expired so it can be retried. Defaults to 30.",
 	)
 	flag.StringVar(
 		&EnrollWebhookURL,

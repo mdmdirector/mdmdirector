@@ -25,9 +25,21 @@ func setupOnceInFlag(t *testing.T) {
 	}
 }
 
+// setupStaleCommandThresholdFlag registers/sets the stale-command-threshold flag so
+// utils.StaleCommandThreshold() works in tests.
+func setupStaleCommandThresholdFlag(t *testing.T) {
+	t.Helper()
+	if flag.Lookup("stale-command-threshold") == nil {
+		flag.Int("stale-command-threshold", 30, "stale command threshold")
+	} else {
+		_ = flag.Set("stale-command-threshold", "30")
+	}
+}
+
 // TestRunCleanup verifies the maintenance mutations are issued in order: delete orphaned
 // certificates and profile lists, expire stale random unlock PINs, and reset fixed PINs.
 func TestRunCleanup(t *testing.T) {
+	setupStaleCommandThresholdFlag(t)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
