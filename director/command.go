@@ -358,7 +358,7 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 
 // expireStaleCommands deletes local Command bookkeeping rows that have sat
 // with an empty (never-acknowledged) status for longer than
-// utils.StaleCommandThreshold() minutes (defaults to 30; override with
+// utils.StaleCommandThreshold() minutes (defaults to 5 days; override with
 // --stale-command-threshold or STALE_COMMAND_THRESHOLD). NanoMDM's own
 // Authenticate check-in handler unconditionally clears any unresolved queue
 // entries for a device, per the MDM spec, to avoid stale commands surviving
