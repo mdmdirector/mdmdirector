@@ -2,10 +2,14 @@ package director
 
 import (
 	"encoding/json"
+	intErrors "errors"
 	"net/http"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -18,6 +22,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	if out.DeviceUDIDs != nil {
@@ -29,6 +34,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
@@ -51,16 +57,15 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+						return
 					}
 					devices = append(devices, device)
-					err = SaveInstallApplications(devices, out)
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
-					}
 				}
 				err = SaveInstallApplications(devices, out)
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				for _, ManifestURL := range out.ManifestURLs {
 					var installApplication types.DeviceInstallApplication
@@ -82,6 +87,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
 				}
 				err = SaveSharedInstallApplications(out)
 				if err != nil {
@@ -122,14 +128,14 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveInstallApplications(devices []types.Device, payload types.InstallApplicationPayload) error {
-	var installApplication types.DeviceInstallApplication
-
 	for i := range devices {
 		device := devices[i]
 		for _, ManifestURL := range payload.ManifestURLs {
-			installApplication.ManifestURL = ManifestURL.URL
-			installApplication.DeviceUDID = device.UDID
-			err := db.DB.Model(&device).Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
+			installApplication := types.DeviceInstallApplication{
+				ManifestURL: ManifestURL.URL,
+				DeviceUDID:  device.UDID,
+			}
+			err := db.DB.Where("device_ud_id = ? AND manifest_url = ?", device.UDID, ManifestURL.URL).Assign(&installApplication).FirstOrCreate(&installApplication).Error
 			if err != nil {
 				return errors.Wrap(err, "SaveInstallApplications")
 			}
@@ -140,9 +146,18 @@ func SaveInstallApplications(devices []types.Device, payload types.InstallApplic
 }
 
 func PushInstallApplication(devices []types.Device, installApplication types.DeviceInstallApplication) ([]types.Command, error) {
+	// DDM-enabled devices install via declarations; the rest via InstallApplication.
+	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	var errs []error
+	if len(ddmDevices) > 0 {
+		if err := PushApplicationsViaDDM(ddmDevices, installApplication.ManifestURL); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	var sentCommands []types.Command
-	for i := range devices {
-		device := devices[i]
+	for i := range legacyDevices {
+		device := legacyDevices[i]
 		inQueue, err := InstallAppInQueue(device, installApplication.ManifestURL)
 		if err != nil {
 			// Shit went wrong for this device, but logging here feels wrong
@@ -160,6 +175,9 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		commandPayload.ManifestURL = installApplication.ManifestURL
 
 		command, err := SendCommand(commandPayload)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+		}
 		if err != nil {
 			// We should return an error or something here
 			ErrorLogger(LogHolder{Message: err.Error()})
@@ -169,7 +187,7 @@ func PushInstallApplication(devices []types.Device, installApplication types.Dev
 		}
 
 	}
-	return sentCommands, nil
+	return sentCommands, intErrors.Join(errs...)
 }
 
 func SaveSharedInstallApplications(payload types.InstallApplicationPayload) error {
@@ -190,9 +208,18 @@ func SaveSharedInstallApplications(payload types.InstallApplicationPayload) erro
 }
 
 func PushSharedInstallApplication(devices []types.Device, installSharedApplication types.SharedInstallApplication) ([]types.Command, error) {
+	// DDM-enabled devices install via declarations; the rest via InstallApplication.
+	ddmDevices, legacyDevices := partitionByDDMPackages(devices)
+	var errs []error
+	if len(ddmDevices) > 0 {
+		if err := PushSharedApplicationsViaDDM(ddmDevices, installSharedApplication.ManifestURL); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	var sentCommands []types.Command
-	for i := range devices {
-		device := devices[i]
+	for i := range legacyDevices {
+		device := legacyDevices[i]
 		log.Infof("Pushing InstallApplication to %v", device.UDID)
 		inQueue, _ := InstallAppInQueue(device, installSharedApplication.ManifestURL)
 		if inQueue {
@@ -206,16 +233,24 @@ func PushSharedInstallApplication(devices []types.Device, installSharedApplicati
 		commandPayload.ManifestURL = installSharedApplication.ManifestURL
 
 		command, err := SendCommand(commandPayload)
+		if utils.Prometheus() {
+			metrics.ApplicationOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+		}
 		if err != nil {
-			return sentCommands, errors.Wrap(err, "Push Shared Install Application")
+			errs = append(errs, errors.Wrap(err, "Push Shared Install Application"))
+			return sentCommands, intErrors.Join(errs...)
 		}
 		sentCommands = append(sentCommands, command)
 
 	}
-	return sentCommands, nil
+	return sentCommands, intErrors.Join(errs...)
 }
 
 func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
+	if ddmPackagesForDevice(device) {
+		return nil, installBootstrapPackagesViaDDM(device)
+	}
+
 	var sharedInstallApplication types.SharedInstallApplication
 	var deviceInstallApplication types.DeviceInstallApplication
 	var sharedInstallApplications []types.SharedInstallApplication
@@ -258,6 +293,105 @@ func InstallBootstrapPackages(device types.Device) ([]types.Command, error) {
 	}
 
 	return sentCommands, nil
+}
+
+func installBootstrapPackagesViaDDM(device types.Device) error {
+	client, err := ddm.Client()
+	if err != nil {
+		return err
+	}
+
+	var sharedInstallApplications []types.SharedInstallApplication
+	if err := db.DB.Find(&sharedInstallApplications).Error; err != nil {
+		return errors.Wrap(err, "installBootstrapPackagesViaDDM: querying shared apps")
+	}
+
+	for _, sharedApp := range sharedInstallApplications {
+		log.Debugf("InstallApplication via DDM (shared): %v", sharedApp)
+		app := types.DeviceInstallApplication{
+			ID:          sharedApp.ID,
+			ManifestURL: sharedApp.ManifestURL,
+		}
+		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+			return errors.Wrapf(err, "installBootstrapPackagesViaDDM: pushing shared app %s", sharedApp.ManifestURL)
+		}
+	}
+
+	var deviceInstallApplications []types.DeviceInstallApplication
+	if err := db.DB.Where("device_ud_id = ?", device.UDID).Find(&deviceInstallApplications).Error; err != nil {
+		return errors.Wrap(err, "installBootstrapPackagesViaDDM: querying device apps")
+	}
+
+	for _, app := range deviceInstallApplications {
+		log.Debugf("InstallApplication via DDM (device): %v", app)
+		if err := PushApplicationViaDDM(client, device.UDID, app); err != nil {
+			return errors.Wrapf(err, "installBootstrapPackagesViaDDM: pushing device app %s", app.ManifestURL)
+		}
+	}
+
+	return nil
+}
+
+func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
+	var out types.InstallApplicationPayload
+	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	manifestURLs := make([]string, 0, len(out.ManifestURLs))
+	for _, m := range out.ManifestURLs {
+		manifestURLs = append(manifestURLs, m.URL)
+	}
+
+	var sharedApps []types.SharedInstallApplication
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Find(&sharedApps).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if len(sharedApps) == 0 {
+		http.Error(w, "no matching shared install applications found", http.StatusNotFound)
+		return
+	}
+
+	// Tear down declarations only for DDM-enabled devices.
+	devices, err := GetAllDevices()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	ddmDevices, _ := partitionByDDMPackages(devices)
+	if len(ddmDevices) == 0 {
+		return
+	}
+
+	client, err := ddm.Client()
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	for _, app := range sharedApps {
+		for _, device := range ddmDevices {
+			if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
+				ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+			}
+		}
+	}
+
+	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Delete(&types.SharedInstallApplication{}).Error; err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {

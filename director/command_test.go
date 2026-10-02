@@ -148,6 +148,10 @@ func (m mockFlagBuilder) ClearDeviceOnEnroll() bool {
 }
 
 func TestInspectCommandQueue(t *testing.T) {
+	// Ensure we use the microMDM code path (flag may be set to nanomdm by other tests)
+	if flag.Lookup("mdm-server-type") != nil {
+		_ = flag.Set("mdm-server-type", "micromdm")
+	}
 
 	// Mock the HTTP client and response
 	var path string
@@ -161,16 +165,22 @@ func TestInspectCommandQueue(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	// These need to be set due to global variable referencing
-	flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
-	flag.String("micromdmapikey", "", "MicroMDM Server API Key")
-	client := server.Client()
+	// These need to be set due to global variable referencing. Guard registration since
+	// other tests in this package may have already registered them.
+	if flag.Lookup("micromdmurl") == nil {
+		flag.String("micromdmurl", server.URL, "MicroMDM Server URL")
+	} else {
+		_ = flag.Set("micromdmurl", server.URL)
+	}
+	if flag.Lookup("micromdmapikey") == nil {
+		flag.String("micromdmapikey", "", "MicroMDM Server API Key")
+	}
 	device := types.Device{
 		UDID: "1234-5678-123456",
 	}
 
 	// Call the function to inspect the command queue
-	haveBody, err := InspectCommandQueue(client, device)
+	haveBody, err := InspectCommandQueue(device)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

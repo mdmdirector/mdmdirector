@@ -1,0 +1,12 @@
+#!/bin/bash
+# The following deletes a shared install application across all devices registered on mdmdirector
+# Example:
+#          ./tools/delete_shared_install_application $manifest_url
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="installapplication"
+jq -n \
+  --arg manifesturl "$1" \
+  '.manifest_urls[0].url = $manifesturl
+  '|\
+  curl -u "mdmdirector:$API_TOKEN" -X DELETE "$SERVER_URL/$endpoint" -d@-

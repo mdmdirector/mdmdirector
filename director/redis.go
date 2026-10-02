@@ -1,6 +1,7 @@
 package director
 
 import (
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -16,11 +17,17 @@ func RedisClient() *redis.Client {
 
 	connectionString := fmt.Sprintf("%v:%v", host, port)
 
-	rdb := redis.NewClient(&redis.Options{
+	opts := &redis.Options{
 		Addr:     connectionString,
 		Password: password,
-		DB:       0, // use default DB
-	})
+		DB:       0,
+	}
+
+	if utils.RedisTLS() {
+		opts.TLSConfig = &tls.Config{}
+	}
+
+	rdb := redis.NewClient(opts)
 	time.Sleep(5 * time.Second)
 	return rdb
 }
