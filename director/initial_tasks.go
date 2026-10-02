@@ -186,6 +186,21 @@ func ResetDevice(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
+
+	// The device's UDID survives an erase/re-enrollment, so its DDM opt-in status
+	// (ddm_opt_ins) would otherwise persist from before the wipe and be treated as
+	// still current. Tear down its DDM declarations first (mirrors
+	// DisableDeviceDDMHandler) so nothing is orphaned in KMFDDM, then clear the opt-in
+	// row so DDM status resets to false on re-enrollment. RunInitialTasks re-pushes
+	// profiles/apps fresh afterward via whatever mode (global flag or a new opt-in)
+	// applies at that point.
+	if err := teardownDDMForDevice(device); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:teardownDDMForDevice: " + err.Error()})
+	}
+	if err := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{}).Error; err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + err.Error()})
+	}
+
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Resetting device"})
 	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 		"token_update_recieved":       false,
