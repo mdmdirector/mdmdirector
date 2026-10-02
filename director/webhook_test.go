@@ -210,6 +210,19 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
+	// ResetDevice: teardownDDMForDevice finds no device/shared profiles to tear down
+	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles"`).
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
+		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
+
+	// ResetDevice: DELETE the DDM opt-in row
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
+		WithArgs("1234-5678-123456").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mockSpy.ExpectCommit()
+
 	// ResetDevice: UPDATE device flags
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^UPDATE "devices"`).
