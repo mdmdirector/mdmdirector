@@ -706,7 +706,13 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 		for i := range profiles {
 			profileData := profiles[i]
 
-			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				log.Errorf("signing profile for push: %v", err)
+			}
+			encodedPayload := base64.StdEncoding.EncodeToString(payload)
+
+			inQueue, err := ResolveProfileCommandInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -717,6 +723,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 			var commandPayload types.CommandPayload
 			commandPayload.RequestType = "InstallProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{
@@ -729,12 +736,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 				},
 			)
 
-			payload, err := signIfRequired(profileData.MobileconfigData)
-			if err != nil {
-				log.Errorf("signing profile for push: %v", err)
-			}
-			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
-
+			commandPayload.Payload = encodedPayload
 			commandPayload.UDID = device.UDID
 
 			command, err := SendCommand(commandPayload)
@@ -958,7 +960,13 @@ func PushSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
-			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+			}
+			encodedPayload := base64.StdEncoding.EncodeToString(payload)
+
+			inQueue, err := ResolveProfileCommandInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -971,6 +979,7 @@ func PushSharedProfiles(
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{
@@ -983,11 +992,7 @@ func PushSharedProfiles(
 				},
 			)
 
-			payload, err := signIfRequired(profileData.MobileconfigData)
-			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-			}
-			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
+			commandPayload.Payload = encodedPayload
 
 			command, err := SendCommand(commandPayload)
 			if utils.Prometheus() {

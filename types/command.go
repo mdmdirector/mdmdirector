@@ -16,6 +16,10 @@ type Command struct {
 	Queries      pq.StringArray `json:"Queries,omitempty" gorm:"type:text[]"`
 	Identifier   string         `json:"identifier,omitempty"`
 	ManifestURL  string         `json:"manifest_url,omitempty"`
+	// ContentHash is the profile's HashedPayloadUUID (content-derived) at the time this
+	// command was queued. Used by ResolveProfileCommandInQueue to detect a profile's
+	// content changing while an InstallProfile command for it is still pending delivery.
+	ContentHash  string
 	ErrorString  string
 	AttemptCount int
 }
@@ -28,6 +32,7 @@ type CommandPayload struct {
 	Identifier  string   `json:"identifier,omitempty"`
 	ManifestURL string   `json:"manifest_url,omitempty"`
 	Pin         string   `json:"pin,omitempty"`
+	ContentHash string   `json:"-"`
 }
 
 type CommandResponse struct {

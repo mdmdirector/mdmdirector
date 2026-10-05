@@ -84,6 +84,7 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.RequestType = commandPayload.RequestType
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
 
 	InfoLogger(
 		LogHolder{
@@ -150,6 +151,7 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	command.RequestType = resp.RequestType
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
@@ -268,6 +270,44 @@ func CommandInQueue(device types.Device, requestType string, identifier string) 
 			return false, nil
 		}
 		return false, errors.Wrap(err, "command in queue")
+	}
+
+	return true, nil
+}
+
+// ResolveProfileCommandInQueue checks whether an InstallProfile command for this device
+// and profile identifier is already pending delivery. If the pending command's content
+// no longer matches contentHash (the profile's current HashedPayloadUUID), it rewrites
+// the pending command in place with the fresh payload/hash rather than leaving it stale
+// or enqueuing a duplicate: this closes the window where a profile's content changes
+// while an earlier InstallProfile command for the same identifier is still queued, so the
+// device gets the latest content on its next checkin instead of the outdated one.
+func ResolveProfileCommandInQueue(device types.Device, identifier string, contentHash string, payload string) (bool, error) {
+	var commandModel types.Command
+
+	err := db.DB.Model(&commandModel).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ?", device.UDID, "InstallProfile", identifier).
+		Where("status = ? OR status = ?", "", "NotNow").
+		First(&commandModel).
+		Error
+	if err != nil {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, errors.Wrap(err, "resolve profile command in queue")
+	}
+
+	if commandModel.ContentHash == contentHash {
+		return true, nil
+	}
+
+	if err := db.DB.Model(&types.Command{}).
+		Where("command_uuid = ?", commandModel.CommandUUID).
+		Updates(map[string]interface{}{
+			"payload":      payload,
+			"content_hash": contentHash,
+		}).Error; err != nil {
+		return false, errors.Wrap(err, "refresh stale queued profile command")
 	}
 
 	return true, nil
