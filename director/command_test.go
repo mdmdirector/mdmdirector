@@ -2,10 +2,12 @@ package director
 
 import (
 	"bytes"
+	"database/sql/driver"
 	"flag"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
@@ -189,5 +191,103 @@ func TestInspectCommandQueue(t *testing.T) {
 	}
 	if path != "/v1/commands/1234-5678-123456" {
 		t.Errorf("Expected path to be /v1/commands/1234-5678-123456, got %s", path)
+	}
+}
+
+func TestExpireStaleCommands_DeletesOldUnresolved(t *testing.T) {
+	setupStaleCommandThresholdFlag(t)
+
+	postgresMock, mockSpy, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Fail to get postgres mock: %v", err)
+	}
+	defer postgresMock.Close()
+
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"}).
+		AddRow("stale-uuid-1", "", "1234-5678-123456", "InstallProfile", time.Now().Add(-time.Hour))
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", sqlmock.AnyArg(), "DeviceLock", "EraseDevice").
+		WillReturnRows(rows)
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE "commands"\."command_uuid" = \$1`).
+		WithArgs("stale-uuid-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
+
+	err = expireStaleCommands()
+
+	assert.Equal(t, nil, err)
+	if err := mockSpy.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %s", err)
+	}
+}
+
+// cutoffNear matches a time.Time argument that falls within +/-2s of want, so the
+// test can assert on the threshold actually used without racing the clock.
+type cutoffNear struct{ want time.Time }
+
+func (c cutoffNear) Match(v driver.Value) bool {
+	got, ok := v.(time.Time)
+	if !ok {
+		return false
+	}
+	delta := got.Sub(c.want)
+	return delta > -2*time.Second && delta < 2*time.Second
+}
+
+func TestExpireStaleCommands_RespectsConfiguredThreshold(t *testing.T) {
+	setupStaleCommandThresholdFlag(t)
+	defer func() { _ = flag.Set("stale-command-threshold", "30") }()
+	_ = flag.Set("stale-command-threshold", "5")
+
+	postgresMock, mockSpy, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Fail to get postgres mock: %v", err)
+	}
+	defer postgresMock.Close()
+
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"})
+	wantCutoff := time.Now().Add(-5 * time.Minute)
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", cutoffNear{wantCutoff}, "DeviceLock", "EraseDevice").
+		WillReturnRows(rows)
+
+	err = expireStaleCommands()
+
+	assert.Equal(t, nil, err)
+	if err := mockSpy.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %s", err)
+	}
+}
+
+func TestExpireStaleCommands_NoneStale(t *testing.T) {
+	setupStaleCommandThresholdFlag(t)
+
+	postgresMock, mockSpy, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Fail to get postgres mock: %v", err)
+	}
+	defer postgresMock.Close()
+
+	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+	db.DB = DB
+
+	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"})
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = \$1 AND updated_at < \$2 AND request_type NOT IN \(\$3,\$4\)`).
+		WithArgs("", sqlmock.AnyArg(), "DeviceLock", "EraseDevice").
+		WillReturnRows(rows)
+
+	err = expireStaleCommands()
+
+	assert.Equal(t, nil, err)
+	if err := mockSpy.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unfulfilled expectations: %s", err)
 	}
 }

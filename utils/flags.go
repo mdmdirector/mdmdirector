@@ -158,6 +158,10 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+func StaleCommandThreshold() int {
+	return flag.Lookup("stale-command-threshold").Value.(flag.Getter).Get().(int)
+}
+
 func EnrollWebhookURL() string {
 	return strings.TrimRight(flag.Lookup("enroll-webhook-url").Value.(flag.Getter).Get().(string), "/")
 }

@@ -286,6 +286,60 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 	}
 }
 
+// Test that Identifier and ManifestURL from the command payload are persisted on
+// the inserted Command row. CommandInQueue/InstallAppInQueue dedup against these
+// columns, so a regression here silently turns dedup into a no-op.
+func TestSendCommand_NanoMDM_PersistsIdentifierAndManifestURL(t *testing.T) {
+	setupNanoMDMFlag(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			CommandUUID: "profile-install-uuid",
+			RequestType: "InstallProfile",
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushResult: "success"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	mockGetDevice(mockSpy, "test-udid-123")
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`INSERT INTO "commands"`).
+		WithArgs(
+			sqlmock.AnyArg(), // updated_at
+			"profile-install-uuid",
+			sqlmock.AnyArg(), // status
+			"test-udid-123",
+			"InstallProfile",
+			sqlmock.AnyArg(), // payload
+			sqlmock.AnyArg(), // queries
+			"com.mdmdirector.test.profile",
+			"https://example.com/manifest.plist",
+			sqlmock.AnyArg(), // error_string
+			sqlmock.AnyArg(), // attempt_count
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mockSpy.ExpectCommit()
+
+	payload := types.CommandPayload{
+		UDID:        "test-udid-123",
+		RequestType: "InstallProfile",
+		Identifier:  "com.mdmdirector.test.profile",
+		ManifestURL: "https://example.com/manifest.plist",
+	}
+	command, err := sendCommandWithClient(nanoClient, payload)
+
+	require.NoError(t, err)
+	assert.Equal(t, "com.mdmdirector.test.profile", command.Identifier)
+	assert.Equal(t, "https://example.com/manifest.plist", command.ManifestURL)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
 // --- PushDevice tests ---
 
 // Test successful push to device
