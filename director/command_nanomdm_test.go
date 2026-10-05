@@ -287,7 +287,7 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 }
 
 // Test that Identifier and ManifestURL from the command payload are persisted on
-// the inserted Command row. CommandInQueue/InstallAppInQueue dedup against these
+// the inserted Command row. ResolveCommandInQueue/InstallAppInQueue dedup against these
 // columns, so a regression here silently turns dedup into a no-op.
 func TestSendCommand_NanoMDM_PersistsIdentifierAndManifestURL(t *testing.T) {
 	setupNanoMDMFlag(t)

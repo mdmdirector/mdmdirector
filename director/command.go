@@ -253,11 +253,22 @@ OuterLoop:
 	return nil
 }
 
-// CommandInQueue reports whether a command of requestType is already pending for the
-// device. For profile commands ("InstallProfile"/"RemoveProfile"), pass the profile's
-// identifier so distinct profiles aren't deduped against each other; for commands that
-// aren't profile-scoped (e.g. "SecurityInfo", "DeviceInformation"), pass "".
-func CommandInQueue(device types.Device, requestType string, identifier string) (bool, error) {
+// ResolveCommandInQueue reports whether a command of requestType is already pending for
+// the device, and for commands that cache content (currently only "InstallProfile"),
+// resolves staleness: if the pending command's content no longer matches contentHash (the
+// profile's current HashedPayloadUUID), it rewrites the pending command in place with the
+// fresh payload/hash rather than leaving it stale or enqueuing a duplicate. This closes the
+// window where a profile's content changes while an earlier InstallProfile command for the
+// same identifier is still queued, so the device gets the latest content on its next
+// checkin instead of the outdated one.
+//
+// For profile commands ("InstallProfile"/"RemoveProfile"), pass the profile's identifier
+// so distinct profiles aren't deduped against each other; for commands that aren't
+// profile-scoped (e.g. "SecurityInfo", "DeviceInformation"), pass "". Callers with no
+// cacheable content (every requestType except "InstallProfile") should pass "" for both
+// contentHash and payload - the stale-rewrite branch is then a no-op (stored and incoming
+// hashes both "") and this behaves exactly like a plain existence check.
+func ResolveCommandInQueue(device types.Device, requestType string, identifier string, contentHash string, payload string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
@@ -269,32 +280,7 @@ func CommandInQueue(device types.Device, requestType string, identifier string) 
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
-		return false, errors.Wrap(err, "command in queue")
-	}
-
-	return true, nil
-}
-
-// ResolveProfileCommandInQueue checks whether an InstallProfile command for this device
-// and profile identifier is already pending delivery. If the pending command's content
-// no longer matches contentHash (the profile's current HashedPayloadUUID), it rewrites
-// the pending command in place with the fresh payload/hash rather than leaving it stale
-// or enqueuing a duplicate: this closes the window where a profile's content changes
-// while an earlier InstallProfile command for the same identifier is still queued, so the
-// device gets the latest content on its next checkin instead of the outdated one.
-func ResolveProfileCommandInQueue(device types.Device, identifier string, contentHash string, payload string) (bool, error) {
-	var commandModel types.Command
-
-	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND identifier = ?", device.UDID, "InstallProfile", identifier).
-		Where("status = ? OR status = ?", "", "NotNow").
-		First(&commandModel).
-		Error
-	if err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, errors.Wrap(err, "resolve profile command in queue")
+		return false, errors.Wrap(err, "resolve command in queue")
 	}
 
 	if commandModel.ContentHash == contentHash {
@@ -307,7 +293,7 @@ func ResolveProfileCommandInQueue(device types.Device, identifier string, conten
 			"payload":      payload,
 			"content_hash": contentHash,
 		}).Error; err != nil {
-		return false, errors.Wrap(err, "refresh stale queued profile command")
+		return false, errors.Wrap(err, "refresh stale queued command")
 	}
 
 	return true, nil
@@ -402,7 +388,7 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 
 // staleCommandExemptRequestTypes are never expired by expireStaleCommands,
 // regardless of how long they've sat unresolved. DeviceLock/EraseDevice are
-// one-shot, high-consequence commands - CommandInQueue treating one as
+// one-shot, high-consequence commands - ResolveCommandInQueue treating one as
 // expired would let a retry path enqueue a second lock/wipe for the same
 // device while the original might still be in flight, which could wipe a
 // device twice or stack conflicting lock PINs. Better to leave the row
@@ -420,9 +406,9 @@ var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
 // mid-flight sending its serial batch of commands, NanoMDM can silently
 // deactivate the not-yet-acknowledged ones before the device ever requests
 // them. mdmdirector has no visibility into that: the local Command row is
-// left at status="" forever, and CommandInQueue then treats it as "already
+// left at status="" forever, and ResolveCommandInQueue then treats it as "already
 // queued", permanently blocking any future retry of that device+profile.
-// Expiring the row here unblocks CommandInQueue so the next scheduled push or
+// Expiring the row here unblocks ResolveCommandInQueue so the next scheduled push or
 // ProfileList verification can retry instead of treating the device as
 // permanently caught up.
 func expireStaleCommands() error {

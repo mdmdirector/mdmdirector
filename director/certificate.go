@@ -17,9 +17,9 @@ import (
 func RequestCertificateList(device types.Device) error {
 	requestType := "CertificateList"
 
-	inQueue, err := CommandInQueue(device, requestType, "")
+	inQueue, err := ResolveCommandInQueue(device, requestType, "", "", "")
 	if err != nil {
-		return errors.Wrap(err, "RequestCertificateList: CommandInQueue")
+		return errors.Wrap(err, "RequestCertificateList: ResolveCommandInQueue")
 	}
 	if inQueue {
 		log.Infof("%v already in queue for %v", requestType, device.UDID)

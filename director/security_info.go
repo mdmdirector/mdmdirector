@@ -12,9 +12,9 @@ import (
 func RequestSecurityInfo(device types.Device) error {
 	requestType := "SecurityInfo"
 
-	inQueue, err := CommandInQueue(device, requestType, "")
+	inQueue, err := ResolveCommandInQueue(device, requestType, "", "", "")
 	if err != nil {
-		return errors.Wrap(err, "RequestSecurityInfo: CommandInQueue")
+		return errors.Wrap(err, "RequestSecurityInfo: ResolveCommandInQueue")
 	}
 	if inQueue {
 		log.Infof("%v already in queue for %v", requestType, device.UDID)

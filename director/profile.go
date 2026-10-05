@@ -712,7 +712,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 			}
 			encodedPayload := base64.StdEncoding.EncodeToString(payload)
 
-			inQueue, err := ResolveProfileCommandInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
+			inQueue, err := ResolveCommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -829,7 +829,7 @@ func DeleteSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
-			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			inQueue, err := ResolveCommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier, "", "")
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -885,7 +885,7 @@ func DeleteDeviceProfiles(
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
-			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			inQueue, err := ResolveCommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier, "", "")
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -966,7 +966,7 @@ func PushSharedProfiles(
 			}
 			encodedPayload := base64.StdEncoding.EncodeToString(payload)
 
-			inQueue, err := ResolveProfileCommandInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
+			inQueue, err := ResolveCommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -1452,9 +1452,9 @@ func loadSigningKey(
 func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
 
-	inQueue, err := CommandInQueue(device, requestType, "")
+	inQueue, err := ResolveCommandInQueue(device, requestType, "", "", "")
 	if err != nil {
-		return errors.Wrap(err, "RequestProfileList: CommandInQueue")
+		return errors.Wrap(err, "RequestProfileList: ResolveCommandInQueue")
 	}
 	if inQueue {
 		log.Infof("%v already in queue for %v", requestType, device.UDID)

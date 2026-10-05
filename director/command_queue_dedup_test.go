@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockCommandInQueue sets up the DB expectation for the CommandInQueue SELECT and
+// mockCommandInQueue sets up the DB expectation for the ResolveCommandInQueue SELECT and
 // controls whether it reports a pending command.
 func mockCommandInQueue(mockSpy sqlmock.Sqlmock, udid, requestType, identifier string, found bool) {
 	query := mockSpy.ExpectQuery(
@@ -44,7 +44,7 @@ func TestCommandInQueue_Found(t *testing.T) {
 
 	mockCommandInQueue(mockSpy, "test-udid", "InstallProfile", "com.example.foo", true)
 
-	inQueue, err := CommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo")
+	inQueue, err := ResolveCommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo", "", "")
 
 	require.NoError(t, err)
 	assert.True(t, inQueue)
@@ -57,7 +57,7 @@ func TestCommandInQueue_NotFound(t *testing.T) {
 
 	mockCommandInQueue(mockSpy, "test-udid", "InstallProfile", "com.example.foo", false)
 
-	inQueue, err := CommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo")
+	inQueue, err := ResolveCommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo", "", "")
 
 	require.NoError(t, err)
 	assert.False(t, inQueue)
@@ -70,7 +70,7 @@ func TestCommandInQueue_EmptyIdentifierForNonProfileCommands(t *testing.T) {
 
 	mockCommandInQueue(mockSpy, "test-udid", "SecurityInfo", "", true)
 
-	inQueue, err := CommandInQueue(types.Device{UDID: "test-udid"}, "SecurityInfo", "")
+	inQueue, err := ResolveCommandInQueue(types.Device{UDID: "test-udid"}, "SecurityInfo", "", "", "")
 
 	require.NoError(t, err)
 	assert.True(t, inQueue)
@@ -83,7 +83,7 @@ func TestCommandInQueue_DBError(t *testing.T) {
 	mockSpy.ExpectQuery(`SELECT \* FROM "commands"`).
 		WillReturnError(errors.New("database has gone away"))
 
-	inQueue, err := CommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo")
+	inQueue, err := ResolveCommandInQueue(types.Device{UDID: "test-udid"}, "InstallProfile", "com.example.foo", "", "")
 
 	require.Error(t, err)
 	assert.False(t, inQueue)
@@ -216,7 +216,7 @@ func TestDeleteSharedProfiles_SkipsWhenAlreadyQueued(t *testing.T) {
 // --- Not-in-queue path: confirms the dedup check doesn't swallow a legitimate send.
 // SendCommand itself (micromdm and nanomdm paths) already has its own coverage in
 // command_nanomdm_test.go / command_test.go; here we only need to prove that a "not
-// found" CommandInQueue result falls through into it rather than skipping, using the
+// found" ResolveCommandInQueue result falls through into it rather than skipping, using the
 // micromdm HTTP path since it needs no global client singleton setup.
 
 func TestRequestSecurityInfo_SendsWhenNotQueued(t *testing.T) {

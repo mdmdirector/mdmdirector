@@ -267,7 +267,7 @@ func TestExpireStaleCommands_RespectsConfiguredThreshold(t *testing.T) {
 	}
 }
 
-func TestResolveProfileCommandInQueue_NoneQueued(t *testing.T) {
+func TestResolveCommandInQueue_NoneQueued(t *testing.T) {
 	postgresMock, mockSpy, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Fail to get postgres mock: %v", err)
@@ -282,16 +282,16 @@ func TestResolveProfileCommandInQueue_NoneQueued(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"command_uuid"}))
 
 	device := types.Device{UDID: "1234-5678-123456"}
-	inQueue, err := ResolveProfileCommandInQueue(device, "com.example.profile", "hash-a", "payload-a")
+	inQueue, err := ResolveCommandInQueue(device, "InstallProfile", "com.example.profile", "hash-a", "payload-a")
 
 	assert.NoError(t, err)
 	assert.False(t, inQueue, "no pending command should report not-in-queue")
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
-// TestResolveProfileCommandInQueue_SameContentSkipsUpdate verifies a pending command whose
+// TestResolveCommandInQueue_SameContentSkipsUpdate verifies a pending command whose
 // content hash already matches the current profile is left untouched (true dedup, no write).
-func TestResolveProfileCommandInQueue_SameContentSkipsUpdate(t *testing.T) {
+func TestResolveCommandInQueue_SameContentSkipsUpdate(t *testing.T) {
 	postgresMock, mockSpy, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Fail to get postgres mock: %v", err)
@@ -308,20 +308,20 @@ func TestResolveProfileCommandInQueue_SameContentSkipsUpdate(t *testing.T) {
 		WillReturnRows(rows)
 
 	device := types.Device{UDID: "1234-5678-123456"}
-	inQueue, err := ResolveProfileCommandInQueue(device, "com.example.profile", "hash-a", "payload-a")
+	inQueue, err := ResolveCommandInQueue(device, "InstallProfile", "com.example.profile", "hash-a", "payload-a")
 
 	assert.NoError(t, err)
 	assert.True(t, inQueue)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
-// TestResolveProfileCommandInQueue_StaleContentRewritesInPlace verifies the race the dedup
+// TestResolveCommandInQueue_StaleContentRewritesInPlace verifies the race the dedup
 // logic in PR #180 missed: a device goes offline while an InstallProfile command is queued,
 // the profile's content changes before delivery, and the device later comes back online.
 // Without this fix the stale command would be delivered as-is (or silently deduped forever).
 // This asserts the pending row's payload/content_hash are rewritten with the fresh content
 // instead, so the device gets the latest profile on its next checkin.
-func TestResolveProfileCommandInQueue_StaleContentRewritesInPlace(t *testing.T) {
+func TestResolveCommandInQueue_StaleContentRewritesInPlace(t *testing.T) {
 	postgresMock, mockSpy, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("Fail to get postgres mock: %v", err)
@@ -344,7 +344,7 @@ func TestResolveProfileCommandInQueue_StaleContentRewritesInPlace(t *testing.T) 
 	mockSpy.ExpectCommit()
 
 	device := types.Device{UDID: "1234-5678-123456"}
-	inQueue, err := ResolveProfileCommandInQueue(device, "com.example.profile", "hash-new", "payload-new")
+	inQueue, err := ResolveCommandInQueue(device, "InstallProfile", "com.example.profile", "hash-new", "payload-new")
 
 	assert.NoError(t, err)
 	assert.True(t, inQueue, "stale command is resolved in place, not re-enqueued as a duplicate")
