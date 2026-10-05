@@ -17,8 +17,8 @@ type Command struct {
 	Identifier   string         `json:"identifier,omitempty"`
 	ManifestURL  string         `json:"manifest_url,omitempty"`
 	// ContentHash is the profile's HashedPayloadUUID (content-derived) at the time this
-	// command was queued. Used by ResolveProfileCommandInQueue to detect a profile's
-	// content changing while an InstallProfile command for it is still pending delivery.
+	// command was queued. InstallProfileInQueue matches on it so a profile whose content
+	// changed while an InstallProfile for it was still pending gets re-enqueued.
 	ContentHash  string
 	ErrorString  string
 	AttemptCount int

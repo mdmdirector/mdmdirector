@@ -706,13 +706,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 		for i := range profiles {
 			profileData := profiles[i]
 
-			payload, err := signIfRequired(profileData.MobileconfigData)
-			if err != nil {
-				log.Errorf("signing profile for push: %v", err)
-			}
-			encodedPayload := base64.StdEncoding.EncodeToString(payload)
-
-			inQueue, err := ResolveCommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -736,7 +730,12 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 				},
 			)
 
-			commandPayload.Payload = encodedPayload
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				log.Errorf("signing profile for push: %v", err)
+			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
+
 			commandPayload.UDID = device.UDID
 
 			command, err := SendCommand(commandPayload)
@@ -829,7 +828,7 @@ func DeleteSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
-			inQueue, err := ResolveCommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier, "", "")
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -885,7 +884,7 @@ func DeleteDeviceProfiles(
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
-			inQueue, err := ResolveCommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier, "", "")
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -960,13 +959,7 @@ func PushSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
-			payload, err := signIfRequired(profileData.MobileconfigData)
-			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-			}
-			encodedPayload := base64.StdEncoding.EncodeToString(payload)
-
-			inQueue, err := ResolveCommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier, profileData.HashedPayloadUUID, encodedPayload)
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -992,7 +985,11 @@ func PushSharedProfiles(
 				},
 			)
 
-			commandPayload.Payload = encodedPayload
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			command, err := SendCommand(commandPayload)
 			if utils.Prometheus() {
@@ -1452,9 +1449,9 @@ func loadSigningKey(
 func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
 
-	inQueue, err := ResolveCommandInQueue(device, requestType, "", "", "")
+	inQueue, err := CommandInQueue(device, requestType, "")
 	if err != nil {
-		return errors.Wrap(err, "RequestProfileList: ResolveCommandInQueue")
+		return errors.Wrap(err, "RequestProfileList: CommandInQueue")
 	}
 	if inQueue {
 		log.Infof("%v already in queue for %v", requestType, device.UDID)

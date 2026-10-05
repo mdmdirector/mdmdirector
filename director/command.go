@@ -253,26 +253,30 @@ OuterLoop:
 	return nil
 }
 
-// ResolveCommandInQueue reports whether a command of requestType is already pending for
-// the device, and for commands that cache content (currently only "InstallProfile"),
-// resolves staleness: if the pending command's content no longer matches contentHash (the
-// profile's current HashedPayloadUUID), it rewrites the pending command in place with the
-// fresh payload/hash rather than leaving it stale or enqueuing a duplicate. This closes the
-// window where a profile's content changes while an earlier InstallProfile command for the
-// same identifier is still queued, so the device gets the latest content on its next
-// checkin instead of the outdated one.
-//
-// For profile commands ("InstallProfile"/"RemoveProfile"), pass the profile's identifier
-// so distinct profiles aren't deduped against each other; for commands that aren't
-// profile-scoped (e.g. "SecurityInfo", "DeviceInformation"), pass "". Callers with no
-// cacheable content (every requestType except "InstallProfile") should pass "" for both
-// contentHash and payload - the stale-rewrite branch is then a no-op (stored and incoming
-// hashes both "") and this behaves exactly like a plain existence check.
-func ResolveCommandInQueue(device types.Device, requestType string, identifier string, contentHash string, payload string) (bool, error) {
+// CommandInQueue reports whether a command of requestType is already pending for the
+// device. For profile commands, pass the profile's identifier so distinct profiles aren't
+// deduped against each other; for commands that aren't profile-scoped (e.g.
+// "SecurityInfo", "DeviceInformation"), pass "". Use InstallProfileInQueue for
+// InstallProfile so content changes aren't deduped away.
+func CommandInQueue(device types.Device, requestType string, identifier string) (bool, error) {
+	return commandInQueue(device, requestType, identifier, "")
+}
+
+// InstallProfileInQueue reports whether an InstallProfile carrying this exact content
+// (contentHash = the profile's HashedPayloadUUID) is already pending. A pending command
+// with an older hash does not count: the delivered payload lives in NanoMDM's queue, not
+// mdmdirector's, and NanoMDM has no per-command dequeue, so the only way to get fresh
+// content to the device is to enqueue it. The stale command is still delivered first and
+// then superseded by the fresh one (same PayloadIdentifier), and its ack updates its own row.
+func InstallProfileInQueue(device types.Device, identifier string, contentHash string) (bool, error) {
+	return commandInQueue(device, "InstallProfile", identifier, contentHash)
+}
+
+func commandInQueue(device types.Device, requestType string, identifier string, contentHash string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND identifier = ?", device.UDID, requestType, identifier).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND content_hash = ?", device.UDID, requestType, identifier, contentHash).
 		Where("status = ? OR status = ?", "", "NotNow").
 		First(&commandModel).
 		Error
@@ -280,20 +284,7 @@ func ResolveCommandInQueue(device types.Device, requestType string, identifier s
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
-		return false, errors.Wrap(err, "resolve command in queue")
-	}
-
-	if commandModel.ContentHash == contentHash {
-		return true, nil
-	}
-
-	if err := db.DB.Model(&types.Command{}).
-		Where("command_uuid = ?", commandModel.CommandUUID).
-		Updates(map[string]interface{}{
-			"payload":      payload,
-			"content_hash": contentHash,
-		}).Error; err != nil {
-		return false, errors.Wrap(err, "refresh stale queued command")
+		return false, errors.Wrap(err, "command in queue")
 	}
 
 	return true, nil
@@ -388,7 +379,7 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 
 // staleCommandExemptRequestTypes are never expired by expireStaleCommands,
 // regardless of how long they've sat unresolved. DeviceLock/EraseDevice are
-// one-shot, high-consequence commands - ResolveCommandInQueue treating one as
+// one-shot, high-consequence commands - CommandInQueue treating one as
 // expired would let a retry path enqueue a second lock/wipe for the same
 // device while the original might still be in flight, which could wipe a
 // device twice or stack conflicting lock PINs. Better to leave the row
@@ -406,9 +397,9 @@ var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
 // mid-flight sending its serial batch of commands, NanoMDM can silently
 // deactivate the not-yet-acknowledged ones before the device ever requests
 // them. mdmdirector has no visibility into that: the local Command row is
-// left at status="" forever, and ResolveCommandInQueue then treats it as "already
+// left at status="" forever, and CommandInQueue then treats it as "already
 // queued", permanently blocking any future retry of that device+profile.
-// Expiring the row here unblocks ResolveCommandInQueue so the next scheduled push or
+// Expiring the row here unblocks CommandInQueue so the next scheduled push or
 // ProfileList verification can retry instead of treating the device as
 // permanently caught up.
 func expireStaleCommands() error {

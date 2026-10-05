@@ -451,9 +451,9 @@ func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
 
-	inQueue, err := ResolveCommandInQueue(device, requestType, "", "", "")
+	inQueue, err := CommandInQueue(device, requestType, "")
 	if err != nil {
-		return errors.Wrap(err, "RequestDeviceInformation:ResolveCommandInQueue")
+		return errors.Wrap(err, "RequestDeviceInformation:CommandInQueue")
 	}
 	if inQueue {
 		log.Infof("%v already in queue for %v", requestType, device.UDID)
