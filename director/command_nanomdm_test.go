@@ -320,6 +320,7 @@ func TestSendCommand_NanoMDM_PersistsIdentifierAndManifestURL(t *testing.T) {
 			sqlmock.AnyArg(), // queries
 			"com.mdmdirector.test.profile",
 			"https://example.com/manifest.plist",
+			sqlmock.AnyArg(), // content_hash
 			sqlmock.AnyArg(), // error_string
 			sqlmock.AnyArg(), // attempt_count
 		).

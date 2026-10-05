@@ -706,7 +706,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 		for i := range profiles {
 			profileData := profiles[i]
 
-			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -717,6 +717,7 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 			var commandPayload types.CommandPayload
 			commandPayload.RequestType = "InstallProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{
@@ -958,7 +959,7 @@ func PushSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
-			inQueue, err := CommandInQueue(device, "InstallProfile", profileData.PayloadIdentifier)
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
 			if err != nil {
 				ErrorLogger(LogHolder{Message: err.Error()})
 			} else if inQueue {
@@ -971,6 +972,7 @@ func PushSharedProfiles(
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
 			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{

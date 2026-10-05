@@ -84,6 +84,7 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.RequestType = commandPayload.RequestType
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
 
 	InfoLogger(
 		LogHolder{
@@ -150,6 +151,7 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	command.RequestType = resp.RequestType
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
@@ -252,14 +254,29 @@ OuterLoop:
 }
 
 // CommandInQueue reports whether a command of requestType is already pending for the
-// device. For profile commands ("InstallProfile"/"RemoveProfile"), pass the profile's
-// identifier so distinct profiles aren't deduped against each other; for commands that
-// aren't profile-scoped (e.g. "SecurityInfo", "DeviceInformation"), pass "".
+// device. For profile commands, pass the profile's identifier so distinct profiles aren't
+// deduped against each other; for commands that aren't profile-scoped (e.g.
+// "SecurityInfo", "DeviceInformation"), pass "". Use InstallProfileInQueue for
+// InstallProfile so content changes aren't deduped away.
 func CommandInQueue(device types.Device, requestType string, identifier string) (bool, error) {
+	return commandInQueue(device, requestType, identifier, "")
+}
+
+// InstallProfileInQueue reports whether an InstallProfile carrying this exact content
+// (contentHash = the profile's HashedPayloadUUID) is already pending. A pending command
+// with an older hash does not count: the delivered payload lives in NanoMDM's queue, not
+// mdmdirector's, and NanoMDM has no per-command dequeue, so the only way to get fresh
+// content to the device is to enqueue it. The stale command is still delivered first and
+// then superseded by the fresh one (same PayloadIdentifier), and its ack updates its own row.
+func InstallProfileInQueue(device types.Device, identifier string, contentHash string) (bool, error) {
+	return commandInQueue(device, "InstallProfile", identifier, contentHash)
+}
+
+func commandInQueue(device types.Device, requestType string, identifier string, contentHash string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND identifier = ?", device.UDID, requestType, identifier).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND COALESCE(content_hash, '') = ?", device.UDID, requestType, identifier, contentHash).
 		Where("status = ? OR status = ?", "", "NotNow").
 		First(&commandModel).
 		Error
