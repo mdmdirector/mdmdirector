@@ -276,7 +276,7 @@ func commandInQueue(device types.Device, requestType string, identifier string, 
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND content_hash = ?", device.UDID, requestType, identifier, contentHash).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND COALESCE(content_hash, '') = ?", device.UDID, requestType, identifier, contentHash).
 		Where("status = ? OR status = ?", "", "NotNow").
 		First(&commandModel).
 		Error

@@ -22,7 +22,7 @@ func mockCommandInQueue(mockSpy sqlmock.Sqlmock, udid, requestType, identifier s
 
 func mockCommandInQueueWithHash(mockSpy sqlmock.Sqlmock, udid, requestType, identifier, contentHash string, found bool) {
 	query := mockSpy.ExpectQuery(
-		`SELECT \* FROM "commands" WHERE \(device_ud_id = \$1 AND request_type = \$2 AND identifier = \$3 AND content_hash = \$4\) AND \(status = \$5 OR status = \$6\) ORDER BY "commands"\."command_uuid" LIMIT 1`,
+		`SELECT \* FROM "commands" WHERE \(device_ud_id = \$1 AND request_type = \$2 AND identifier = \$3 AND COALESCE\(content_hash, ''\) = \$4\) AND \(status = \$5 OR status = \$6\) ORDER BY "commands"\."command_uuid" LIMIT 1`,
 	).WithArgs(udid, requestType, identifier, contentHash, "", "NotNow")
 
 	if found {
