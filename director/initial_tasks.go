@@ -187,20 +187,10 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
 
-	// The device's UDID survives an erase/re-enrollment, so its DDM opt-in status
-	// (ddm_opt_ins) would otherwise persist from before the wipe and be treated as
-	// still current. Tear down its DDM declarations first (mirrors
-	// DisableDeviceDDMHandler) so nothing is orphaned in KMFDDM, then clear the opt-in
-	// row so DDM status resets to false on re-enrollment. RunInitialTasks re-pushes
-	// profiles/apps fresh afterward via whatever mode (global flag or a new opt-in)
-	// applies at that point.
-	if err := teardownDDMForDevice(device); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:teardownDDMForDevice: " + err.Error()})
-	}
-	if err := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{}).Error; err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + err.Error()})
-	}
-
+	// Reset the lifecycle flags before any slow work. nanomdm delivers webhooks
+	// asynchronously, so the device's TokenUpdate can be processed while this
+	// Authenticate is still in flight; a flag reset that lands after it clears
+	// token_update_recieved and initial tasks never run for the new enrollment.
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Resetting device"})
 	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
 		"token_update_recieved":       false,
@@ -212,5 +202,30 @@ func ResetDevice(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}
+
+	resetDDMOptIn(device)
 	return nil
+}
+
+// resetDDMOptIn clears a device's DDM opt-in on re-enrollment. The UDID survives an
+// erase, so its ddm_opt_ins row would otherwise carry DDM status over from before the
+// wipe.
+//
+// Declarations are torn down only when the opt-in was the reason the device used DDM.
+// With the global flag on the device stays in DDM mode, and RunInitialTasks (which can
+// already be running for the new enrollment) re-PUTs every declaration, so a teardown
+// would only race that push and delete what it just wrote. The row is deleted first so
+// a concurrent RunInitialTasks pushes via InstallProfile, which the teardown can't touch.
+func resetDDMOptIn(device types.Device) {
+	res := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{})
+	if res.Error != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + res.Error.Error()})
+		return
+	}
+	if res.RowsAffected == 0 || utils.UseDDM() {
+		return
+	}
+	if err := teardownDDMForDevice(device); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:teardownDDMForDevice: " + err.Error()})
+	}
 }

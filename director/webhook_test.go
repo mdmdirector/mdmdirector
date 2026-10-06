@@ -210,23 +210,17 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
-	// ResetDevice: teardownDDMForDevice finds no device/shared profiles to tear down
-	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
-	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
-
-	// ResetDevice: DELETE the DDM opt-in row
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
-		WithArgs("1234-5678-123456").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mockSpy.ExpectCommit()
-
 	// ResetDevice: UPDATE device flags
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^UPDATE "devices"`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
+
+	// ResetDevice: DELETE the DDM opt-in row; none existed, so no teardown follows
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
+		WithArgs("1234-5678-123456").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
 	event := &types.CheckinEvent{
@@ -237,6 +231,68 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 	err := handleCheckinEvent("mdm.CheckOut", event)
 
 	assert.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// expectResetUntilOptInDelete mocks ResetDevice up to and including the opt-in DELETE,
+// in the order the code must issue them: the device flag reset has to land before any
+// DDM work, or a concurrently processed TokenUpdate gets overwritten
+func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows int64) {
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mockSpy.ExpectCommit()
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^UPDATE "devices"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
+		WithArgs(udid).
+		WillReturnResult(sqlmock.NewResult(0, optInRows))
+	mockSpy.ExpectCommit()
+}
+
+// With global DDM on, an opted-in device stays in DDM mode after the reset, so its
+// declarations must survive: RunInitialTasks may already be re-pushing them, and a
+// teardown would delete what it just wrote. No device_profiles/shared_profiles lookup
+// may follow the opt-in delete
+func TestResetDevice_GlobalDDM_SkipsTeardown(t *testing.T) {
+	setupDDMFlags(t, true, true)
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+
+	udid := "1234-5678-123456"
+	expectResetUntilOptInDelete(mockSpy, udid, 1)
+
+	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
+
+	require.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// With global DDM off, the opt-in was the only reason the device used DDM, so its
+// declarations are torn down after the opt-in row is gone
+func TestResetDevice_OptInOnly_TearsDownAfterOptInDelete(t *testing.T) {
+	setupDDMFlags(t, false, false)
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+
+	udid := "1234-5678-123456"
+	expectResetUntilOptInDelete(mockSpy, udid, 1)
+	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles"`).
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
+		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
+
+	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
+
+	require.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
 // mdm.CheckOut: if ClearCommands fails the error must propagate.
