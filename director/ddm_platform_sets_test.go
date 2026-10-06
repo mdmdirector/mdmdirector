@@ -25,35 +25,56 @@ func setPlatformSets(t *testing.T, value string) {
 	t.Cleanup(func() { _ = flag.Set("ddm-platform-sets", prev) })
 }
 
-// startRecordingKMFDDM records every enrollment-set binding as "udid set nonotify"
-func startRecordingKMFDDM(t *testing.T) func() []string {
+// recordingKMFDDM records every enrollment-set binding as "udid set nonotify", and
+// every notify by enrollment ID
+type recordingKMFDDM struct {
+	mu       sync.Mutex
+	bindings []string
+	notified []string
+	// bindStatus is returned for enrollment-set PUTs: 204 for a new binding, 304 for
+	// one that already exists (a re-enrollment)
+	bindStatus int
+}
+
+func (k *recordingKMFDDM) Bindings() []string {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	out := append([]string(nil), k.bindings...)
+	sort.Strings(out)
+	return out
+}
+
+func (k *recordingKMFDDM) Notified() []string {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return append([]string(nil), k.notified...)
+}
+
+func startRecordingKMFDDM(t *testing.T) *recordingKMFDDM {
 	t.Helper()
 	if flag.Lookup("prometheus") == nil {
 		flag.Bool("prometheus", false, "Enable prometheus metrics")
 	}
-	var mu sync.Mutex
-	var bindings []string
+	k := &recordingKMFDDM{bindStatus: http.StatusNoContent}
 	handler := http.NewServeMux()
 	handler.HandleFunc("/v1/enrollment-sets/", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
+		k.mu.Lock()
 		udid := r.URL.Path[len("/v1/enrollment-sets/"):]
-		bindings = append(bindings, udid+" "+r.URL.Query().Get("set")+" "+r.URL.Query().Get("nonotify"))
-		mu.Unlock()
-		w.WriteHeader(http.StatusNoContent)
+		k.bindings = append(k.bindings, udid+" "+r.URL.Query().Get("set")+" "+r.URL.Query().Get("nonotify"))
+		status := k.bindStatus
+		k.mu.Unlock()
+		w.WriteHeader(status)
 	})
 	handler.HandleFunc("/v1/notify", func(w http.ResponseWriter, r *http.Request) {
+		k.mu.Lock()
+		k.notified = append(k.notified, r.URL.Query().Get("id"))
+		k.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	ddm.InitClient(server.URL, "test-key")
-	return func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		out := append([]string(nil), bindings...)
-		sort.Strings(out)
-		return out
-	}
+	return k
 }
 
 func TestParsePlatformSets(t *testing.T) {
@@ -94,7 +115,7 @@ func TestDevicePlatform(t *testing.T) {
 // notifies), alongside the per-device set. A platform with no set is not bound.
 func TestActivateDevices_BindsPlatformSets(t *testing.T) {
 	setPlatformSets(t, "macos=set.mac,ios=set.mobile,ipados=set.mobile")
-	bindings := startRecordingKMFDDM(t)
+	kmfddm := startRecordingKMFDDM(t)
 	client, err := ddm.Client()
 	require.NoError(t, err)
 
@@ -112,27 +133,40 @@ func TestActivateDevices_BindsPlatformSets(t *testing.T) {
 		"pad pad true", "pad set.mobile true",
 		"phone phone true", "phone set.mobile true",
 		"tv tv true",
-	}, bindings())
+	}, kmfddm.Bindings())
 }
 
 // With the flag unset nothing extra is bound
 func TestActivateDevices_NoPlatformSets(t *testing.T) {
 	setPlatformSets(t, "")
-	bindings := startRecordingKMFDDM(t)
+	kmfddm := startRecordingKMFDDM(t)
 	client, err := ddm.Client()
 	require.NoError(t, err)
 
 	_, err = activateDevices(client, []types.Device{{UDID: "mac", ProductName: "Mac14,2"}})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"mac mac true"}, bindings())
+	assert.Equal(t, []string{"mac mac true"}, kmfddm.Bindings())
 }
 
-// At enrollment the binding notifies, so the device syncs its new set
-func TestBindPlatformSetAtEnrollment_Notifies(t *testing.T) {
+// At enrollment the device is bound, then notified once. A device with no platform
+// set gets neither.
+func TestBindPlatformSetAtEnrollment_BindsAndNotifies(t *testing.T) {
 	setPlatformSets(t, "macos=set.mac")
-	bindings := startRecordingKMFDDM(t)
+	kmfddm := startRecordingKMFDDM(t)
 
 	bindPlatformSetAtEnrollment(types.Device{UDID: "mac", ProductName: "Mac14,2"})
 	bindPlatformSetAtEnrollment(types.Device{UDID: "phone", ProductName: "iPhone15,3"})
-	assert.Equal(t, []string{"mac set.mac "}, bindings())
+	assert.Equal(t, []string{"mac set.mac true"}, kmfddm.Bindings())
+	assert.Equal(t, []string{"mac"}, kmfddm.Notified())
+}
+
+// On re-enrollment the binding already exists (KMFDDM returns 304 and would push
+// nothing), but the erased device must still be told to sync
+func TestBindPlatformSetAtEnrollment_ReenrollmentStillNotifies(t *testing.T) {
+	setPlatformSets(t, "macos=set.mac")
+	kmfddm := startRecordingKMFDDM(t)
+	kmfddm.bindStatus = http.StatusNotModified
+
+	bindPlatformSetAtEnrollment(types.Device{UDID: "mac", ProductName: "Mac14,2"})
+	assert.Equal(t, []string{"mac"}, kmfddm.Notified())
 }

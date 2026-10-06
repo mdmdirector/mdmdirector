@@ -216,10 +216,14 @@ A device whose platform isn't recognised, or whose platform has no set, isn't bo
 
 **When a device is bound** (`PUT /v1/enrollment-sets/<udid>?set=<set>`; idempotent, so repeats are no-ops):
 
-1. **At enrollment**, at the start of initial tasks, with notify on, so KMFDDM sends the `DeclarativeManagement` command and the device syncs the set. A failure is logged and doesn't fail initial tasks.
+1. **At enrollment**, at the start of initial tasks, followed by an unconditional notify, so KMFDDM sends the `DeclarativeManagement` command and the device syncs the set. The notify is unconditional because of re-enrollment (below). A failure is logged and doesn't fail initial tasks.
 2. **Existing devices**, by `-activate-ddm-fleet` at startup and by `POST /device/{udid}/ddm/activate`, alongside the per-device set. Those already notify once, so this binding doesn't push again. Enable the flag together with `-activate-ddm-fleet` for one restart to backfill devices enrolled before it.
 
-Bindings aren't removed when a device re-enrolls (its UDID and set stay the same) or when the flag is unset; remove one with `DELETE /v1/enrollment-sets/<udid>?set=<set>` on KMFDDM. Removing a platform from the flag stops new bindings only.
+**Re-enrollment** (for example after an erase): the device keeps its UDID, so the binding from its first enrollment is still in KMFDDM, and `ResetDevice` doesn't remove it (its DDM teardown only touches MDMDirector's own `<prefix>.<udid>.*` declarations). Re-binding returns 304, and KMFDDM only pushes when a binding changes, so on its own it would leave the erased device with no declarative state. That's why enrollment always notifies: the device gets one `DeclarativeManagement` command per enrollment, first or repeat, and syncs the set from scratch.
+
+Racing a still-running `ResetDevice` (NanoMDM delivers webhooks asynchronously, so initial tasks can start before the `Authenticate` reset finishes) doesn't lose the binding or the push: `ResetDevice` never unbinds a set, and `ClearCommands` only deletes MDMDirector's own command rows, while KMFDDM enqueues `DeclarativeManagement` straight into NanoMDM. If a DDM teardown overlaps the sync, its changes notify the device again, so it converges on the final state.
+
+Bindings aren't removed when the flag is unset; remove one with `DELETE /v1/enrollment-sets/<udid>?set=<set>` on KMFDDM. Removing a platform from the flag stops new bindings only.
 
 ### Database and outbound HTTP
 

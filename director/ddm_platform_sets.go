@@ -109,8 +109,11 @@ func bindPlatformSet(client *ddm.KMFDDMClient, device types.Device, noNotify boo
 	return nil
 }
 
-// bindPlatformSetAtEnrollment binds a newly enrolled device. A failure is logged and
-// does not fail initial tasks; the next fleet activation retries it.
+// bindPlatformSetAtEnrollment binds a newly enrolled device, then notifies it. The
+// notify is unconditional: on a re-enrollment (an erased device keeps its UDID) the
+// binding already exists, so KMFDDM returns 304 and pushes nothing, yet the device's
+// declarative state is gone and it must sync again. A failure is logged and does not
+// fail initial tasks; the next fleet activation retries it.
 func bindPlatformSetAtEnrollment(device types.Device) {
 	set, err := platformSetFor(device)
 	if err != nil || set == "" {
@@ -124,7 +127,13 @@ func bindPlatformSetAtEnrollment(device types.Device) {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "bindPlatformSetAtEnrollment: " + err.Error()})
 		return
 	}
-	if err := bindPlatformSet(client, device, false); err != nil {
+	if err := bindPlatformSet(client, device, true); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return
+	}
+	err = client.NotifyEnrollment(device.UDID)
+	observeDDMNotify(err)
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "bindPlatformSetAtEnrollment: notify: " + err.Error()})
 	}
 }
