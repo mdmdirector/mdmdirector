@@ -164,6 +164,10 @@ var ActivateDDMFleet bool
 // DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
 var DDMDeclarationPrefix string
 
+// DDMPlatformSets maps platforms to the KMFDDM set each device is bound to
+// ("macos=set,ios=set"). Empty disables binding.
+var DDMPlatformSets string
+
 // MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
 var MDMServerType string
 
@@ -466,6 +470,12 @@ func main() {
 		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
 	)
 	flag.StringVar(
+		&DDMPlatformSets,
+		"ddm-platform-sets",
+		env.String("DDM_PLATFORM_SETS", ""),
+		"Bind each device to a KMFDDM set by platform, e.g. macos=com.example.macos,ios=com.example.ios (platforms: macos, ios, ipados, tvos, watchos, visionos)",
+	)
+	flag.StringVar(
 		&MDMServerType,
 		"mdm-server-type",
 		env.String("MDM_SERVER_TYPE", "micromdm"),
@@ -562,6 +572,15 @@ func main() {
 		}
 		if DDMDeclarationPrefix == "" {
 			log.Fatal("DDM declaration prefix is required when DDM is enabled. Exiting.")
+		}
+	}
+
+	if DDMPlatformSets != "" {
+		if _, err := director.ParsePlatformSets(DDMPlatformSets); err != nil {
+			log.Fatal(err)
+		}
+		if !kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
+			log.Fatal("ddm-platform-sets needs KMFDDM configured (mdm-server-type=nanomdm, kmfddm-url, kmfddm-api-key and ddm-declaration-prefix). Exiting.")
 		}
 	}
 

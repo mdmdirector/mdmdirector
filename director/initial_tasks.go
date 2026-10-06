@@ -105,6 +105,7 @@ func RunInitialTasks(udid string) (retErr error) {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
 	InfoLogger(LogHolder{Message: "Running initial tasks", DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID})
+	bindPlatformSetAtEnrollment(device)
 	err = ClearCommands(&device)
 	if err != nil {
 		return err

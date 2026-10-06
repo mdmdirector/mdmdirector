@@ -58,6 +58,11 @@ func activateDevices(client *ddm.KMFDDMClient, devices []types.Device) (activate
 		if device.UDID == "" {
 			continue
 		}
+		// activateDDM notifies right after, so bind without a push of its own
+		if berr := bindPlatformSet(client, device, true); berr != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: berr.Error()})
+			errs = append(errs, berr)
+		}
 		if aerr := activateDDM(client, device.UDID); aerr != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: aerr.Error()})
 			errs = append(errs, aerr)
@@ -102,6 +107,10 @@ func ActivateDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "device not found", http.StatusNotFound)
 		return
+	}
+
+	if err := bindPlatformSet(client, device, true); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "ActivateDeviceDDMHandler: " + err.Error()})
 	}
 
 	if err := activateDDM(client, udid); err != nil {

@@ -206,6 +206,16 @@ func UseDDMPackages() bool {
 	return flag.Lookup("use-ddm-packages").Value.(flag.Getter).Get().(bool)
 }
 
+// DDMPlatformSets returns the raw ddm-platform-sets value, or "" when the flag isn't
+// registered (tests).
+func DDMPlatformSets() string {
+	f := flag.Lookup("ddm-platform-sets")
+	if f == nil {
+		return ""
+	}
+	return f.Value.(flag.Getter).Get().(string)
+}
+
 func DDMDeclarationPrefix() string {
 	return flag.Lookup("ddm-declaration-prefix").Value.(flag.Getter).Get().(string)
 }

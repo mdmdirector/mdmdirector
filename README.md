@@ -67,6 +67,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-kmfddm-api-key string` - **(Required if DDM enabled)** KMFDDM API key for basic auth. Env: `KMFDDM_API_KEY`
 - `-ddm-declaration-prefix string` - **(Required if DDM enabled)** Reverse-DNS prefix for DDM declaration identifiers (e.g. `com.example.mdm`). Env: `DDM_DECLARATION_PREFIX`
 - `-activate-ddm-fleet` - At startup, send a bare `DeclarativeManagement` command to every device so its declarative engine is on. Converts nothing and writes no opt-in state. See [DDM](#declarative-device-management-ddm). (default false) Env: `ACTIVATE_DDM_FLEET`
+- `-ddm-platform-sets string` - Bind every device to a KMFDDM set chosen by its platform, as comma-separated `platform=set` pairs, e.g. `macos=com.example.ddm.macos,ios=com.example.ddm.mobile,ipados=com.example.ddm.mobile`. Platforms: `macos`, `ios`, `ipados`, `tvos`, `watchos`, `visionos`; a platform left out is not bound, and two platforms may share a set. Requires KMFDDM to be configured; an invalid value stops startup. See [Platform sets](#platform-sets). (default empty: off) Env: `DDM_PLATFORM_SETS`
 
 #### Database Configuration
 
@@ -194,7 +195,31 @@ Both triggers fire only for devices positively identified as Apple Silicon from 
 
 DDM requires NanoMDM plus KMFDDM. Declarations are named `<prefix>.<udid>.<kind>.<id>` with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
 
-Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
+Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts. Separately, `-ddm-platform-sets` binds every device to a shared per-platform set; see [Platform sets](#platform-sets).
+
+#### Platform sets
+
+KMFDDM only delivers declarations through sets an enrollment is bound to; it has no "all devices" set and doesn't know a device's platform. `-ddm-platform-sets` gives every device a binding to one shared set for its platform, so declarations managed in those sets (by another tool or by hand) reach the whole fleet without per-device work. MDMDirector only binds: it never adds declarations to these sets or removes them.
+
+**Platform** comes from the `ProductName` the device reports at `Authenticate`, falling back to `Model`:
+
+| Prefix | Platform |
+|---|---|
+| `Mac`, `iMac`, `VirtualMac`, `Xserve` (e.g. `Mac14,2`, `MacBookPro18,3`, `Macmini9,1`) | `macos` |
+| `iPhone`, `iPod` | `ios` |
+| `iPad` | `ipados` |
+| `AppleTV` | `tvos` |
+| `Watch` | `watchos` |
+| `RealityDevice` | `visionos` |
+
+A device whose platform isn't recognised, or whose platform has no set, isn't bound.
+
+**When a device is bound** (`PUT /v1/enrollment-sets/<udid>?set=<set>`; idempotent, so repeats are no-ops):
+
+1. **At enrollment**, at the start of initial tasks, with notify on, so KMFDDM sends the `DeclarativeManagement` command and the device syncs the set. A failure is logged and doesn't fail initial tasks.
+2. **Existing devices**, by `-activate-ddm-fleet` at startup and by `POST /device/{udid}/ddm/activate`, alongside the per-device set. Those already notify once, so this binding doesn't push again. Enable the flag together with `-activate-ddm-fleet` for one restart to backfill devices enrolled before it.
+
+Bindings aren't removed when a device re-enrolls (its UDID and set stay the same) or when the flag is unset; remove one with `DELETE /v1/enrollment-sets/<udid>?set=<set>` on KMFDDM. Removing a platform from the flag stops new bindings only.
 
 ### Database and outbound HTTP
 
