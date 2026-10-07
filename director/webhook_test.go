@@ -524,3 +524,52 @@ func TestPushOnNewBuild_BuildUpgradeTriggersInstall(t *testing.T) {
 	assert.NoError(t, err)
 	require.NotNil(t, deviceProfilesQuery, "device_profiles query must have been registered")
 }
+
+// ---- user channel ----------------------------------------------------------------
+
+// A user-channel message carries the device's UDID plus a UserID. On macOS this is
+// the console user's channel.
+const testUserChannelPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>UDID</key>
+	<string>1234-5678-123456</string>
+	<key>UserID</key>
+	<string>A1B2C3D4-0000-0000-0000-000000000000</string>
+	<key>UserShortName</key>
+	<string>tester</string>
+</dict>
+</plist>`
+
+func TestIsUserChannel(t *testing.T) {
+	assert.False(t, isUserChannel([]byte(testDevicePlist)))
+	assert.True(t, isUserChannel([]byte(testUserChannelPlist)))
+	assert.False(t, isUserChannel([]byte("not valid plist data")))
+}
+
+// A user-channel TokenUpdate must not mark the device's TokenUpdate received: that
+// would start RunInitialTasks before nanomdm stores the device channel's new PushMagic.
+// The same goes for every other user-channel check-in, CheckOut included.
+func TestHandleCheckinEvent_UserChannelIgnored(t *testing.T) {
+	for _, topic := range []string{"mdm.TokenUpdate", "mdm.CheckOut", "mdm.Authenticate"} {
+		t.Run(topic, func(t *testing.T) {
+			postgresMock, mockSpy, _ := sqlmock.New()
+			defer postgresMock.Close()
+
+			DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+			db.DB = DB
+
+			event := &types.CheckinEvent{
+				UDID:       "1234-5678-123456",
+				RawPayload: []byte(testUserChannelPlist),
+			}
+
+			err := handleCheckinEvent(topic, event)
+
+			assert.NoError(t, err)
+			// No expectations were set, so any query fails this.
+			assert.NoError(t, mockSpy.ExpectationsWereMet())
+		})
+	}
+}
