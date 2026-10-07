@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -338,4 +339,62 @@ func TestDeleteProfileViaDDM_DeleteSetDeclarationError(t *testing.T) {
 	err := DeleteProfileViaDDM(client, ddmTestUDID, "com.example.wifi")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DELETE set-declaration (legacy)")
+}
+
+// stageProfileViaDDM does steps 1-5 only: the caller notifies.
+func TestStageProfileViaDDM_DoesNotNotify(t *testing.T) {
+	client, requests, _, cleanup := setupDDMPushTest(t)
+	defer cleanup()
+
+	err := stageProfileViaDDM(client, ddmTestUDID, "com.example.profile", "https://nanomdm.example.com")
+	require.NoError(t, err)
+
+	reqs := *requests
+	require.Len(t, reqs, 5)
+	for _, r := range reqs {
+		assert.NotEqual(t, "/v1/notify", r.Path)
+		assert.Contains(t, r.Query, "nonotify=true")
+	}
+}
+
+// A device staged for many profiles is notified once, in the order devices were added.
+func TestDDMNotifyBatch_NotifiesEachDeviceOnce(t *testing.T) {
+	client, requests, _, cleanup := setupDDMPushTest(t)
+	defer cleanup()
+
+	a := types.Device{UDID: "UDID-A"}
+	b := types.Device{UDID: "UDID-B"}
+	var batch ddmNotifyBatch
+	for _, d := range []types.Device{a, b, a, a, b} {
+		batch.Add(d)
+	}
+	require.Empty(t, batch.Flush(client))
+
+	reqs := *requests
+	require.Len(t, reqs, 2)
+	for i, udid := range []string{"UDID-A", "UDID-B"} {
+		assert.Equal(t, "POST", reqs[i].Method)
+		assert.Equal(t, "/v1/notify", reqs[i].Path)
+		assert.Equal(t, "id="+udid, reqs[i].Query)
+	}
+
+	// Flush empties the batch.
+	require.Empty(t, batch.Flush(client))
+	assert.Len(t, *requests, 2)
+}
+
+// One failed notify doesn't stop the rest.
+func TestDDMNotifyBatch_NotifyErrorContinues(t *testing.T) {
+	client, requests, statusOverrides, cleanup := setupDDMPushTest(t)
+	defer cleanup()
+	statusOverrides["POST /v1/notify"] = http.StatusInternalServerError
+
+	var batch ddmNotifyBatch
+	batch.Add(types.Device{UDID: "UDID-A"})
+	batch.Add(types.Device{UDID: "UDID-B"})
+	errs := batch.Flush(client)
+
+	assert.Len(t, errs, 2)
+	assert.Len(t, *requests, 2)
+	assert.Contains(t, errs[0].Error(), "UDID-A")
 }
