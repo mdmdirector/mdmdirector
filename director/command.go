@@ -248,6 +248,11 @@ OuterLoop:
 			if err != nil {
 				return err
 			}
+			if ackEvent.Status == "Acknowledged" {
+				if err := recordProfileAck(device, ackEvent.CommandUUID); err != nil {
+					ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, Message: err.Error()})
+				}
+			}
 		}
 	}
 	return nil
