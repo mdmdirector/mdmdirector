@@ -65,20 +65,20 @@ func TestPushApplicationViaDDM_AllNew(t *testing.T) {
 
 	// Step 3: PUT set-declaration (package)
 	assert.Equal(t, "PUT", reqs[2].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[2].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[2].Path)
 	assert.Contains(t, reqs[2].Query, "declaration="+testPackageID)
 	assert.Contains(t, reqs[2].Query, "nonotify=true")
 
 	// Step 4: PUT set-declaration (activation)
 	assert.Equal(t, "PUT", reqs[3].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[3].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "declaration="+testActiPackID)
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
 	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
-	assert.Contains(t, reqs[4].Query, "set=com.example.DEVICE-UDID-1234")
+	assert.Contains(t, reqs[4].Query, "set=com.example.set.DEVICE-UDID-1234")
 	assert.Contains(t, reqs[4].Query, "nonotify=true")
 
 	// Step 6: POST notify - triggers DDM sync unconditionally
@@ -128,10 +128,10 @@ func TestPushApplicationViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	// Step 3-4: PUT set-declarations
 	assert.Equal(t, "PUT", reqs[4].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[4].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[4].Path)
 
 	assert.Equal(t, "PUT", reqs[5].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[5].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[5].Path)
 
 	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[6].Method)
@@ -279,12 +279,12 @@ func TestDeleteSharedInstallApplicationViaDDM_Success(t *testing.T) {
 	reqs := *requests
 
 	assert.Equal(t, "DELETE", reqs[0].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[0].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[0].Path)
 	assert.Contains(t, reqs[0].Query, "declaration="+testSharedPkgID)
 	assert.Contains(t, reqs[0].Query, "nonotify=true")
 
 	assert.Equal(t, "DELETE", reqs[1].Method)
-	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[1].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.set.DEVICE-UDID-1234", reqs[1].Path)
 	assert.Contains(t, reqs[1].Query, "declaration="+testSharedActPkgID)
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
@@ -306,7 +306,7 @@ func TestDeleteSharedInstallApplicationViaDDM_AlreadyGone(t *testing.T) {
 	server, requests, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	statusOverrides["DELETE /v1/set-declarations/com.example.DEVICE-UDID-1234"] = http.StatusNotFound
+	statusOverrides["DELETE /v1/set-declarations/com.example.set.DEVICE-UDID-1234"] = http.StatusNotFound
 	statusOverrides["DELETE /v1/declarations/"+testSharedPkgID] = http.StatusNotFound
 	statusOverrides["DELETE /v1/declarations/"+testSharedActPkgID] = http.StatusNotFound
 
@@ -326,7 +326,7 @@ func TestDeleteSharedInstallApplicationViaDDM_DeleteSetDeclarationError(t *testi
 	server, _, statusOverrides := newMockKMFDDM(t)
 	defer server.Close()
 
-	statusOverrides["DELETE /v1/set-declarations/com.example.DEVICE-UDID-1234"] = http.StatusInternalServerError
+	statusOverrides["DELETE /v1/set-declarations/com.example.set.DEVICE-UDID-1234"] = http.StatusInternalServerError
 
 	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
 	app := newTestSharedApp()

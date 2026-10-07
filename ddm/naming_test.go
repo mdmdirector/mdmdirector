@@ -8,6 +8,15 @@ import (
 
 func TestDeviceSetName(t *testing.T) {
 	assert.Equal(t, "com.example.00000000-0000-0000-0000-000000000001", DeviceSetName("com.example", "00000000-0000-0000-0000-000000000001"))
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", DeviceSetName("", "00000000-0000-0000-0000-000000000001"))
+}
+
+// An empty prefix leaves no leading dot.
+func TestDeclarationIDsWithoutPrefix(t *testing.T) {
+	assert.Equal(t, "ABCD-1234.legacy_profile.com.example.wifi", LegacyProfileDeclarationID("", "ABCD-1234", "com.example.wifi"))
+	assert.Equal(t, "ABCD-1234.legacy_profile_activation.com.example.wifi", ProfileActivationDeclarationID("", "ABCD-1234", "com.example.wifi"))
+	assert.Equal(t, "ABCD-1234.package.p-1", PackageDeclarationID("", "ABCD-1234", "p-1"))
+	assert.Equal(t, "ABCD-1234.package_activation.p-1", PackageActivationDeclarationID("", "ABCD-1234", "p-1"))
 }
 
 func TestLegacyProfileDeclarationID(t *testing.T) {

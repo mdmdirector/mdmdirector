@@ -34,7 +34,7 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 // PushProfileViaDDM) without notifying the device.
 func stageProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
-	setName := ddm.DeviceSetName(declarationPrefix, udid)
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	profileURL := ddm.ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier)
@@ -274,7 +274,7 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 // DeleteProfileViaDDM removes a single profile's DDM declarations for a device
 func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
-	setName := ddm.DeviceSetName(declarationPrefix, udid)
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 

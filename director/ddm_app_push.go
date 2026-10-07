@@ -14,7 +14,7 @@ import (
 // app.ID must be populated (loaded from DB) - used as declaration identifier
 func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.DeviceInstallApplication) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
-	setName := ddm.DeviceSetName(declarationPrefix, udid)
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	packageDeclID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
 	activationDeclID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
 
@@ -144,7 +144,7 @@ func PushApplicationsViaDDM(devices []types.Device, manifestURL string) error {
 // DeleteSharedInstallApplicationViaDDM removes DDM declarations for a shared app from a single device
 func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
-	setName := ddm.DeviceSetName(declarationPrefix, udid)
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	pkgID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
 	actID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
 

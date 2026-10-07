@@ -59,7 +59,7 @@ func TestActivateDDM_Success(t *testing.T) {
 
 	require.NoError(t, activateDDM(client, "udid-1"))
 	assert.Equal(t, int32(1), counts.enrollmentSet.Load())
-	assert.Equal(t, "com.example.udid-1", counts.set.Load())
+	assert.Equal(t, "com.example.set.udid-1", counts.set.Load())
 	assert.Equal(t, int32(1), counts.notify.Load())
 }
 

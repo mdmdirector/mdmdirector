@@ -34,7 +34,7 @@ func activateDDM(client *ddm.KMFDDMClient, udid string) error {
 	// Associate the enrollment with its per-device set (noNotify=true) so KMFDDM knows
 	// the enrollment exists. The set may hold no declarations - that is fine, nothing is
 	// converted.
-	if err := client.PutEnrollmentSet(udid, ddm.DeviceSetName(utils.DDMDeclarationPrefix(), udid), true); err != nil {
+	if err := client.PutEnrollmentSet(udid, ddm.DeviceSetName(utils.DDMSetPrefix(), udid), true); err != nil {
 		return fmt.Errorf("activateDDM: PUT enrollment-set for %s: %w", udid, err)
 	}
 
