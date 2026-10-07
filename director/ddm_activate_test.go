@@ -18,6 +18,7 @@ import (
 type ddmCallCounts struct {
 	enrollmentSet atomic.Int32
 	notify        atomic.Int32
+	set           atomic.Value // set= of the last PUT /v1/enrollment-sets
 }
 
 // startMockKMFDDM stands up a KMFDDM stand-in and points the global client at it. notifyStatus
@@ -34,6 +35,7 @@ func startMockKMFDDM(t *testing.T, notifyStatus int) *ddmCallCounts {
 	handler := http.NewServeMux()
 	handler.HandleFunc("/v1/enrollment-sets/", func(w http.ResponseWriter, r *http.Request) {
 		counts.enrollmentSet.Add(1)
+		counts.set.Store(r.URL.Query().Get("set"))
 		w.WriteHeader(http.StatusNoContent)
 	})
 	handler.HandleFunc("/v1/notify", func(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +59,7 @@ func TestActivateDDM_Success(t *testing.T) {
 
 	require.NoError(t, activateDDM(client, "udid-1"))
 	assert.Equal(t, int32(1), counts.enrollmentSet.Load())
+	assert.Equal(t, "com.example.udid-1", counts.set.Load())
 	assert.Equal(t, int32(1), counts.notify.Load())
 }
 

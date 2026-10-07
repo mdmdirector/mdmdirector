@@ -463,7 +463,7 @@ func main() {
 		&DDMDeclarationPrefix,
 		"ddm-declaration-prefix",
 		env.String("DDM_DECLARATION_PREFIX", ""),
-		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
+		"Reverse-DNS prefix for DDM declaration identifiers and per-device set names (e.g. com.example.mdm)",
 	)
 	flag.StringVar(
 		&MDMServerType,

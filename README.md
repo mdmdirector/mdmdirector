@@ -192,7 +192,7 @@ Both triggers fire only for devices positively identified as Apple Silicon from 
 
 ### Declarative Device Management (DDM)
 
-DDM requires NanoMDM plus KMFDDM. Declarations are named `<prefix>.<udid>.<kind>.<id>` with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
+DDM requires NanoMDM plus KMFDDM. Everything MDMDirector creates in KMFDDM is under `-ddm-declaration-prefix`: each device's declarations go in its own set, `<prefix>.<udid>`, and are named `<prefix>.<udid>.<kind>.<id>` with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
 
 Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
 

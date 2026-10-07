@@ -6,6 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDeviceSetName(t *testing.T) {
+	assert.Equal(t, "com.example.00000000-0000-0000-0000-000000000001", DeviceSetName("com.example", "00000000-0000-0000-0000-000000000001"))
+}
+
 func TestLegacyProfileDeclarationID(t *testing.T) {
 	tests := []struct {
 		name      string

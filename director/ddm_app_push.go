@@ -14,6 +14,7 @@ import (
 // app.ID must be populated (loaded from DB) - used as declaration identifier
 func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.DeviceInstallApplication) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
+	setName := ddm.DeviceSetName(declarationPrefix, udid)
 	packageDeclID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
 	activationDeclID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
 
@@ -67,21 +68,21 @@ func PushApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.Devi
 	}
 
 	// Step 3: Associate Package declaration with the device's set (noNotify=true)
-	err = client.PutSetDeclaration(udid, packageDeclID, true)
+	err = client.PutSetDeclaration(setName, packageDeclID, true)
 	observeSetMembershipChange(packageDeclID, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT set-declaration (package) for %s on %s", app.ManifestURL, udid)
 	}
 
 	// Step 4: Associate ActivationSimple declaration with the device's set (noNotify=true)
-	err = client.PutSetDeclaration(udid, activationDeclID, true)
+	err = client.PutSetDeclaration(setName, activationDeclID, true)
 	observeSetMembershipChange(activationDeclID, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT set-declaration (activation) for %s on %s", app.ManifestURL, udid)
 	}
 
 	// Step 5: Associate enrollment with the set (noNotify=true - notify done explicitly in step 6)
-	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
+	if err := client.PutEnrollmentSet(udid, setName, true); err != nil {
 		return errors.Wrapf(err, "PushApplicationViaDDM: PUT enrollment-set for %s", udid)
 	}
 
@@ -143,13 +144,14 @@ func PushApplicationsViaDDM(devices []types.Device, manifestURL string) error {
 // DeleteSharedInstallApplicationViaDDM removes DDM declarations for a shared app from a single device
 func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
+	setName := ddm.DeviceSetName(declarationPrefix, udid)
 	pkgID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
 	actID := ddm.PackageActivationDeclarationID(declarationPrefix, udid, app.ID.String())
 
-	if err := client.DeleteSetDeclaration(udid, pkgID, true); err != nil {
+	if err := client.DeleteSetDeclaration(setName, pkgID, true); err != nil {
 		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove package set-declaration for %s on %s", app.ManifestURL, udid)
 	}
-	if err := client.DeleteSetDeclaration(udid, actID, true); err != nil {
+	if err := client.DeleteSetDeclaration(setName, actID, true); err != nil {
 		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: remove activation set-declaration for %s on %s", app.ManifestURL, udid)
 	}
 	if err := client.DeleteDeclaration(pkgID, true); err != nil {

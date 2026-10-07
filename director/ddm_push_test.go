@@ -124,20 +124,20 @@ func TestPushProfileViaDDM_AllNew(t *testing.T) {
 
 	// Step 3: PUT set-declaration (legacy)
 	assert.Equal(t, "PUT", reqs[2].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[2].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[2].Path)
 	assert.Contains(t, reqs[2].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
 	assert.Contains(t, reqs[2].Query, "nonotify=true")
 
 	// Step 4: PUT set-declaration (activation)
 	assert.Equal(t, "PUT", reqs[3].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[3].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[3].Path)
 	assert.Contains(t, reqs[3].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[3].Query, "nonotify=true")
 
 	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
-	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
+	assert.Contains(t, reqs[4].Query, "set=com.example.DEVICE-UDID-1234")
 	assert.Contains(t, reqs[4].Query, "nonotify=true")
 
 	// Step 6: POST notify - triggers DDM sync unconditionally
@@ -184,10 +184,10 @@ func TestPushProfileViaDDM_UnchangedDeclarations_TouchCalled(t *testing.T) {
 
 	// Step 3-4: PUT set-declarations
 	assert.Equal(t, "PUT", reqs[4].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[4].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[4].Path)
 
 	assert.Equal(t, "PUT", reqs[5].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[5].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[5].Path)
 
 	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[6].Method)
@@ -292,13 +292,13 @@ func TestDeleteProfileViaDDM_Success(t *testing.T) {
 
 	// Step 1: DELETE set-declaration for LegacyProfile
 	assert.Equal(t, "DELETE", reqs[0].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[0].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[0].Path)
 	assert.Contains(t, reqs[0].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile.com.example.wifi")
 	assert.Contains(t, reqs[0].Query, "nonotify=true")
 
 	// Step 2: DELETE set-declaration for ActivationSimple
 	assert.Equal(t, "DELETE", reqs[1].Method)
-	assert.Equal(t, "/v1/set-declarations/DEVICE-UDID-1234", reqs[1].Path)
+	assert.Equal(t, "/v1/set-declarations/com.example.DEVICE-UDID-1234", reqs[1].Path)
 	assert.Contains(t, reqs[1].Query, "declaration=com.example.DEVICE-UDID-1234.legacy_profile_activation.com.example.wifi")
 	assert.Contains(t, reqs[1].Query, "nonotify=true")
 
@@ -315,7 +315,7 @@ func TestDeleteProfileViaDDM_Success(t *testing.T) {
 	// Step 5: PUT enrollment-set (nonotify=true)
 	assert.Equal(t, "PUT", reqs[4].Method)
 	assert.Equal(t, "/v1/enrollment-sets/DEVICE-UDID-1234", reqs[4].Path)
-	assert.Contains(t, reqs[4].Query, "set=DEVICE-UDID-1234")
+	assert.Contains(t, reqs[4].Query, "set=com.example.DEVICE-UDID-1234")
 	assert.Contains(t, reqs[4].Query, "nonotify=true")
 
 	// Step 6: POST notify - triggers DDM sync unconditionally

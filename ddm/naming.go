@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+// DeviceSetName returns the name of a device's KMFDDM set, which holds every
+// declaration MDMDirector delivers to that device. It shares the declaration
+// prefix, so everything MDMDirector creates in KMFDDM is under one prefix.
+// Format: <prefix>.<udid>
+func DeviceSetName(prefix, udid string) string {
+	return fmt.Sprintf("%s.%s", prefix, udid)
+}
+
 // LegacyProfileDeclarationID returns the declaration identifier for a LegacyProfile
 // Format: <prefix>.<udid>.legacy_profile.<profileID>
 func LegacyProfileDeclarationID(prefix, udid, profileID string) string {
