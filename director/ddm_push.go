@@ -10,8 +10,29 @@ import (
 	"github.com/pkg/errors"
 )
 
-// PushProfileViaDDM pushes a single profile via DDM declarations
+// PushProfileViaDDM pushes a single profile via DDM declarations and notifies the device.
+// To push several profiles, stage each with stageProfileViaDDM and notify once through a
+// ddmNotifyBatch: one notify per profile queues one DeclarativeManagement command per
+// profile, and a re-enrolling device with dozens of profiles then stalls behind them.
 func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
+	if err := stageProfileViaDDM(client, udid, payloadIdentifier, nanoMDMURL); err != nil {
+		return err
+	}
+
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command regardless of prior enrollment state.
+	err := client.NotifyEnrollment(udid)
+	observeDDMNotify(err)
+	if err != nil {
+		return errors.Wrapf(err, "PushProfileViaDDM: notify enrollment for %s", udid)
+	}
+
+	return nil
+}
+
+// stageProfileViaDDM writes a profile's DDM declarations and set membership (steps 1-5 of
+// PushProfileViaDDM) without notifying the device.
+func stageProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
@@ -79,20 +100,51 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Associate enrollment with the set (noNotify=true - notify done explicitly in step 6)
+	// Step 5: Associate enrollment with the set (noNotify=true - the caller notifies)
 	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT enrollment-set for %s", udid)
 	}
 
-	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
-	// always receives a DeclarativeManagement command regardless of prior enrollment state.
-	err = client.NotifyEnrollment(udid)
-	observeDDMNotify(err)
-	if err != nil {
-		return errors.Wrapf(err, "PushProfileViaDDM: notify enrollment for %s", udid)
-	}
-
 	return nil
+}
+
+// ddmNotifyBatch collects devices whose DDM declarations changed so each is notified once.
+type ddmNotifyBatch struct {
+	order   []types.Device
+	pending map[string]bool
+}
+
+// Add records that device needs a DDM sync. Adding a device again is a no-op.
+func (b *ddmNotifyBatch) Add(device types.Device) {
+	if b.pending == nil {
+		b.pending = map[string]bool{}
+	}
+	if b.pending[device.UDID] {
+		return
+	}
+	b.pending[device.UDID] = true
+	b.order = append(b.order, device)
+}
+
+// Flush notifies each added device once, in the order added, and empties the batch. A
+// failed notify is logged and doesn't stop the others; the errors are returned.
+func (b *ddmNotifyBatch) Flush(client *ddm.KMFDDMClient) []error {
+	var errs []error
+	for _, device := range b.order {
+		err := client.NotifyEnrollment(device.UDID)
+		observeDDMNotify(err)
+		if err != nil {
+			err = errors.Wrapf(err, "notify enrollment for %s", device.UDID)
+			ErrorLogger(LogHolder{
+				Message:      err.Error(),
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+			})
+			errs = append(errs, err)
+		}
+	}
+	b.order, b.pending = nil, nil
+	return errs
 }
 
 // PushProfilesViaDDM pushes device-specific profiles via DDM declarations
@@ -103,6 +155,10 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 	}
 
 	nanoMDMURL := utils.NanoMDMProfileURL()
+
+	// Notify each device once after all its profiles are staged.
+	var notify ddmNotifyBatch
+	defer notify.Flush(client)
 
 	for i := range devices {
 		device := devices[i]
@@ -118,7 +174,7 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 				},
 			)
 
-			err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
+			err := stageProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
 			if utils.Prometheus() {
 				metrics.ProfileOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
 			}
@@ -140,6 +196,7 @@ func PushProfilesViaDDM(devices []types.Device, profiles []types.DeviceProfile) 
 					ProfileIdentifier: profileData.PayloadIdentifier,
 				},
 			)
+			notify.Add(device)
 		}
 	}
 
@@ -154,6 +211,10 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 	}
 
 	nanoMDMURL := utils.NanoMDMProfileURL()
+
+	// Notify each device once after all shared profiles are staged.
+	var notify ddmNotifyBatch
+	defer notify.Flush(client)
 
 	for i := range profiles {
 		profileData := profiles[i]
@@ -180,7 +241,7 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 				},
 			)
 
-			err := PushProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
+			err := stageProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier, nanoMDMURL)
 			if utils.Prometheus() {
 				metrics.ProfileOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
 			}
@@ -202,6 +263,7 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 					ProfileIdentifier: profileData.PayloadIdentifier,
 				},
 			)
+			notify.Add(device)
 		}
 	}
 
