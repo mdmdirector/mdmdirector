@@ -337,15 +337,6 @@ func ProcessDeviceProfiles(
 					"Could not determine if saved profile differs from incoming profile.",
 				)
 			}
-			// A matching saved row only means the profile is assigned. Without DDM, also
-			// check that the device reported it, so a POST re-pushes an install the device
-			// never got instead of waiting for the next scheduled ProfileList.
-			if !profileDiffers && !useDDM {
-				profileDiffers, err = profileMissingFromDevice(device, profile)
-				if err != nil {
-					return metadata, errors.Wrap(err, "Could not check device ProfileList")
-				}
-			}
 			profile.Installed = true
 			if profileDiffers {
 				status = "changed"
@@ -447,110 +438,9 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	return false, nil
 }
 
-// profileMissingFromDevice reports whether the device's stored ProfileList lacks this exact
-// profile (identifier and PayloadUUID). The list is replaced by every ProfileList response
-// and kept current between them by recordProfileAck, so an acknowledged install counts as
-// present and is not re-pushed. It returns false when there is nothing reliable to compare
-// against: the device has never sent a ProfileList, or the device already rejected this
-// exact content (VerifyMDMProfiles retries those on the next ProfileList, so a profile the
-// device refuses isn't re-sent on every POST).
-func profileMissingFromDevice(device types.Device, profile types.DeviceProfile) (bool, error) {
-	var listed []types.ProfileList
-	err := db.DB.Where("device_ud_id = ?", device.UDID).
-		Limit(1).
-		Find(&listed).
-		Error
-	if err != nil {
-		return false, errors.Wrap(err, "profileMissingFromDevice: load ProfileList")
-	}
-	if len(listed) == 0 {
-		return false, nil
-	}
-
-	var entry types.ProfileList
-	err = db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).
-		First(&entry).
-		Error
-	if err != nil && !intErrors.Is(err, gorm.ErrRecordNotFound) {
-		return false, errors.Wrap(err, "profileMissingFromDevice: load ProfileList entry")
-	}
-	if err == nil && strings.EqualFold(entry.PayloadUUID, profile.HashedPayloadUUID) {
-		return false, nil
-	}
-
-	var rejected int64
-	err = db.DB.Model(&types.Command{}).
-		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND content_hash = ? AND status = ?",
-			device.UDID, "InstallProfile", profile.PayloadIdentifier, profile.HashedPayloadUUID, "Error").
-		Count(&rejected).
-		Error
-	if err != nil {
-		return false, errors.Wrap(err, "profileMissingFromDevice: count rejected installs")
-	}
-	if rejected > 0 {
-		return false, nil
-	}
-
-	InfoLogger(
-		LogHolder{
-			DeviceUDID:        device.UDID,
-			DeviceSerial:      device.SerialNumber,
-			ProfileIdentifier: profile.PayloadIdentifier,
-			ProfileUUID:       profile.HashedPayloadUUID,
-			Message:           "Profile is saved but not in the device's ProfileList",
-		},
-	)
-	return true, nil
-}
-
-// recordProfileAck keeps the stored ProfileList current between ProfileList responses: an
-// acknowledged InstallProfile adds or replaces the profile's row, and an acknowledged
-// RemoveProfile deletes it. The next ProfileList response replaces the whole list with what
-// the device reports.
-func recordProfileAck(device types.Device, commandUUID string) error {
-	var command types.Command
-	err := db.DB.Select("request_type", "identifier", "content_hash").
-		Where("device_ud_id = ? AND command_uuid = ?", device.UDID, commandUUID).
-		First(&command).
-		Error
-	if err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return errors.Wrap(err, "recordProfileAck: load command")
-	}
-	if command.Identifier == "" {
-		return nil
-	}
-
-	switch command.RequestType {
-	case "InstallProfile":
-		if command.ContentHash == "" {
-			return nil
-		}
-		return db.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, command.Identifier).
-				Delete(&types.ProfileList{}).Error; err != nil {
-				return errors.Wrap(err, "recordProfileAck: delete old entry")
-			}
-			entry := types.ProfileList{
-				DeviceUDID:        device.UDID,
-				PayloadIdentifier: command.Identifier,
-				PayloadUUID:       command.ContentHash,
-				IsManaged:         true,
-			}
-			return errors.Wrap(tx.Create(&entry).Error, "recordProfileAck: create entry")
-		})
-	case "RemoveProfile":
-		err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, command.Identifier).
-			Delete(&types.ProfileList{}).Error
-		return errors.Wrap(err, "recordProfileAck: delete entry")
-	}
-	return nil
-}
-
 func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
+	var profileList types.ProfileList
 	// Profile isn't in the db
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, true).First(&savedProfile).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
@@ -581,6 +471,21 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 			},
 		)
 		return true, nil
+	}
+
+	// Profile isn't what we have saved in the profilelist
+	err := db.DB.Model(&profileList).
+		Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).
+		Error
+	if err != nil {
+		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+			// If it's not found, we'll catch in the false return at the end. Else raise an error
+			return true, errors.Wrap(err, "Could not load ProfileList for device")
+		}
+	}
+
+	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
+		return false, nil
 	}
 
 	InfoLogger(
