@@ -5,16 +5,31 @@ import (
 	"strings"
 )
 
+// withPrefix joins prefix and name with a dot. An empty prefix leaves name as is.
+func withPrefix(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "." + name
+}
+
+// DeviceSetName returns the name of a device's KMFDDM set, which holds every
+// declaration MDMDirector delivers to that device.
+// Format: <prefix>.<udid>, or <udid> with no prefix
+func DeviceSetName(prefix, udid string) string {
+	return withPrefix(prefix, udid)
+}
+
 // LegacyProfileDeclarationID returns the declaration identifier for a LegacyProfile
-// Format: <prefix>.<udid>.legacy_profile.<profileID>
+// Format: <prefix>.<udid>.legacy_profile.<profileID>, or without <prefix>.
 func LegacyProfileDeclarationID(prefix, udid, profileID string) string {
-	return fmt.Sprintf("%s.%s.legacy_profile.%s", prefix, udid, profileID)
+	return withPrefix(prefix, fmt.Sprintf("%s.legacy_profile.%s", udid, profileID))
 }
 
 // ProfileActivationDeclarationID returns the declaration identifier for an ActivationSimple for Profile
-// Format: <prefix>.<udid>.legacy_profile_activation.<profileID>
+// Format: <prefix>.<udid>.legacy_profile_activation.<profileID>, or without <prefix>.
 func ProfileActivationDeclarationID(prefix, udid, profileID string) string {
-	return fmt.Sprintf("%s.%s.legacy_profile_activation.%s", prefix, udid, profileID)
+	return withPrefix(prefix, fmt.Sprintf("%s.legacy_profile_activation.%s", udid, profileID))
 }
 
 // ProfileDownloadURL constructs the URL a device will use to fetch profile data
@@ -24,13 +39,13 @@ func ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier string) string {
 }
 
 // PackageDeclarationID returns the declaration identifier for a Package declaration
-// Format: <prefix>.<udid>.package.<packageUUID>
+// Format: <prefix>.<udid>.package.<packageUUID>, or without <prefix>.
 func PackageDeclarationID(prefix, udid, packageUUID string) string {
-	return fmt.Sprintf("%s.%s.package.%s", prefix, udid, packageUUID)
+	return withPrefix(prefix, fmt.Sprintf("%s.package.%s", udid, packageUUID))
 }
 
 // PackageActivationDeclarationID returns the declaration identifier for the ActivationSimple for Package
-// Format: <prefix>.<udid>.package_activation.<packageUUID>
+// Format: <prefix>.<udid>.package_activation.<packageUUID>, or without <prefix>.
 func PackageActivationDeclarationID(prefix, udid, packageUUID string) string {
-	return fmt.Sprintf("%s.%s.package_activation.%s", prefix, udid, packageUUID)
+	return withPrefix(prefix, fmt.Sprintf("%s.package_activation.%s", udid, packageUUID))
 }

@@ -164,16 +164,18 @@ var ActivateDDMFleet bool
 // DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
 var DDMDeclarationPrefix string
 
+// DDMSetPrefix is the organisation-specific reverse-DNS prefix for per-device KMFDDM set names
+var DDMSetPrefix string
+
 // MDMServerType specifies which MDM server implementation to use (micromdm or nanomdm)
 var MDMServerType string
 
 // kmfddmConfigured reports whether the KMFDDM client can be initialized. DDM needs NanoMDM
 // plus a complete KMFDDM config;
-func kmfddmConfigured(mdmServerType, kmfddmURL, kmfddmAPIKey, declarationPrefix string) bool {
+func kmfddmConfigured(mdmServerType, kmfddmURL, kmfddmAPIKey string) bool {
 	return mdmServerType == string(mdm.ServerTypeNanoMDM) &&
 		kmfddmURL != "" &&
-		kmfddmAPIKey != "" &&
-		declarationPrefix != ""
+		kmfddmAPIKey != ""
 }
 
 func main() {
@@ -463,7 +465,13 @@ func main() {
 		&DDMDeclarationPrefix,
 		"ddm-declaration-prefix",
 		env.String("DDM_DECLARATION_PREFIX", ""),
-		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm)",
+		"Reverse-DNS prefix for DDM declaration identifiers (e.g. com.example.mdm); empty for none",
+	)
+	flag.StringVar(
+		&DDMSetPrefix,
+		"ddm-set-prefix",
+		env.String("DDM_SET_PREFIX", ""),
+		"Reverse-DNS prefix for per-device KMFDDM set names (e.g. com.example.mdm); empty names each set by the device UDID alone",
 	)
 	flag.StringVar(
 		&MDMServerType,
@@ -566,13 +574,13 @@ func main() {
 	}
 
 	// Initialize the KMFDDM client whenever KMFDDM is fully configured,
-	if kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
+	if kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey) {
 		ddm.InitClient(KMFDDMURL, KMFDDMAPIKey)
 		director.InfoLogger(director.LogHolder{Message: "KMFDDM client initialized"})
 	} else {
 		log.Warn(
-			"KMFDDM is not fully configured (needs mdm-server-type=nanomdm, kmfddm-url, " +
-				"kmfddm-api-key and ddm-declaration-prefix); per-device DDM opt-in will not work",
+			"KMFDDM is not fully configured (needs mdm-server-type=nanomdm, kmfddm-url " +
+				"and kmfddm-api-key); per-device DDM opt-in will not work",
 		)
 	}
 
@@ -674,7 +682,7 @@ func main() {
 	// device so it enters declarative mode. Runs in the background so it never blocks
 	// startup, and it converts nothing.
 	if ActivateDDMFleet {
-		if !kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey, DDMDeclarationPrefix) {
+		if !kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey) {
 			log.Warn("activate-ddm-fleet is set but KMFDDM is not fully configured; skipping fleet DDM activation")
 		} else {
 			go func() {

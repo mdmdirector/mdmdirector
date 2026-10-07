@@ -65,7 +65,8 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-use-ddm-packages` - Enable DDM package management via KMFDDM instead of InstallApplication commands. (default false) Env: `USE_DDM_PACKAGES`
 - `-kmfddm-url string` - **(Required if DDM enabled)** KMFDDM server base URL. Env: `KMFDDM_URL`
 - `-kmfddm-api-key string` - **(Required if DDM enabled)** KMFDDM API key for basic auth. Env: `KMFDDM_API_KEY`
-- `-ddm-declaration-prefix string` - **(Required if DDM enabled)** Reverse-DNS prefix for DDM declaration identifiers (e.g. `com.example.mdm`). Env: `DDM_DECLARATION_PREFIX`
+- `-ddm-declaration-prefix string` - Reverse-DNS prefix for DDM declaration identifiers (e.g. `com.example.mdm`); empty for none. Env: `DDM_DECLARATION_PREFIX`
+- `-ddm-set-prefix string` - Reverse-DNS prefix for per-device KMFDDM set names (e.g. `com.example.mdm`); empty names each set by the device UDID alone. Env: `DDM_SET_PREFIX`
 - `-activate-ddm-fleet` - At startup, send a bare `DeclarativeManagement` command to every device so its declarative engine is on. Converts nothing and writes no opt-in state. See [DDM](#declarative-device-management-ddm). (default false) Env: `ACTIVATE_DDM_FLEET`
 
 #### Database Configuration
@@ -192,7 +193,7 @@ Both triggers fire only for devices positively identified as Apple Silicon from 
 
 ### Declarative Device Management (DDM)
 
-DDM requires NanoMDM plus KMFDDM. Declarations are named `<prefix>.<udid>.<kind>.<id>` with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
+DDM requires NanoMDM plus KMFDDM. Each device's declarations go in its own set, `<set prefix>.<udid>` (`-ddm-set-prefix`), and are named `<declaration prefix>.<udid>.<kind>.<id>` (`-ddm-declaration-prefix`) with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. An empty prefix drops it and its dot. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
 
 Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
 

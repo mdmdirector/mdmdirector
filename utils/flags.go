@@ -210,6 +210,10 @@ func DDMDeclarationPrefix() string {
 	return flag.Lookup("ddm-declaration-prefix").Value.(flag.Getter).Get().(string)
 }
 
+func DDMSetPrefix() string {
+	return flag.Lookup("ddm-set-prefix").Value.(flag.Getter).Get().(string)
+}
+
 func MDMServerType() string {
 	f := flag.Lookup("mdm-server-type")
 	if f == nil {

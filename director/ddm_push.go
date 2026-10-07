@@ -34,6 +34,7 @@ func PushProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier 
 // PushProfileViaDDM) without notifying the device.
 func stageProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string, nanoMDMURL string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	profileURL := ddm.ProfileDownloadURL(nanoMDMURL, udid, payloadIdentifier)
@@ -87,21 +88,21 @@ func stageProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier
 	}
 
 	// Step 3: Associate LegacyProfile declaration with the device's set (noNotify=true)
-	err = client.PutSetDeclaration(udid, legacyDeclID, true)
+	err = client.PutSetDeclaration(setName, legacyDeclID, true)
 	observeSetMembershipChange(legacyDeclID, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (legacy) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 4: Associate ActivationSimple declaration with the device's set (noNotify=true)
-	err = client.PutSetDeclaration(udid, activationDeclID, true)
+	err = client.PutSetDeclaration(setName, activationDeclID, true)
 	observeSetMembershipChange(activationDeclID, "put", err)
 	if err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT set-declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 5: Associate enrollment with the set (noNotify=true - the caller notifies)
-	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
+	if err := client.PutEnrollmentSet(udid, setName, true); err != nil {
 		return errors.Wrapf(err, "PushProfileViaDDM: PUT enrollment-set for %s", udid)
 	}
 
@@ -273,18 +274,19 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 // DeleteProfileViaDDM removes a single profile's DDM declarations for a device
 func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
 	activationDeclID := ddm.ProfileActivationDeclarationID(declarationPrefix, udid, payloadIdentifier)
 
 	// Step 1: Remove LegacyProfile from the device's set (noNotify=true)
-	err := client.DeleteSetDeclaration(udid, legacyDeclID, true)
+	err := client.DeleteSetDeclaration(setName, legacyDeclID, true)
 	observeSetMembershipChange(legacyDeclID, "delete", err)
 	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE set-declaration (legacy) for %s on %s", payloadIdentifier, udid)
 	}
 
 	// Step 2: Remove ActivationSimple from the device's set (noNotify=true)
-	err = client.DeleteSetDeclaration(udid, activationDeclID, true)
+	err = client.DeleteSetDeclaration(setName, activationDeclID, true)
 	observeSetMembershipChange(activationDeclID, "delete", err)
 	if err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE set-declaration (activation) for %s on %s", payloadIdentifier, udid)
@@ -305,7 +307,7 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 	}
 
 	// Step 5: Re-associate enrollment with set (noNotify=true - notify done explicitly in step 6)
-	if err := client.PutEnrollmentSet(udid, udid, true); err != nil {
+	if err := client.PutEnrollmentSet(udid, setName, true); err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: PUT enrollment-set for %s", udid)
 	}
 
