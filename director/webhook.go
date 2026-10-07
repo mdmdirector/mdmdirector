@@ -122,6 +122,30 @@ func reconcileDeviceState(currentDevice *types.Device) error {
 	return nil
 }
 
+// userChannelIDs holds the keys that only a user-channel MDM message carries.
+type userChannelIDs struct {
+	UserID           string `plist:",omitempty"`
+	EnrollmentUserID string `plist:",omitempty"`
+}
+
+// isUserChannel reports whether a raw check-in came from a user channel. A user-channel
+// check-in carries the device's UDID too, so without this check its Authenticate,
+// TokenUpdate and CheckOut drive the device channel's enrollment state. nanomdm still
+// stores the user channel, so commands can be sent to it regardless.
+//
+// That matters at enrollment: macOS sends the device and user TokenUpdates within
+// milliseconds of each other. When the user one is processed first, the device is
+// marked token_update_recieved and RunInitialTasks starts queueing commands while
+// nanomdm still stores the previous enrollment's PushMagic for the device channel.
+// Every push sent in that window is dropped by the device as a PushMagic mismatch.
+func isUserChannel(rawPayload []byte) bool {
+	var ids userChannelIDs
+	if err := plist.Unmarshal(rawPayload, &ids); err != nil {
+		return false
+	}
+	return ids.UserID != "" || ids.EnrollmentUserID != ""
+}
+
 func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 	var device types.Device
 	if err := plist.Unmarshal(event.RawPayload, &device); err != nil {
@@ -130,6 +154,11 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 
 	// Migration rollback safety net: mirror this checkin into MicroMDM (fire-and-forget)
 	syncCheckinToMicroMDM(topic, event.RawPayload)
+
+	if isUserChannel(event.RawPayload) {
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Not applying user-channel " + topic + " to the device"})
+		return nil
+	}
 
 	if topic == "mdm.CheckOut" {
 		if err := ResetDevice(device); err != nil {
