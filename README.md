@@ -192,6 +192,14 @@ An `InstallProfile` answered with `Error` is now retried in two places:
 
 Every failed result stays visible at `GET /command/error`.
 
+Both retry paths, like `CommandInQueue` before them, look commands up by device and request type. `commands` keeps a row for every command ever sent, so the model declares a composite index `idx_commands_device_request` on `(device_ud_id, request_type)`, which AutoMigrate creates at startup. On an existing deployment with millions of rows, build it ahead of the deploy so startup does not hold a write lock while it builds:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
+```
+
+AutoMigrate finds it by name and leaves it alone.
+
 ### Initial tasks lease
 
 `RunInitialTasks` (the first `DeviceInformation`, `ProfileList`, `SecurityInfo`, profile and app pushes for a new enrollment) is guarded by a lease in the `devices` row: an atomic `UPDATE` sets `run_initial_tasks_starttime` only when it is NULL or older than 5 minutes. The winner runs the tasks; other replicas see zero rows affected and skip. Command acknowledgements that arrive while a run is in flight do not touch the lease at all, so `mdmdirector_initial_tasks_total{result="lease_contention"}` only counts genuine same-instant races. A holder that dies mid-run is recovered after the 5 minute TTL.
