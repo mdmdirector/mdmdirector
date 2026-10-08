@@ -196,6 +196,11 @@ func ResetDevice(device types.Device) error {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
 
+	// The opt-in row goes before the flag reset: once initial_tasks_run is false a
+	// TokenUpdate on another replica can start RunInitialTasks, and its DDM decisions
+	// (ddmForDevice, resetDDMForEnrollment) must not see the previous enrollment's opt-in.
+	resetDDMOptIn(device)
+
 	// Reset the lifecycle flags before any slow work. nanomdm delivers webhooks
 	// asynchronously, so the device's TokenUpdate can be processed while this
 	// Authenticate is still in flight; a flag reset that lands after it clears
@@ -211,8 +216,6 @@ func ResetDevice(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}
-
-	resetDDMOptIn(device)
 	return nil
 }
 

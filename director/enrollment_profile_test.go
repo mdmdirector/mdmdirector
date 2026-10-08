@@ -133,10 +133,16 @@ func TestReinstallEnrollmentProfile_WebhookEmptyBody(t *testing.T) {
 
 // mockGetDevice sets up DB expectations for GetDevice
 func mockGetDevice(mockSpy sqlmock.Sqlmock, udid string) {
-	deviceRows1 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
-		AddRow(udid, "C02TEST123")
-	deviceRows2 := sqlmock.NewRows([]string{"ud_id", "serial_number"}).
-		AddRow(udid, "C02TEST123")
+	mockGetDeviceWithInitialTasks(mockSpy, udid, true)
+}
+
+// mockGetDeviceWithInitialTasks is mockGetDevice with control over initial_tasks_run, for
+// the paths that defer while a device is still enrolling
+func mockGetDeviceWithInitialTasks(mockSpy sqlmock.Sqlmock, udid string, initialTasksRun bool) {
+	deviceRows1 := sqlmock.NewRows([]string{"ud_id", "serial_number", "initial_tasks_run"}).
+		AddRow(udid, "C02TEST123", initialTasksRun)
+	deviceRows2 := sqlmock.NewRows([]string{"ud_id", "serial_number", "initial_tasks_run"}).
+		AddRow(udid, "C02TEST123", initialTasksRun)
 
 	// First query from First()
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 ORDER BY "devices"\."ud_id" LIMIT 1`).

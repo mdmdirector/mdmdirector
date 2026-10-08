@@ -208,7 +208,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.DeviceUDIDs) > 0 {
 			// Targeting all devices
 			if out.DeviceUDIDs[0] == "*" {
-				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+				err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(
@@ -258,7 +258,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
 			if out.SerialNumbers[0] == "*" {
-				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+				err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -320,6 +320,13 @@ func ProcessDeviceProfiles(
 	var profilesToSave []types.DeviceProfile
 
 	useDDM := ddmForDevice(device)
+
+	// Save but don't push while the device is enrolling: RunInitialTasks pushes every
+	// saved profile once it has cleared the previous enrollment's DDM declarations, and a
+	// push from here would race that cleanup.
+	if pushNow && initialTasksPending(device, deferPathProfilePost) {
+		pushNow = false
+	}
 
 	// metadata.Device = device
 	for i := range profiles {
@@ -599,7 +606,7 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	var sharedProfileModel types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
-	err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+	err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 	if err != nil {
 		return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not get all devices")
 	}

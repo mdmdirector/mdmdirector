@@ -246,9 +246,10 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		// anything. Requesting its info now would get a ProfileList back while the
 		// previous enrollment's DDM declarations are still being cleared, and
 		// VerifyMDMProfiles would push into that window. RunInitialTasks requests the
-		// same info itself once the cleanup is done.
-		if !currentDevice.InitialTasksRun {
-			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Initial tasks pending; not requesting device info on Idle"})
+		// same info itself once the cleanup is done. A device whose TokenUpdate was
+		// lost stays here until the next TokenUpdate or the unconfigured-devices sweep
+		// picks it up, so this is logged at info and counted.
+		if initialTasksPending(*currentDevice, deferPathIdleInfoRequest) {
 			return nil
 		}
 		RequestDeviceUpdate(device)
@@ -384,10 +385,6 @@ func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error
 	if device.UDID == "" {
 		return errors.Wrap(fmt.Errorf("device does not have a udid set"), "No Device UDID set")
 	}
-	if !device.InitialTasksRun {
-		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Initial tasks pending; not pushing on new build"})
-		return nil
-	}
 	if oldBuild == "" || newBuild == "" {
 		return nil
 	}
@@ -401,6 +398,9 @@ func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error
 		return err
 	}
 	if !oldVersion.LessThan(newVersion) {
+		return nil
+	}
+	if initialTasksPending(device, deferPathPushOnNewBuild) {
 		return nil
 	}
 

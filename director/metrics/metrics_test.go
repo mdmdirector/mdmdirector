@@ -194,3 +194,13 @@ func TestResultFromError(t *testing.T) {
 	assert.Equal(t, "success", ResultFromError(nil))
 	assert.Equal(t, "error", ResultFromError(errors.New("boom")))
 }
+
+func TestPushesDeferred_incrementsByPath(t *testing.T) {
+	counter := PushesDeferred("idle_info_request")
+	before := prometheustestutil.ToFloat64(counter)
+
+	counter.Inc()
+
+	assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
+	assert.Equal(t, float64(0), prometheustestutil.ToFloat64(PushesDeferred("never_used")))
+}

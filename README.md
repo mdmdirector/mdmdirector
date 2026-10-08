@@ -100,7 +100,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 
 - `-enrollment-profile string` - Path to local enrollment profile for re-enrollment. Env: `ENROLLMENT_PROFILE`
 - `-enrollment-profile-signed` - Is the enrollment profile already signed. (default false) Env: `ENROLMENT_PROFILE_SIGNED`
-- `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls, and removes every DDM declaration KMFDDM holds for the device, so a fresh enrollment receives only shared profiles and apps. (default false) Env: `CLEAR_DEVICE_ON_ENROLL`
+- `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls, and empties the device's KMFDDM set, so a fresh enrollment receives only shared profiles and apps. Only declarations MDMDirector created are deleted from KMFDDM; others are detached from the set and left for their owner. (default false) Env: `CLEAR_DEVICE_ON_ENROLL`
 
 ##### Enrollment Webhook (Remote Profile Fetching)
 
@@ -197,7 +197,9 @@ DDM requires NanoMDM plus KMFDDM. Each device's declarations go in its own set, 
 
 Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
 
-On (re-)enrollment, `RunInitialTasks` clears the device's KMFDDM set before it pushes anything: with `-clear-device-on-enroll` always, otherwise only when the device is not going to use DDM (its per-device opt-in is removed by the enrollment reset). The enrollment→set association is dropped first, then each declaration in the set is removed and deleted, all without notifying, so a device that syncs mid-cleanup sees an empty set rather than a partial one. The cleanup runs under the initial-tasks lease, so it cannot race the declarations the push then writes. If it fails, the error is logged and initial tasks continue, so a KMFDDM outage never holds a device in Setup Assistant.
+On (re-)enrollment, `RunInitialTasks` empties the device's KMFDDM set before it pushes anything: with `-clear-device-on-enroll` always, otherwise only when the device is not going to use DDM (its per-device opt-in is removed by the enrollment reset). The enrollment→set association is dropped first, then every declaration is removed from the set, all without notifying, so a device that syncs mid-cleanup sees an empty set rather than a partial one. Only declarations MDMDirector created (identifier starting `<declaration prefix>.<udid>.`) are then deleted from KMFDDM; anything another system put in the set is left in place, possibly orphaned, for that system to clean up. The cleanup runs under the initial-tasks lease, so it cannot race the declarations the push then writes. If it fails, the error is logged and initial tasks continue, so a KMFDDM outage never holds a device in Setup Assistant.
+
+While a device's initial tasks are pending (`initial_tasks_run = false`) every other push path defers to `RunInitialTasks`, since a DDM push in that window would re-associate the set and notify before the cleanup is done: `Idle` acknowledgements don't request device info, build-upgrade re-pushes are skipped, `POST /profile` with `push_now` saves without pushing, and the fleet activation skips the device. `POST /device/{udid}/ddm` and `.../ddm/activate` return `409 Conflict`. Each deferral is counted in `mdmdirector_pushes_deferred_total{path}`.
 
 ### Database and outbound HTTP
 
@@ -220,6 +222,7 @@ Enable with `-prometheus`. All names are prefixed `mdmdirector_`.
 | `profile_download_requests_total` | counter | `scope`, `outcome` | Hits on `/profiledownload`. |
 | `profile_api_requests_total` | counter | `method`, `result` | `POST`/`DELETE /profile` API calls. |
 | `initial_tasks_total` | counter | `result` | `success`, `error`, `lease_contention`. |
+| `pushes_deferred_total` | counter | `path` | Pushes/info requests skipped because the device's initial tasks are pending. |
 | `reenroll_skipped_total` | counter | `trigger`, `arch` | Re-enrollments suppressed on Intel/unknown models. |
 | `pin_escrow_total` | counter | `result` | PIN escrow posts to `-escrowurl`. |
 | `ddm_declaration_writes_total` | counter | `declaration_type`, `declaration_subtype`, `operation`, `result` | KMFDDM declaration writes. |

@@ -210,17 +210,18 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
-	// ResetDevice: UPDATE device flags
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^UPDATE "devices"`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mockSpy.ExpectCommit()
-
-	// ResetDevice: DELETE the DDM opt-in row; none existed, so no teardown follows
+	// ResetDevice: DELETE the DDM opt-in row, before the flags so a concurrent
+	// RunInitialTasks never sees the old enrollment's opt-in
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
 		WithArgs("1234-5678-123456").
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mockSpy.ExpectCommit()
+
+	// ResetDevice: UPDATE device flags
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^UPDATE "devices"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
 	event := &types.CheckinEvent{
@@ -234,9 +235,10 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
-// expectResetUntilOptInDelete mocks ResetDevice up to and including the opt-in DELETE,
-// in the order the code must issue them: the device flag reset has to land before any
-// DDM work, or a concurrently processed TokenUpdate gets overwritten
+// expectResetUntilOptInDelete mocks every statement ResetDevice issues, in the order the
+// code must issue them: the opt-in row goes before the flag reset, because the moment
+// initial_tasks_run is false a TokenUpdate on another replica can start RunInitialTasks,
+// which must not see the previous enrollment's opt-in
 func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows int64) {
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1`).
@@ -244,21 +246,21 @@ func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows
 	mockSpy.ExpectCommit()
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^UPDATE "devices"`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mockSpy.ExpectCommit()
-
-	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
 		WithArgs(udid).
 		WillReturnResult(sqlmock.NewResult(0, optInRows))
+	mockSpy.ExpectCommit()
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^UPDATE "devices"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 }
 
 // ResetDevice never touches declarations, whatever the DDM flags say: RunInitialTasks may
 // already be running for the new enrollment, and a teardown from here would race the
 // declarations it writes. resetDDMForEnrollment, inside RunInitialTasks, owns that
-// cleanup. So nothing may follow the opt-in delete.
+// cleanup. So the opt-in delete and the flag reset are all that happens, in that order.
 func TestResetDevice_DoesNotTearDownDeclarations(t *testing.T) {
 	for _, useDDM := range []bool{true, false} {
 		t.Run(fmt.Sprintf("use-ddm=%v", useDDM), func(t *testing.T) {

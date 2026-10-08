@@ -58,7 +58,8 @@ func optInRows(udids ...string) *sqlmock.Rows {
 func testDevices(udids ...string) []types.Device {
 	devices := make([]types.Device, 0, len(udids))
 	for _, udid := range udids {
-		devices = append(devices, types.Device{UDID: udid, SerialNumber: "SERIAL-" + udid})
+		// Initial tasks done, so the push-gating paths treat these as ready
+		devices = append(devices, types.Device{UDID: udid, SerialNumber: "SERIAL-" + udid, InitialTasksRun: true})
 	}
 	return devices
 }
@@ -382,5 +383,20 @@ func TestEnableDeviceDDMHandler_OptInWriteFails(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.NotContains(t, rr.Body.String(), "use_ddm")
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// Enabling DDM on a device still running its initial tasks is a 409 and writes no opt-in:
+// the reconcile it would run pushes via DDM, racing the cleanup RunInitialTasks is doing
+func TestEnableDeviceDDMHandler_InitialTasksPending(t *testing.T) {
+	setupDDMFlags(t, false, false)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockGetDeviceWithInitialTasks(mockSpy, "udid-1", false)
+
+	rr := serveDeviceDDM(t, http.MethodPost, "udid-1")
+
+	assert.Equal(t, http.StatusConflict, rr.Code)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }

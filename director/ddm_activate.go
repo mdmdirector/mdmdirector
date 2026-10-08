@@ -59,6 +59,11 @@ func activateDevices(client *ddm.KMFDDMClient, devices []types.Device) (activate
 		if device.UDID == "" {
 			continue
 		}
+		// RunInitialTasks activates the device through its push; doing it here would
+		// race the DDM cleanup that push is waiting on.
+		if initialTasksPending(device, deferPathDDMActivate) {
+			continue
+		}
 		if aerr := activateDDM(client, device.UDID); aerr != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: aerr.Error()})
 			errs = append(errs, aerr)
@@ -102,6 +107,10 @@ func ActivateDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	device, err := GetDevice(udid)
 	if err != nil {
 		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	if initialTasksPending(device, deferPathDDMActivate) {
+		http.Error(w, "device is enrolling; initial tasks pending, retry later", http.StatusConflict)
 		return
 	}
 

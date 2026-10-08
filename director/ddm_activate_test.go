@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/ddm"
+	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -167,4 +168,38 @@ func TestActivateDeviceDDMHandler_NotifyFails(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.NotContains(t, rr.Body.String(), "activated")
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// A device still running its initial tasks is a 409 and reaches no KMFDDM endpoint:
+// RunInitialTasks activates it through its push, after the DDM cleanup it is waiting on
+func TestActivateDeviceDDMHandler_InitialTasksPending(t *testing.T) {
+	counts := startMockKMFDDM(t, http.StatusNoContent)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockGetDeviceWithInitialTasks(mockSpy, "udid-1", false)
+
+	rr := serveActivate(t, "udid-1")
+
+	assert.Equal(t, http.StatusConflict, rr.Code)
+	assert.Equal(t, int32(0), counts.notify.Load())
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// The startup fleet activation skips devices mid-enrollment for the same reason
+func TestActivateDevices_SkipsInitialTasksPending(t *testing.T) {
+	counts := startMockKMFDDM(t, http.StatusNoContent)
+	client, err := ddm.Client()
+	require.NoError(t, err)
+
+	devices := []types.Device{
+		{UDID: "ready-1", InitialTasksRun: true},
+		{UDID: "enrolling-1", InitialTasksRun: false},
+		{UDID: "ready-2", InitialTasksRun: true},
+	}
+	activated, err := activateDevices(client, devices)
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, activated)
+	assert.Equal(t, int32(2), counts.notify.Load())
 }

@@ -12,6 +12,7 @@ import (
 	intErrors "errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
@@ -103,7 +104,14 @@ func partitionByDDMPackages(devices []types.Device) (ddmDevices, legacyDevices [
 // pushSharedProfilesPerDevice runs PushSharedProfiles split by each device's mode,
 // so a fleet-wide push respects per-device DDM opt-in
 func pushSharedProfilesPerDevice(devices []types.Device, profiles []types.SharedProfile) error {
-	ddmDevices, legacyDevices := partitionByDDM(devices)
+	ready := make([]types.Device, 0, len(devices))
+	for i := range devices {
+		if initialTasksPending(devices[i], deferPathProfilePost) {
+			continue
+		}
+		ready = append(ready, devices[i])
+	}
+	ddmDevices, legacyDevices := partitionByDDM(ready)
 	var errs []error
 	if len(ddmDevices) > 0 {
 		if _, err := PushSharedProfiles(ddmDevices, profiles, true); err != nil {
@@ -175,6 +183,10 @@ func EnableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	device, err := GetDevice(udid)
 	if err != nil {
 		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	if initialTasksPending(device, deferPathDDMEnable) {
+		http.Error(w, "device is enrolling; initial tasks pending, retry later", http.StatusConflict)
 		return
 	}
 
@@ -274,20 +286,26 @@ func errorMessages(err error) []string {
 	return []string{err.Error()}
 }
 
-// clearDDMForDevice removes every declaration KMFDDM holds for a device's set, without
-// needing mdmdirector's own profile or application rows, so it also catches declarations
-// those rows no longer describe. It is the DDM half of clear-device-on-enroll.
+// clearDDMForDevice empties a device's KMFDDM set, without needing mdmdirector's own
+// profile or application rows, so it also catches declarations those rows no longer
+// describe. It is the DDM half of clear-device-on-enroll.
 //
 // The enrollment→set association is dropped first. From that point the device's
 // declaration-items are empty, so even if a DeclarativeManagement command reaches the
-// device while the per-declaration deletes are still running, it can only ever see an
-// empty set, never a partial one. Nothing here notifies the device: it is freshly
-// enrolling and has no DDM state, and the push that follows re-associates the set and
-// notifies if the device uses DDM.
+// device while the per-declaration work is still running, it can only ever see an empty
+// set, never a partial one. Nothing here notifies the device: it is freshly enrolling and
+// has no DDM state, and the push that follows re-associates the set and notifies if the
+// device uses DDM.
 //
-// It returns the number of declarations removed.
+// Every declaration is removed from the set, but only the ones mdmdirector created, whose
+// identifier starts with ddm.DeviceDeclarationPrefix, are deleted from KMFDDM. Anything
+// else in the set belongs to another system and is left in place, orphaned if this set was
+// its only membership; cleaning that up is that system's job.
+//
+// It returns the number of declarations deleted.
 func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
 	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
+	ownPrefix := ddm.DeviceDeclarationPrefix(utils.DDMDeclarationPrefix(), udid)
 	if err := client.DeleteEnrollmentSet(udid, setName, true); err != nil {
 		return 0, errors.Wrapf(err, "clearDDMForDevice: DELETE enrollment-set for %s", udid)
 	}
@@ -298,6 +316,7 @@ func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
 	}
 
 	var errs []error
+	var foreign []string
 	removed := 0
 	for _, id := range ids {
 		if err := client.DeleteSetDeclaration(setName, id, true); err != nil {
@@ -306,6 +325,10 @@ func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
 			continue
 		}
 		observeSetMembershipChange(id, "delete", nil)
+		if !strings.HasPrefix(id, ownPrefix) {
+			foreign = append(foreign, id)
+			continue
+		}
 		err := client.DeleteDeclaration(id, true)
 		observeDeclarationWriteByID(id, "delete", err)
 		if err != nil {
@@ -313,6 +336,9 @@ func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
 			continue
 		}
 		removed++
+	}
+	if len(foreign) > 0 {
+		InfoLogger(LogHolder{DeviceUDID: udid, Message: fmt.Sprintf("Removed %d declaration(s) not created by mdmdirector from set %s but left them in KMFDDM: %s", len(foreign), setName, strings.Join(foreign, ", "))})
 	}
 	if len(errs) > 0 {
 		return removed, errors.Wrapf(intErrors.Join(errs...), "clearDDMForDevice: %s", udid)
