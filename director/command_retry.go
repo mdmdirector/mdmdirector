@@ -181,6 +181,29 @@ func erroredInstallProfiles(udid string) (map[string]string, error) {
 	return errored, nil
 }
 
+// commandStatusRetriedViaDDM replaces Error on an InstallProfile row once VerifyMDMProfiles
+// has re-asserted that profile through DDM. A device on DDM never gets another
+// InstallProfile row for the identifier, so without this the Error row would stay the
+// latest result forever and every scheduled ProfileList would touch the declaration again.
+// The row is kept, with its original payload, for history; it just no longer counts as an
+// outstanding failure.
+const commandStatusRetriedViaDDM = "RetriedViaDDM"
+
+// markErroredInstallsRetriedViaDDM records that the profiles in identifiers were re-sent to
+// the device as declarations, so their failed InstallProfile rows stop being retried.
+func markErroredInstallsRetriedViaDDM(udid string, identifiers []string) error {
+	if len(identifiers) == 0 {
+		return nil
+	}
+	err := db.DB.Model(&types.Command{}).
+		Where("device_ud_id = ? AND request_type = ? AND status = ? AND identifier IN ?", udid, "InstallProfile", "Error", identifiers).
+		Update("status", commandStatusRetriedViaDDM).Error
+	if err != nil {
+		return errors.Wrap(err, "markErroredInstallsRetriedViaDDM")
+	}
+	return nil
+}
+
 // lastInstallErrored reports whether the device's most recent InstallProfile for this
 // profile, at its current content, came back with Error. An Error for older content
 // doesn't count: that content is no longer what would be re-sent.

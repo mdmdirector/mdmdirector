@@ -1216,6 +1216,10 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: load errored installs")
 	}
+	// Identifiers reinstalled for that reason, by profile type. On a DDM device the
+	// reinstall is a declaration touch that writes no new command row, so the Error rows
+	// are marked afterwards (see markErroredInstallsRetriedViaDDM).
+	erroredReinstalls := map[string][]string{}
 
 	for i := range profilesForVerification {
 		profileForVerification := profilesForVerification[i]
@@ -1242,6 +1246,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 				metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
 			}
 			needsReinstall = true
+			if profileForVerification.Installed {
+				erroredReinstalls[profileForVerification.Type] = append(erroredReinstalls[profileForVerification.Type], profileForVerification.PayloadIdentifier)
+			}
 		}
 		// Profile is present in the ProfileList output
 		if isInstalled {
@@ -1316,11 +1323,19 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	_, err = PushProfiles(devices, profilesToInstall, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
+	} else if useDDM {
+		if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["device"]); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
+		}
 	}
 
 	_, err = PushSharedProfiles(devices, sharedProfilesToInstall, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
+	} else if useDDM {
+		if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["shared"]); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
+		}
 	}
 
 	_, err = DeleteDeviceProfiles(devices, profilesToRemove, useDDM)

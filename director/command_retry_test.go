@@ -297,7 +297,8 @@ func TestErroredInstallProfiles_LatestResultPerIdentifier(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"identifier", "content_hash", "status"}).
 		AddRow("com.example.failed", "hash-a", "Error").
 		AddRow("com.example.recovered", "hash-b", "Acknowledged").
-		AddRow("com.example.pending", "hash-c", "")
+		AddRow("com.example.pending", "hash-c", "").
+		AddRow("com.example.retried-via-ddm", "hash-d", commandStatusRetriedViaDDM)
 	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
 		WithArgs(retryTestUDID, "InstallProfile").
 		WillReturnRows(rows)
@@ -307,6 +308,30 @@ func TestErroredInstallProfiles_LatestResultPerIdentifier(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"com.example.failed": "hash-a"}, errored)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+func TestMarkErroredInstallsRetriedViaDDM(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`UPDATE "commands" SET "status"=\$1,"updated_at"=\$2 WHERE device_ud_id = \$3 AND request_type = \$4 AND status = \$5 AND identifier IN \(\$6,\$7\)`).
+		WithArgs(commandStatusRetriedViaDDM, sqlmock.AnyArg(), retryTestUDID, "InstallProfile", "Error", "com.example.a", "com.example.b").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mockSpy.ExpectCommit()
+
+	err := markErroredInstallsRetriedViaDDM(retryTestUDID, []string{"com.example.a", "com.example.b"})
+
+	require.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+func TestMarkErroredInstallsRetriedViaDDM_NothingToMark(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	require.NoError(t, markErroredInstallsRetriedViaDDM(retryTestUDID, nil))
+	assert.NoError(t, mockSpy.ExpectationsWereMet(), "no query is issued for an empty list")
 }
 
 func TestLastInstallErrored(t *testing.T) {
