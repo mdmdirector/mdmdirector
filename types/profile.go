@@ -58,15 +58,20 @@ type ProfileListData struct {
 }
 
 type ProfileList struct {
-	ID                       uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
-	DeviceUDID               string
+	ID uuid.UUID `gorm:"primaryKey;type:uuid;default:uuid_generate_v4()"`
+	// Every ProfileList response and profile verification looks rows up by device (and
+	// usually payload identifier); without this index each lookup is a sequential scan of
+	// the whole table, which exhausts the DB pool under check-in load. AutoMigrate creates
+	// it; on a large existing table create it CONCURRENTLY by hand before deploying (see
+	// README, Deploying).
+	DeviceUDID               string               `gorm:"index:idx_profile_lists_device_payload,priority:1"`
 	HasRemovalPasscode       bool                 `plist:"HasRemovalPasscode"`
 	IsEncrypted              bool                 `plist:"IsEncrypted"`
 	IsManaged                bool                 `plist:"IsManaged"`
 	PayloadContent           []PayloadContentItem `plist:"PayloadContent" gorm:"-"`
 	PayloadDescription       string               `plist:"PayloadDescription"`
 	PayloadDisplayName       string               `plist:"PayloadDisplayName"`
-	PayloadIdentifier        string               `plist:"PayloadIdentifier"`
+	PayloadIdentifier        string               `plist:"PayloadIdentifier" gorm:"index:idx_profile_lists_device_payload,priority:2"`
 	PayloadOrganization      string               `plist:"PayloadOrganization"`
 	PayloadRemovalDisallowed bool                 `plist:"PayloadRemovalDisallowed"`
 	PayloadUUID              string               `plist:"PayloadUUID" gorm:"not null"`
