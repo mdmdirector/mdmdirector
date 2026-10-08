@@ -162,6 +162,12 @@ func StaleCommandThreshold() int {
 	return flag.Lookup("stale-command-threshold").Value.(flag.Getter).Get().(int)
 }
 
+// InstallProfileRetries is how many times an InstallProfile the device answered with
+// Error is re-sent before mdmdirector stops retrying it. 0 disables the retry.
+func InstallProfileRetries() int {
+	return flag.Lookup("install-profile-retries").Value.(flag.Getter).Get().(int)
+}
+
 func EnrollWebhookURL() string {
 	return strings.TrimRight(flag.Lookup("enroll-webhook-url").Value.(flag.Getter).Get().(string), "/")
 }

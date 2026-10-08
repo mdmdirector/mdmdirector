@@ -240,6 +240,11 @@ OuterLoop:
 			if err != nil {
 				return err
 			}
+			if commandRequestType == "InstallProfile" {
+				if err := retryErroredInstallProfile(device, ackEvent.CommandUUID); err != nil {
+					ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, Message: "retryErroredInstallProfile: " + err.Error()})
+				}
+			}
 		} else {
 			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
