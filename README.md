@@ -203,7 +203,10 @@ Both retry paths, like `CommandInQueue` before them, look commands up by device 
 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_lists_device_payload ON profile_lists (device_ud_id, payload_identifier);
 ```
+
+`profile_lists` had the same problem: only its `id` primary key, while every `ProfileList` response and profile verification looks rows up by `device_ud_id` (and usually `payload_identifier`). Each of those was a full scan, and under check-in load enough of them run at once to hold every connection in the pool. The model now declares `idx_profile_lists_device_payload` on `(device_ud_id, payload_identifier)`, which also serves device-only lookups.
 
 `CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
