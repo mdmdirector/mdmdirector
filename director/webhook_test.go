@@ -137,6 +137,118 @@ func TestReconcileDeviceState_NotAwaitingConfiguration(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// A DeviceConfigured already pending (status "" or NotNow) must not be resent. Every
+// NotNow ack re-enters here while awaiting_configuration is still true; resending
+// on each one floods the device. No SendCommand mock is set, so a send would fail.
+func TestReconcileDeviceState_DeviceConfiguredInQueueSkips(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	mockCommandInQueue(mock, "1234-5678-123456", "DeviceConfigured", "", true)
+
+	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
+		SerialNumber:          "C02ABCDEFGH",
+		InitialTasksRun:       true,
+		AwaitingConfiguration: true,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A failed queue lookup is returned rather than falling through to a send.
+func TestReconcileDeviceState_DeviceConfiguredQueueLookupError(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	mock.ExpectQuery(`SELECT \* FROM "commands"`).WillReturnError(errDBGoneAway)
+
+	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
+		InitialTasksRun:       true,
+		AwaitingConfiguration: true,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	assert.ErrorIs(t, err, errDBGoneAway)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---- clearAwaitingConfigurationOnNotNow -----------------------------------------
+
+func mockAckCommandType(mock sqlmock.Sqlmock, commandUUID, requestType string) {
+	mock.ExpectQuery(`SELECT "request_type" FROM "commands" WHERE command_uuid = \$1 ORDER BY "commands"\."command_uuid" LIMIT 1`).
+		WithArgs(commandUUID).
+		WillReturnRows(sqlmock.NewRows([]string{"request_type"}).AddRow(requestType))
+}
+
+// NotNow to a DeviceConfigured clears awaiting_configuration in the DB and on the
+// in-memory device, so reconcileDeviceState that follows does not resend.
+func TestClearAwaitingConfigurationOnNotNow_DeviceConfiguredClears(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	mockAckCommandType(mock, "cmd-uuid", "DeviceConfigured")
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "devices" SET "awaiting_configuration"=\$1.* WHERE ud_id = \$\d+`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	device := &types.Device{UDID: "1234-5678-123456", AwaitingConfiguration: true}
+	event := &types.AcknowledgeEvent{CommandUUID: "cmd-uuid", Status: "NotNow"}
+
+	err := clearAwaitingConfigurationOnNotNow(event, device)
+
+	assert.NoError(t, err)
+	assert.False(t, device.AwaitingConfiguration)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// NotNow to any other command leaves the flag alone.
+func TestClearAwaitingConfigurationOnNotNow_OtherCommandNoOp(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	mockAckCommandType(mock, "cmd-uuid", "InstallProfile")
+
+	device := &types.Device{UDID: "1234-5678-123456", AwaitingConfiguration: true}
+	event := &types.AcknowledgeEvent{CommandUUID: "cmd-uuid", Status: "NotNow"}
+
+	err := clearAwaitingConfigurationOnNotNow(event, device)
+
+	assert.NoError(t, err)
+	assert.True(t, device.AwaitingConfiguration)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Any status other than NotNow, or a device not awaiting configuration, never touches
+// the DB. No mock DB is installed, so any DB access would fail the test.
+func TestClearAwaitingConfigurationOnNotNow_SkipsWithoutDB(t *testing.T) {
+	cases := []struct {
+		name     string
+		status   string
+		awaiting bool
+	}{
+		{"acknowledged", "Acknowledged", true},
+		{"not awaiting", "NotNow", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			device := &types.Device{UDID: "1234-5678-123456", AwaitingConfiguration: tc.awaiting}
+			event := &types.AcknowledgeEvent{CommandUUID: "cmd-uuid", Status: tc.status}
+
+			err := clearAwaitingConfigurationOnNotNow(event, device)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tc.awaiting, device.AwaitingConfiguration)
+		})
+	}
+}
+
 // ---- WebhookHandler HTTP routing ------------------------------------------------
 
 // Only CheckinEvent is populated - AcknowledgeEvent is nil.

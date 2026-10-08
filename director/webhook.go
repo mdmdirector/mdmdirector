@@ -113,6 +113,20 @@ func reconcileDeviceState(currentDevice *types.Device) error {
 	}
 
 	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
+		// awaiting_configuration only clears on a DeviceInformation response, so every
+		// event in between lands here - including the NotNow for the DeviceConfigured
+		// this branch just sent. Without this check each NotNow queues two more
+		// (SendDeviceConfigured sends twice), and the device is flooded at a growing rate.
+		// A pending DeviceConfigured is redelivered by the MDM server; it needs no resend.
+		inQueue, err := CommandInQueue(*currentDevice, "DeviceConfigured", "")
+		if err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
+			return err
+		}
+		if inQueue {
+			DebugLogger(LogHolder{DeviceSerial: currentDevice.SerialNumber, DeviceUDID: currentDevice.UDID, CommandRequestType: "DeviceConfigured", Message: "DeviceConfigured already in queue; not resending"})
+			return nil
+		}
 		if err := SendDeviceConfigured(*currentDevice); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
 			return err
@@ -221,6 +235,11 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 
 	currentDevice, err := UpdateDevice(device)
 	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+		return err
+	}
+
+	if err := clearAwaitingConfigurationOnNotNow(event, currentDevice); err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 		return err
 	}

@@ -1,6 +1,7 @@
 package director
 
 import (
+	intErrors "errors"
 	"fmt"
 	"time"
 
@@ -186,6 +187,46 @@ func SaveDeviceConfigured(device types.Device) error {
 		return err
 	}
 
+	return nil
+}
+
+// clearAwaitingConfigurationOnNotNow clears awaiting_configuration when the device answers
+// NotNow to a DeviceConfigured. awaiting_configuration otherwise only clears on a
+// DeviceInformation response, and until it does reconcileDeviceState resends
+// DeviceConfigured on every event, NotNow acks included. The NotNow command stays queued
+// on the MDM server and is redelivered, so a device still in Setup Assistant gets it.
+func clearAwaitingConfigurationOnNotNow(event *types.AcknowledgeEvent, device *types.Device) error {
+	if event.Status != "NotNow" || event.CommandUUID == "" || !device.AwaitingConfiguration {
+		return nil
+	}
+
+	var command types.Command
+	err := db.DB.Model(&command).
+		Select("request_type").
+		Where("command_uuid = ?", event.CommandUUID).
+		First(&command).
+		Error
+	if err != nil {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return errors.Wrap(err, "clearAwaitingConfigurationOnNotNow: lookup command")
+	}
+	if command.RequestType != "DeviceConfigured" {
+		return nil
+	}
+
+	var deviceModel types.Device
+	err = db.DB.Model(&deviceModel).
+		Where("ud_id = ?", device.UDID).
+		Update("awaiting_configuration", false).
+		Error
+	if err != nil {
+		return errors.Wrap(err, "clearAwaitingConfigurationOnNotNow: update device")
+	}
+
+	InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, CommandRequestType: "DeviceConfigured", Message: "DeviceConfigured returned NotNow; clearing awaiting_configuration"})
+	device.AwaitingConfiguration = false
 	return nil
 }
 
