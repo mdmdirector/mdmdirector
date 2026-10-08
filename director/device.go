@@ -29,12 +29,15 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
 		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
-			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				if err := db.DB.Create(&newDevice).Error; err != nil {
-					return &newDevice, errors.Wrap(err, "Update device create udid")
-				}
-				device = newDevice
+			// Anything but "no row" means the lookup itself failed. Carrying on would
+			// return an empty device with no error, and the caller would act on it.
+			if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+				return &newDevice, errors.Wrap(err, "Update device lookup udid")
 			}
+			if err := db.DB.Create(&newDevice).Error; err != nil {
+				return &newDevice, errors.Wrap(err, "Update device create udid")
+			}
+			device = newDevice
 		} else {
 			err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
 			if err != nil {
@@ -45,12 +48,15 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 	if newDevice.SerialNumber != "" {
 		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Error; err != nil {
-			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				if err := db.DB.Create(&newDevice).Error; err != nil {
-					return &newDevice, errors.Wrap(err, "Update device create serial")
-				}
-				device = newDevice
+			// Anything but "no row" means the lookup itself failed. Carrying on would
+			// return an empty device with no error, and the caller would act on it.
+			if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+				return &newDevice, errors.Wrap(err, "Update device lookup serial")
 			}
+			if err := db.DB.Create(&newDevice).Error; err != nil {
+				return &newDevice, errors.Wrap(err, "Update device create serial")
+			}
+			device = newDevice
 		} else {
 			err := db.DB.Model(&device).Where("serial_number = ?", newDevice.SerialNumber).Assign(&newDevice).FirstOrCreate(&device).Error
 			if err != nil {

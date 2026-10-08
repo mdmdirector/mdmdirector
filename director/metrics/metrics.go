@@ -46,6 +46,26 @@ func CommandResults(status, result string) prometheus.Counter {
 	return commandResultsTotal.WithLabelValues(status, result)
 }
 
+// webhookStepRetriesTotal counts webhook handler steps that failed on a stale Postgres
+// connection and were run again
+// step: reset_device, set_token_update, update_device, update_command
+// result: recovered (a later attempt succeeded), failed (every attempt failed)
+//
+//nolint:gochecknoglobals
+var webhookStepRetriesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "webhook_step_retries_total",
+		Help:      "Total webhook handler steps retried after a stale database connection, by step and result.",
+	},
+	[]string{"step", "result"},
+)
+
+// WebhookStepRetries - accessor for webhookStepRetriesTotal
+func WebhookStepRetries(step, result string) prometheus.Counter {
+	return webhookStepRetriesTotal.WithLabelValues(step, result)
+}
+
 // pushRequestsTotal counts APNs push requests dispatched by mdmdirector by result
 //
 //nolint:gochecknoglobals

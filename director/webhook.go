@@ -169,8 +169,11 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 		return nil
 	}
 
+	lh := LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber}
+	resetDevice := func() error { return ResetDevice(device) }
+
 	if topic == "mdm.CheckOut" {
-		if err := ResetDevice(device); err != nil {
+		if err := retryOnStaleConnection(stepResetDevice, lh, resetDevice); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 			return err
 		}
@@ -183,18 +186,21 @@ func handleCheckinEvent(topic string, event *types.CheckinEvent) error {
 
 	switch topic {
 	case "mdm.Authenticate":
-		if err := ResetDevice(device); err != nil {
+		if err := retryOnStaleConnection(stepResetDevice, lh, resetDevice); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 			return err
 		}
 	case "mdm.TokenUpdate":
-		if _, err := SetTokenUpdate(device); err != nil {
+		if err := retryOnStaleConnection(stepSetTokenUpdate, lh, func() error {
+			_, err := SetTokenUpdate(device)
+			return err
+		}); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 			return err
 		}
 	}
 
-	currentDevice, err := UpdateDevice(device)
+	currentDevice, err := updateDeviceRetrying(device)
 	if err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 		return err
@@ -228,7 +234,7 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	oldBuild := previousBuildVersion(device.UDID)
 	newBuild := device.BuildVersion
 
-	currentDevice, err := UpdateDevice(device)
+	currentDevice, err := updateDeviceRetrying(device)
 	if err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 		return err
@@ -244,7 +250,10 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	}
 
 	if event.CommandUUID != "" {
-		if err := UpdateCommand(event, device, payloadDict); err != nil {
+		lh := LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: event.CommandUUID}
+		if err := retryOnStaleConnection(stepUpdateCommand, lh, func() error {
+			return UpdateCommand(event, device, payloadDict)
+		}); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 			return err
 		}
