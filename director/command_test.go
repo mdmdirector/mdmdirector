@@ -61,10 +61,11 @@ func TestClearCommands(t *testing.T) {
 	db.DB = DB
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT status IN \(\$2,\$3,\$4\)`).WithArgs(
 		"1234-5678-123456",
 		"Error",
 		"Acknowledged",
+		commandStatusRetriedViaDDM,
 	).WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
@@ -89,10 +90,11 @@ func TestClearCommands_ClearDeviceOnEnroll(t *testing.T) {
 
 	// Set up Database expectations
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT \(status = \$2 OR status = \$3\)`).WithArgs(
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT status IN \(\$2,\$3,\$4\)`).WithArgs(
 		"1234-5678-123456",
 		"Error",
 		"Acknowledged",
+		commandStatusRetriedViaDDM,
 	).WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
@@ -125,6 +127,7 @@ func TestClearCommands_OnDeleteError(t *testing.T) {
 	db.DB = DB
 
 	mockSpy.ExpectExec(`.*`).WithArgs(
+		sqlmock.AnyArg(),
 		sqlmock.AnyArg(),
 		sqlmock.AnyArg(),
 		sqlmock.AnyArg(),

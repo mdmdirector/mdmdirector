@@ -85,6 +85,7 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
 	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
 
 	InfoLogger(
 		LogHolder{
@@ -152,6 +153,7 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
 	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
@@ -330,7 +332,8 @@ func ClearCommands(device *types.Device) error {
 	)
 	err := db.DB.Model(&command).
 		Where("device_ud_id = ?", device.UDID).
-		Not("status = ? OR status = ?", "Error", "Acknowledged").
+		// Results are kept as the device's history; only unanswered commands go.
+		Not("status IN ?", []string{"Error", "Acknowledged", commandStatusRetriedViaDDM}).
 		Delete(&commands).
 		Error
 	if err != nil {

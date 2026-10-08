@@ -39,6 +39,9 @@ type CommandPayload struct {
 	ManifestURL string   `json:"manifest_url,omitempty"`
 	Pin         string   `json:"pin,omitempty"`
 	ContentHash string   `json:"-"`
+	// AttemptCount is recorded on the Command row at insert time so a retry's row never
+	// exists with the wrong count. Not sent to the MDM server.
+	AttemptCount int `json:"-"`
 }
 
 type CommandResponse struct {

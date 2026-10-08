@@ -16,7 +16,8 @@ import (
 
 // profileListReporting is the ProfileList a device returns when the profile is present
 // with the UUID mdmdirector expects.
-func profileListReporting(identifier, uuidStr string) types.ProfileListData {
+func profileListReporting() types.ProfileListData {
+	identifier, uuidStr := retryTestProfileID, retryTestHash
 	return types.ProfileListData{ProfileList: []types.ProfileList{{
 		ID:                 uuid.New(),
 		PayloadIdentifier:  identifier,
@@ -41,7 +42,7 @@ func mockReplaceProfileList(mockSpy sqlmock.Sqlmock) {
 // mockVerifyLoads covers the loads VerifyMDMProfiles does after the replace: the device's
 // profiles (one, installed, at retryTestHash), no shared profiles, and the errored-install
 // query answering that the profile's last InstallProfile at that content was Error.
-func mockVerifyLoads(mockSpy sqlmock.Sqlmock, lastStatus string) {
+func mockVerifyLoads(mockSpy sqlmock.Sqlmock, lastStatus string, lastAttempt int) {
 	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1`).
 		WithArgs(retryTestUDID).
 		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier", "device_ud_id", "hashed_payload_uuid", "mobileconfig_data", "installed"}).
@@ -51,33 +52,46 @@ func mockVerifyLoads(mockSpy sqlmock.Sqlmock, lastStatus string) {
 		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
 	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
 		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
-	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
+	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status, attempt_count FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
 		WithArgs(retryTestUDID, "InstallProfile").
-		WillReturnRows(sqlmock.NewRows([]string{"identifier", "content_hash", "status"}).AddRow(retryTestProfileID, retryTestHash, lastStatus))
+		WillReturnRows(sqlmock.NewRows([]string{"identifier", "content_hash", "status", "attempt_count"}).AddRow(retryTestProfileID, retryTestHash, lastStatus, lastAttempt))
 }
 
 // TestVerifyMDMProfiles_ReinstallsProfileWhoseLastInstallErrored: the device reports the
 // profile as present with the right UUID, which used to end the check. Because its last
-// InstallProfile came back Error, a fresh InstallProfile (attempt_count 0) is sent.
+// InstallProfile came back Error with the fast retries exhausted (attempt 3 of 3), one
+// slow-tier InstallProfile is sent, numbered 4.
 func TestVerifyMDMProfiles_ReinstallsProfileWhoseLastInstallErrored(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 	setupRetryFlags(t, 2)
 
 	mockReplaceProfileList(mockSpy)
-	mockVerifyLoads(mockSpy, "Error")
+	mockVerifyLoads(mockSpy, "Error", 3)
 	mockNotOptedIntoDDM(mockSpy)
-	// PushProfiles (legacy): nothing pending for this content, so enqueue
+	// PushProfiles (legacy): nothing pending for this content, so enqueue at attempt 4
 	mockCommandInQueueWithHash(mockSpy, retryTestUDID, "InstallProfile", retryTestProfileID, retryTestHash, false)
 	mockGetDevice(mockSpy, retryTestUDID)
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`INSERT INTO "commands"`).
-		WithArgs(sqlmock.AnyArg(), "retry-command-uuid", sqlmock.AnyArg(), retryTestUDID, "InstallProfile",
-			sqlmock.AnyArg(), sqlmock.AnyArg(), retryTestProfileID, sqlmock.AnyArg(), retryTestHash, sqlmock.AnyArg(), 0).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mockSpy.ExpectCommit()
+	mockInsertRetryCommand(mockSpy, 4)
 
-	err := VerifyMDMProfiles(profileListReporting(retryTestProfileID, retryTestHash), types.Device{UDID: retryTestUDID, SerialNumber: "C02TEST123"})
+	err := VerifyMDMProfiles(profileListReporting(), types.Device{UDID: retryTestUDID, SerialNumber: "C02TEST123"})
+
+	require.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// TestVerifyMDMProfiles_StopsAtTotalRetries: the same situation once the slow tier has
+// also been used up (attempt 5 of 5). The profile is left alone until its content changes.
+func TestVerifyMDMProfiles_StopsAtTotalRetries(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	setupRetryFlags(t, 3) // total = 5
+
+	mockReplaceProfileList(mockSpy)
+	mockVerifyLoads(mockSpy, "Error", 5)
+	mockNotOptedIntoDDM(mockSpy)
+
+	err := VerifyMDMProfiles(profileListReporting(), types.Device{UDID: retryTestUDID})
 
 	require.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
@@ -91,10 +105,10 @@ func TestVerifyMDMProfiles_PresentAndAcknowledgedIsLeftAlone(t *testing.T) {
 	setupRetryFlags(t, 2)
 
 	mockReplaceProfileList(mockSpy)
-	mockVerifyLoads(mockSpy, "Acknowledged")
+	mockVerifyLoads(mockSpy, "Acknowledged", 0)
 	mockNotOptedIntoDDM(mockSpy)
 
-	err := VerifyMDMProfiles(profileListReporting(retryTestProfileID, retryTestHash), types.Device{UDID: retryTestUDID})
+	err := VerifyMDMProfiles(profileListReporting(), types.Device{UDID: retryTestUDID})
 
 	require.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
@@ -118,7 +132,7 @@ func TestVerifyMDMProfiles_DDMDeviceTouchesOnceAndMarksError(t *testing.T) {
 	statusOverrides["PUT /v1/declarations"] = http.StatusNotModified
 
 	mockReplaceProfileList(mockSpy)
-	mockVerifyLoads(mockSpy, "Error")
+	mockVerifyLoads(mockSpy, "Error", 3)
 	// ddmForDevice: opted in
 	mockSpy.ExpectQuery(`SELECT count\(\*\) FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
 		WithArgs(retryTestUDID).
@@ -130,7 +144,7 @@ func TestVerifyMDMProfiles_DDMDeviceTouchesOnceAndMarksError(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
-	err := VerifyMDMProfiles(profileListReporting(retryTestProfileID, retryTestHash), types.Device{UDID: retryTestUDID})
+	err := VerifyMDMProfiles(profileListReporting(), types.Device{UDID: retryTestUDID})
 
 	require.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())

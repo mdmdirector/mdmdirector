@@ -42,6 +42,9 @@ func setupRetryFlags(t *testing.T, retries int) {
 	if flag.Lookup("install-profile-retries") == nil {
 		flag.Int("install-profile-retries", 2, "retries")
 	}
+	if flag.Lookup("install-profile-total-retries") == nil {
+		flag.Int("install-profile-total-retries", 5, "total retries")
+	}
 	if flag.Lookup("mdm-server-type") == nil {
 		flag.String("mdm-server-type", "micromdm", "server type")
 	}
@@ -63,6 +66,7 @@ func setupRetryFlags(t *testing.T, retries int) {
 	t.Cleanup(server.Close)
 
 	require.NoError(t, flag.Set("install-profile-retries", itoa(retries)))
+	require.NoError(t, flag.Set("install-profile-total-retries", itoa(retries+2)))
 	require.NoError(t, flag.Set("mdm-server-type", "micromdm"))
 	require.NoError(t, flag.Set("sign", "false"))
 	require.NoError(t, flag.Set("micromdmurl", server.URL))
@@ -112,8 +116,8 @@ func mockSharedProfile(mockSpy sqlmock.Sqlmock, hash string) {
 		AddRow(retryTestProfileID, hash, []byte("<plist/>"), true))
 }
 
-// mockInsertRetryCommand is the INSERT the push path does for the re-sent command, plus
-// the attempt_count bookkeeping the retry writes afterwards.
+// mockInsertRetryCommand is the INSERT the push path does for the re-sent command. The
+// row is created with its attempt_count; there is no follow-up UPDATE.
 func mockInsertRetryCommand(mockSpy sqlmock.Sqlmock, attempt int) {
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`INSERT INTO "commands"`).
@@ -129,15 +133,9 @@ func mockInsertRetryCommand(mockSpy sqlmock.Sqlmock, attempt int) {
 			sqlmock.AnyArg(), // manifest_url
 			retryTestHash,
 			sqlmock.AnyArg(), // error_string
-			sqlmock.AnyArg(), // attempt_count
+			attempt,          // attempt_count, carried in the payload so the INSERT has it
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mockSpy.ExpectCommit()
-
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`UPDATE "commands" SET "attempt_count"=\$1,"updated_at"=\$2 WHERE command_uuid = \$3`).
-		WithArgs(attempt, sqlmock.AnyArg(), "retry-command-uuid").
-		WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 }
 
@@ -294,19 +292,19 @@ func TestErroredInstallProfiles_LatestResultPerIdentifier(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	rows := sqlmock.NewRows([]string{"identifier", "content_hash", "status"}).
-		AddRow("com.example.failed", "hash-a", "Error").
-		AddRow("com.example.recovered", "hash-b", "Acknowledged").
-		AddRow("com.example.pending", "hash-c", "").
-		AddRow("com.example.retried-via-ddm", "hash-d", commandStatusRetriedViaDDM)
-	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
+	rows := sqlmock.NewRows([]string{"identifier", "content_hash", "status", "attempt_count"}).
+		AddRow("com.example.failed", "hash-a", "Error", 3).
+		AddRow("com.example.recovered", "hash-b", "Acknowledged", 0).
+		AddRow("com.example.pending", "hash-c", "", 1).
+		AddRow("com.example.retried-via-ddm", "hash-d", commandStatusRetriedViaDDM, 0)
+	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status, attempt_count FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
 		WithArgs(retryTestUDID, "InstallProfile").
 		WillReturnRows(rows)
 
 	errored, err := erroredInstallProfiles(retryTestUDID)
 
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"com.example.failed": "hash-a"}, errored)
+	assert.Equal(t, map[string]erroredInstall{"com.example.failed": {ContentHash: "hash-a", AttemptCount: 3}}, errored)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
@@ -335,12 +333,37 @@ func TestMarkErroredInstallsRetriedViaDDM_NothingToMark(t *testing.T) {
 }
 
 func TestLastInstallErrored(t *testing.T) {
-	errored := map[string]string{"com.example.failed": "HASH-A"}
+	errored := map[string]erroredInstall{"com.example.failed": {ContentHash: "HASH-A", AttemptCount: 3}}
+	current := ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-a"}
 
-	assert.True(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-a"}),
-		"latest install of the current content errored (case-insensitive)")
-	assert.False(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-newer"}),
-		"the error was for older content")
-	assert.False(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.other", HashedPayloadUUID: "hash-a"}),
-		"no errored install for this identifier")
+	attempt, retry := lastInstallErrored(errored, current, 5)
+	assert.True(t, retry, "latest install of the current content errored (case-insensitive) and is below the total")
+	assert.Equal(t, 4, attempt, "the next command continues the counter")
+
+	_, retry = lastInstallErrored(errored, current, 3)
+	assert.False(t, retry, "the total retry limit has been reached for this content")
+
+	_, retry = lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-newer"}, 5)
+	assert.False(t, retry, "the error was for older content")
+
+	_, retry = lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.other", HashedPayloadUUID: "hash-a"}, 5)
+	assert.False(t, retry, "no errored install for this identifier")
+}
+
+// TestRetryErroredInstallProfile_SlowTierPushGetsNoFastChain: a command VerifyMDMProfiles
+// sent is numbered above the fast limit, so when it fails the webhook leaves it to the
+// next ProfileList.
+func TestRetryErroredInstallProfile_SlowTierPushGetsNoFastChain(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	waits := stubRetrySleep(t)
+	setupRetryFlags(t, 3)
+
+	device := types.Device{UDID: retryTestUDID}
+	mockFailedCommand(mockSpy, 4)
+
+	require.NoError(t, retryErroredInstallProfile(device, retryTestCmdUUID))
+
+	assert.Empty(t, *waits)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }

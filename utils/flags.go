@@ -163,9 +163,21 @@ func StaleCommandThreshold() int {
 }
 
 // InstallProfileRetries is how many times an InstallProfile the device answered with
-// Error is re-sent from the webhook before mdmdirector stops retrying it. 0 disables.
+// Error is re-sent from the webhook, seconds apart, before that fast tier stops. 0
+// disables it.
 func InstallProfileRetries() int {
 	return flag.Lookup("install-profile-retries").Value.(flag.Getter).Get().(int)
+}
+
+// InstallProfileTotalRetries is how many times in all an InstallProfile at one content
+// version is re-sent across both tiers: the fast webhook retries plus one more from each
+// scheduled ProfileList. Never below InstallProfileRetries.
+func InstallProfileTotalRetries() int {
+	total := flag.Lookup("install-profile-total-retries").Value.(flag.Getter).Get().(int)
+	if fast := InstallProfileRetries(); total < fast {
+		return fast
+	}
+	return total
 }
 
 func EnrollWebhookURL() string {

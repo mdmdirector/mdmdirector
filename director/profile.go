@@ -785,7 +785,7 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 	return intErrors.Join(errs...)
 }
 
-func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM bool) ([]types.Command, error) {
+func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM bool, opts ...pushOption) ([]types.Command, error) {
 	if useDDM {
 		if err := PushProfilesViaDDM(devices, profiles); err != nil {
 			return nil, err
@@ -832,6 +832,9 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM
 			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			commandPayload.UDID = device.UDID
+			for _, opt := range opts {
+				opt(&commandPayload)
+			}
 
 			command, err := SendCommand(commandPayload)
 			if utils.Prometheus() {
@@ -1020,6 +1023,7 @@ func PushSharedProfiles(
 	devices []types.Device,
 	profiles []types.SharedProfile,
 	useDDM bool,
+	opts ...pushOption,
 ) ([]types.Command, error) {
 	if useDDM {
 		if err := PushSharedProfilesViaDDM(devices, profiles); err != nil {
@@ -1085,6 +1089,9 @@ func PushSharedProfiles(
 				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
 			}
 			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
+			for _, opt := range opts {
+				opt(&commandPayload)
+			}
 
 			command, err := SendCommand(commandPayload)
 			if utils.Prometheus() {
@@ -1216,9 +1223,13 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: load errored installs")
 	}
-	// Identifiers reinstalled for that reason, by profile type. On a DDM device the
-	// reinstall is a declaration touch that writes no new command row, so the Error rows
-	// are marked afterwards (see markErroredInstallsRetriedViaDDM).
+	totalRetries := utils.InstallProfileTotalRetries()
+	// Profiles reinstalled for that reason, by identifier, with the attempt_count the
+	// new command carries (the failed row's count plus one, so the two retry tiers share
+	// one counter). On a DDM device the reinstall is a declaration touch that writes no
+	// command row, so the Error rows are marked afterwards instead (see
+	// markErroredInstallsRetriedViaDDM).
+	erroredReinstallAttempt := map[string]int{}
 	erroredReinstalls := map[string][]string{}
 
 	for i := range profilesForVerification {
@@ -1231,22 +1242,23 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")
 		}
-		if isInstalled && !needsReinstall && lastInstallErrored(erroredInstalls, profileForVerification) {
-			InfoLogger(
-				LogHolder{
-					DeviceUDID:        device.UDID,
-					DeviceSerial:      device.SerialNumber,
-					ProfileUUID:       profileForVerification.HashedPayloadUUID,
-					ProfileIdentifier: profileForVerification.PayloadIdentifier,
-					Message:           "VerifyMDMProfiles: Profile is present but its last InstallProfile returned Error, reinstalling",
-					Metric:            profileForVerification.Type,
-				},
-			)
-			if utils.Prometheus() {
-				metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
-			}
-			needsReinstall = true
-			if profileForVerification.Installed {
+		if isInstalled && !needsReinstall && profileForVerification.Installed {
+			if attempt, retry := lastInstallErrored(erroredInstalls, profileForVerification, totalRetries); retry {
+				InfoLogger(
+					LogHolder{
+						DeviceUDID:        device.UDID,
+						DeviceSerial:      device.SerialNumber,
+						ProfileUUID:       profileForVerification.HashedPayloadUUID,
+						ProfileIdentifier: profileForVerification.PayloadIdentifier,
+						Message:           fmt.Sprintf("VerifyMDMProfiles: Profile is present but its last InstallProfile returned Error, reinstalling (retry %d of %d)", attempt, totalRetries),
+						Metric:            profileForVerification.Type,
+					},
+				)
+				if utils.Prometheus() {
+					metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
+				}
+				needsReinstall = true
+				erroredReinstallAttempt[profileForVerification.PayloadIdentifier] = attempt
 				erroredReinstalls[profileForVerification.Type] = append(erroredReinstalls[profileForVerification.Type], profileForVerification.PayloadIdentifier)
 			}
 		}
@@ -1320,21 +1332,47 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	devices = append(devices, device)
 	useDDM := ddmForDevice(device)
 
-	_, err = PushProfiles(devices, profilesToInstall, useDDM)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	} else if useDDM {
-		if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["device"]); err != nil {
+	if useDDM {
+		// Declarations carry no attempt count; the Error rows are marked instead.
+		if _, err := PushProfiles(devices, profilesToInstall, true); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		} else if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["device"]); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
 		}
-	}
-
-	_, err = PushSharedProfiles(devices, sharedProfilesToInstall, useDDM)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	} else if useDDM {
-		if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["shared"]); err != nil {
+		if _, err := PushSharedProfiles(devices, sharedProfilesToInstall, true); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		} else if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["shared"]); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
+		}
+	} else {
+		// A profile re-sent because its last install errored carries the continued
+		// attempt_count; everything else is a fresh install at 0.
+		var plainProfiles []types.DeviceProfile
+		for i := range profilesToInstall {
+			if attempt, ok := erroredReinstallAttempt[profilesToInstall[i].PayloadIdentifier]; ok {
+				if _, err := PushProfiles(devices, profilesToInstall[i:i+1], false, withAttemptCount(attempt)); err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+				}
+				continue
+			}
+			plainProfiles = append(plainProfiles, profilesToInstall[i])
+		}
+		if _, err := PushProfiles(devices, plainProfiles, false); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+
+		var plainShared []types.SharedProfile
+		for i := range sharedProfilesToInstall {
+			if attempt, ok := erroredReinstallAttempt[sharedProfilesToInstall[i].PayloadIdentifier]; ok {
+				if _, err := PushSharedProfiles(devices, sharedProfilesToInstall[i:i+1], false, withAttemptCount(attempt)); err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+				}
+				continue
+			}
+			plainShared = append(plainShared, sharedProfilesToInstall[i])
+		}
+		if _, err := PushSharedProfiles(devices, plainShared, false); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
 		}
 	}
 
