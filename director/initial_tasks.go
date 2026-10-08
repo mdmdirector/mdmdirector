@@ -178,14 +178,36 @@ func SendDeviceConfigured(device types.Device) error {
 	return nil
 }
 
+// SaveDeviceConfigured records that initial tasks are done and DeviceConfigured has been
+// sent. awaiting_configuration is cleared here rather than waiting for the next
+// DeviceInformation response: until it's cleared, reconcileDeviceState treats every
+// device event (including the acks for the DeviceConfigured it just sent) as a reason to
+// send another one. A device still in Setup Assistant re-arms the flag through its next
+// DeviceInformation response, and that is the one case a resend is for.
 func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
 	now := time.Now()
-	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved", "initial_tasks_run", "last_checked_in", "next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true, "last_checked_in": now, "next_push": now}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved", "initial_tasks_run", "awaiting_configuration", "last_checked_in", "next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true, "awaiting_configuration": false, "last_checked_in": now, "next_push": now}).Error
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// clearAwaitingConfiguration is the resend-path counterpart of SaveDeviceConfigured: the
+// DeviceConfigured is on its way, so the flag that asked for it is cleared, in the row and
+// on the in-memory device the caller is still working with.
+func clearAwaitingConfiguration(device *types.Device) error {
+	var deviceModel types.Device
+	err := db.DB.Model(&deviceModel).
+		Where("ud_id = ?", device.UDID).
+		Update("awaiting_configuration", false).
+		Error
+	if err != nil {
+		return errors.Wrap(err, "clearAwaitingConfiguration")
+	}
+	device.AwaitingConfiguration = false
 	return nil
 }
 

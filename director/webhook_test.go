@@ -12,6 +12,7 @@ import (
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/stretchr/testify/assert"
@@ -568,4 +569,110 @@ func TestPushOnNewBuild_InitialTasksPendingNoOp(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// ---- DeviceConfigured resend clears awaiting_configuration -----------------------
+
+// newDeviceConfiguredServer stands in for NanoMDM's enqueue endpoint and counts the
+// DeviceConfigured commands it receives.
+func newDeviceConfiguredServer(t *testing.T, udid string) *int {
+	t.Helper()
+	sends := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends++
+		resp := mdm.APIResponse{
+			CommandUUID: fmt.Sprintf("device-configured-%d", sends),
+			RequestType: "DeviceConfigured",
+			Status:      map[string]mdm.EnrollmentStatus{udid: {PushResult: "success"}},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+	mdm.InitClient(server.URL, "test-api-key")
+	return &sends
+}
+
+// The resend path is the loop: a device whose row still says
+// awaiting_configuration=true after initial tasks ran gets DeviceConfigured on every
+// event, and each send's own acks are events. Sending must clear the flag in the same
+// call, in the row and on the device the caller holds, so the next event is a no-op.
+func TestReconcileDeviceState_ResendClearsAwaitingConfiguration(t *testing.T) {
+	setupNanoMDMFlag(t)
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+	sends := newDeviceConfiguredServer(t, "1234-5678-123456")
+
+	// SendDeviceConfigured sends twice; each send loads the device and records a row.
+	for i := 0; i < 2; i++ {
+		mockGetDevice(mock, "1234-5678-123456")
+		mockCreateCommand(mock)
+	}
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "devices" SET "awaiting_configuration"=\$1,"updated_at"=\$2 WHERE ud_id = \$3`).
+		WithArgs(false, sqlmock.AnyArg(), "1234-5678-123456").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
+		SerialNumber:          "C02ABCDEFGH",
+		InitialTasksRun:       true,
+		AwaitingConfiguration: true,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, *sends, "DeviceConfigured sent twice for luck")
+	assert.False(t, currentDevice.AwaitingConfiguration, "in-memory flag cleared for the rest of this event")
+	assert.NoError(t, mock.ExpectationsWereMet())
+
+	// The device's next event - typically the NotNow or Acknowledged for the send above -
+	// reaches here with the cleared row and sends nothing. No DB expectations remain and
+	// a send would hit the mock DB, so any resend fails the test.
+	err = reconcileDeviceState(currentDevice)
+	require.NoError(t, err)
+	assert.Equal(t, 2, *sends, "no resend on the following event")
+}
+
+// A failed send leaves the flag set so the next event retries; the flag is only cleared
+// once DeviceConfigured is actually on its way.
+func TestReconcileDeviceState_FailedResendKeepsAwaitingConfiguration(t *testing.T) {
+	setupNanoMDMFlag(t)
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	// GetDevice fails before anything reaches NanoMDM.
+	mock.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1`).WillReturnError(errDBGoneAway)
+
+	currentDevice := &types.Device{
+		UDID:                  "1234-5678-123456",
+		InitialTasksRun:       true,
+		AwaitingConfiguration: true,
+	}
+
+	err := reconcileDeviceState(currentDevice)
+
+	assert.ErrorIs(t, err, errDBGoneAway)
+	assert.True(t, currentDevice.AwaitingConfiguration)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// SaveDeviceConfigured runs at the end of initial tasks, right after the first
+// DeviceConfigured. It must clear awaiting_configuration along with the other flags so a
+// freshly enrolled device doesn't enter the resend path on its very next ack.
+func TestSaveDeviceConfigured_ClearsAwaitingConfiguration(t *testing.T) {
+	mock, teardown := setupMockDB(t)
+	defer teardown()
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "devices" SET .*"awaiting_configuration"=\$\d+.* WHERE ud_id = \$\d+`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err := SaveDeviceConfigured(types.Device{UDID: "1234-5678-123456"})
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
