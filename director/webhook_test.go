@@ -500,7 +500,7 @@ func TestPushOnNewBuild_BuildUpgradeTriggersInstall(t *testing.T) {
 	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
 	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
 
-	device := types.Device{UDID: "1234-5678-123456"}
+	device := types.Device{UDID: "1234-5678-123456", InitialTasksRun: true}
 
 	err := pushOnNewBuild(device, "25F71", "26Z99")
 
@@ -555,4 +555,22 @@ func TestHandleCheckinEvent_UserChannelIgnored(t *testing.T) {
 			assert.NoError(t, mockSpy.ExpectationsWereMet())
 		})
 	}
+}
+
+// A build upgrade on a device whose initial tasks are still pending must not push:
+// RunInitialTasks owns that push, and until it has cleared the old enrollment's DDM
+// declarations a push from here would let the device sync them. No DB query may run.
+func TestPushOnNewBuild_InitialTasksPendingNoOp(t *testing.T) {
+	setPushOnNewBuildFlag(t)
+
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+
+	device := types.Device{UDID: "1234-5678-123456", InitialTasksRun: false}
+
+	err := pushOnNewBuild(device, "25F71", "26Z99")
+
+	assert.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }

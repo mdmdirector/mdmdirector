@@ -242,6 +242,15 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	}
 
 	if event.Status == "Idle" {
+		// A freshly enrolled device goes Idle before RunInitialTasks has sent it
+		// anything. Requesting its info now would get a ProfileList back while the
+		// previous enrollment's DDM declarations are still being cleared, and
+		// VerifyMDMProfiles would push into that window. RunInitialTasks requests the
+		// same info itself once the cleanup is done.
+		if !currentDevice.InitialTasksRun {
+			DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Initial tasks pending; not requesting device info on Idle"})
+			return nil
+		}
 		RequestDeviceUpdate(device)
 		return nil
 	}
@@ -362,12 +371,22 @@ func previousBuildVersion(udid string) string {
 }
 
 // pushOnNewBuild re-pushes all profiles when the device's BuildVersion has moved forward (e.g. macOS upgrade).
+//
+// It does nothing while the device's initial tasks are pending. RunInitialTasks pushes
+// everything anyway, and until it has cleared the previous enrollment's DDM declarations
+// (resetDDMForEnrollment) a push from here would re-associate the device's KMFDDM set and
+// notify, letting the device sync declarations that are about to be removed. An erase and
+// reinstall onto a newer build is exactly when both would fire together.
 func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error {
 	if !utils.PushOnNewBuild() {
 		return nil
 	}
 	if device.UDID == "" {
 		return errors.Wrap(fmt.Errorf("device does not have a udid set"), "No Device UDID set")
+	}
+	if !device.InitialTasksRun {
+		DebugLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Initial tasks pending; not pushing on new build"})
+		return nil
 	}
 	if oldBuild == "" || newBuild == "" {
 		return nil
