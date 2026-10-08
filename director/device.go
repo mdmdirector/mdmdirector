@@ -19,7 +19,6 @@ import (
 
 func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	var device types.Device
-	var oldDevice types.Device
 
 	if newDevice.UDID == "" && newDevice.SerialNumber == "" {
 		err := fmt.Errorf("no device UDID or serial set")
@@ -29,7 +28,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
-		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
+		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
 				if err := db.DB.Create(&newDevice).Error; err != nil {
 					return &newDevice, errors.Wrap(err, "Update device create udid")
@@ -45,7 +44,7 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	}
 
 	if newDevice.SerialNumber != "" {
-		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Scan(&oldDevice).Error; err != nil {
+		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
 				if err := db.DB.Create(&newDevice).Error; err != nil {
 					return &newDevice, errors.Wrap(err, "Update device create serial")
@@ -109,7 +108,7 @@ func GetDevice(udid string) (types.Device, error) {
 		return device, errors.Wrap(err, "GetDevice")
 	}
 
-	err := db.DB.Model(device).Where("ud_id = ?", udid).First(&device).Scan(&device).Error
+	err := db.DB.Where("ud_id = ?", udid).First(&device).Error
 	if err != nil {
 		return device, errors.Wrapf(
 			err,

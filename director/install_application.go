@@ -397,7 +397,7 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 func GetSharedApplicationss(w http.ResponseWriter, r *http.Request) {
 	var installApplications []types.SharedInstallApplication
 
-	err := db.DB.Find(&installApplications).Scan(&installApplications).Error
+	err := db.DB.Find(&installApplications).Error
 	if err != nil {
 		log.Error("Couldn't scan to Shared InstallApplications model", err)
 	}

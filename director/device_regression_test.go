@@ -31,10 +31,7 @@ func TestUpdateDevice_DoesNotWriteDeviceInformationBools(t *testing.T) {
 	rows := func() *sqlmock.Rows {
 		return sqlmock.NewRows([]string{"ud_id"}).AddRow("1234-5678-123456")
 	}
-	// UpdateDevice's own First(...).Scan(...) chain re-executes the SELECT
-	// (same pattern as GetDevice, see TestPreviousBuildVersion_KnownDeviceReturnsBuild).
-	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WillReturnRows(rows())
+	// UpdateDevice's lookup of the existing row.
 	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
 		WillReturnRows(rows())
 	// Assign().FirstOrCreate()'s internal lookup, then its UPDATE.
