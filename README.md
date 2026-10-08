@@ -192,13 +192,15 @@ An `InstallProfile` answered with `Error` is now retried in two places:
 
 Every failed result stays visible at `GET /command/error`.
 
-Both retry paths, like `CommandInQueue` before them, look commands up by device and request type. `commands` keeps a row for every command ever sent, so the model declares a composite index `idx_commands_device_request` on `(device_ud_id, request_type)`, which AutoMigrate creates at startup. On an existing deployment with millions of rows, build it ahead of the deploy so startup does not hold a write lock while it builds:
+Both retry paths, like `CommandInQueue` before them, look commands up by device and request type. `commands` keeps a row for every command ever sent, and until now its only index was the `command_uuid` primary key, so every one of these lookups was a sequential scan of the whole table. The model now declares a composite index `idx_commands_device_request` on `(device_ud_id, request_type)`, which AutoMigrate creates at startup.
+
+**Deploying to an existing database:** AutoMigrate runs a plain `CREATE INDEX`, which takes a lock that blocks every write to `commands` until the build finishes, and the build time grows with the table. On a table with millions of rows that can mean minutes during which no command can be queued and no device response can be recorded, all while the new version is starting up. If the start takes long enough for a readiness probe or a deploy timeout to give up, the half-built index is rolled back and the next start tries again from the beginning. To avoid that, build the index before rolling out this version:
 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
 ```
 
-AutoMigrate finds it by name and leaves it alone.
+`CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
 ### Initial tasks lease
 
