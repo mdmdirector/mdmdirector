@@ -285,3 +285,77 @@ func TestClientRequiresInit(t *testing.T) {
 	assert.Equal(t, "test-api-key", client.apiKey)
 	assert.Equal(t, KMFDDMAuthUsername, client.username)
 }
+
+func TestGetSetDeclarations_ReturnsIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Equal(t, "/v1/set-declarations/device-udid-123", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`["com.example.a","com.example.b"]`))
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	ids, err := kmfddmClient.GetSetDeclarations("device-udid-123")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"com.example.a", "com.example.b"}, ids)
+}
+
+func TestGetSetDeclarations_UnknownSetIsEmpty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	ids, err := kmfddmClient.GetSetDeclarations("nope")
+	require.NoError(t, err)
+	assert.Empty(t, ids)
+}
+
+func TestGetSetDeclarations_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	_, err := kmfddmClient.GetSetDeclarations("device-udid-123")
+	require.Error(t, err)
+}
+
+func TestDeleteEnrollmentSet_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/v1/enrollment-sets/device-udid-123", r.URL.Path)
+		assert.Equal(t, "device-udid-123", r.URL.Query().Get("set"))
+		assert.Equal(t, "true", r.URL.Query().Get("nonotify"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	require.NoError(t, kmfddmClient.DeleteEnrollmentSet("device-udid-123", "device-udid-123", true))
+}
+
+func TestDeleteEnrollmentSet_AbsentIsNotAnError(t *testing.T) {
+	for _, code := range []int{http.StatusNotModified, http.StatusNotFound} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Empty(t, r.URL.Query().Get("nonotify"))
+			w.WriteHeader(code)
+		}))
+		kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+		assert.NoError(t, kmfddmClient.DeleteEnrollmentSet("device-udid-123", "device-udid-123", false), "status %d", code)
+		server.Close()
+	}
+}
+
+func TestDeleteEnrollmentSet_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	kmfddmClient := NewKMFDDMClient(server.URL, "test-api-key")
+	require.Error(t, kmfddmClient.DeleteEnrollmentSet("device-udid-123", "device-udid-123", true))
+}

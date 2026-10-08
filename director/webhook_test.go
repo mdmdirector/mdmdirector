@@ -255,44 +255,27 @@ func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows
 	mockSpy.ExpectCommit()
 }
 
-// With global DDM on, an opted-in device stays in DDM mode after the reset, so its
-// declarations must survive: RunInitialTasks may already be re-pushing them, and a
-// teardown would delete what it just wrote. No device_profiles/shared_profiles lookup
-// may follow the opt-in delete
-func TestResetDevice_GlobalDDM_SkipsTeardown(t *testing.T) {
-	setupDDMFlags(t, true, true)
-	postgresMock, mockSpy, _ := sqlmock.New()
-	defer postgresMock.Close()
-	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+// ResetDevice never touches declarations, whatever the DDM flags say: RunInitialTasks may
+// already be running for the new enrollment, and a teardown from here would race the
+// declarations it writes. resetDDMForEnrollment, inside RunInitialTasks, owns that
+// cleanup. So nothing may follow the opt-in delete.
+func TestResetDevice_DoesNotTearDownDeclarations(t *testing.T) {
+	for _, useDDM := range []bool{true, false} {
+		t.Run(fmt.Sprintf("use-ddm=%v", useDDM), func(t *testing.T) {
+			setupDDMFlags(t, useDDM, useDDM)
+			postgresMock, mockSpy, _ := sqlmock.New()
+			defer postgresMock.Close()
+			db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 
-	udid := "1234-5678-123456"
-	expectResetUntilOptInDelete(mockSpy, udid, 1)
+			udid := "1234-5678-123456"
+			expectResetUntilOptInDelete(mockSpy, udid, 1)
 
-	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
+			err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
 
-	require.NoError(t, err)
-	assert.NoError(t, mockSpy.ExpectationsWereMet())
-}
-
-// With global DDM off, the opt-in was the only reason the device used DDM, so its
-// declarations are torn down after the opt-in row is gone
-func TestResetDevice_OptInOnly_TearsDownAfterOptInDelete(t *testing.T) {
-	setupDDMFlags(t, false, false)
-	postgresMock, mockSpy, _ := sqlmock.New()
-	defer postgresMock.Close()
-	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
-
-	udid := "1234-5678-123456"
-	expectResetUntilOptInDelete(mockSpy, udid, 1)
-	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
-	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
-
-	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
-
-	require.NoError(t, err)
-	assert.NoError(t, mockSpy.ExpectationsWereMet())
+			require.NoError(t, err)
+			assert.NoError(t, mockSpy.ExpectationsWereMet())
+		})
+	}
 }
 
 // mdm.CheckOut: if ClearCommands fails the error must propagate.

@@ -110,6 +110,13 @@ func RunInitialTasks(udid string) (retErr error) {
 		return err
 	}
 
+	// Must finish before InstallAllProfiles/InstallBootstrapPackages: those re-create the
+	// device's set in KMFDDM, and this removes whatever the previous enrollment left in it.
+	err = resetDDMForEnrollment(device)
+	if err != nil {
+		return errors.Wrap(err, "RunInitialTasks:resetDDMForEnrollment")
+	}
+
 	err = RequestAllDeviceInfo(device)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks:RequestAllDeviceInfo")
@@ -209,23 +216,13 @@ func ResetDevice(device types.Device) error {
 
 // resetDDMOptIn clears a device's DDM opt-in on re-enrollment. The UDID survives an
 // erase, so its ddm_opt_ins row would otherwise carry DDM status over from before the
-// wipe.
-//
-// Declarations are torn down only when the opt-in was the reason the device used DDM.
-// With the global flag on the device stays in DDM mode, and RunInitialTasks (which can
-// already be running for the new enrollment) re-PUTs every declaration, so a teardown
-// would only race that push and delete what it just wrote. The row is deleted first so
-// a concurrent RunInitialTasks pushes via InstallProfile, which the teardown can't touch.
+// wipe. Declarations are not touched here: nanomdm delivers webhooks asynchronously, so
+// RunInitialTasks for the new enrollment can already be pushing, and a teardown from here
+// would race it. resetDDMForEnrollment, which runs inside RunInitialTasks before its
+// push, removes the stale declarations instead.
 func resetDDMOptIn(device types.Device) {
-	res := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{})
-	if res.Error != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + res.Error.Error()})
-		return
-	}
-	if res.RowsAffected == 0 || utils.UseDDM() {
-		return
-	}
-	if err := teardownDDMForDevice(device); err != nil {
-		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:teardownDDMForDevice: " + err.Error()})
+	err := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{}).Error
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + err.Error()})
 	}
 }

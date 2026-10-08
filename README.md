@@ -100,7 +100,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 
 - `-enrollment-profile string` - Path to local enrollment profile for re-enrollment. Env: `ENROLLMENT_PROFILE`
 - `-enrollment-profile-signed` - Is the enrollment profile already signed. (default false) Env: `ENROLMENT_PROFILE_SIGNED`
-- `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls. (default false) Env: `CLEAR_DEVICE_ON_ENROLL`
+- `-clear-device-on-enroll` - Deletes device profiles and install applications when a device enrolls, and removes every DDM declaration KMFDDM holds for the device, so a fresh enrollment receives only shared profiles and apps. (default false) Env: `CLEAR_DEVICE_ON_ENROLL`
 
 ##### Enrollment Webhook (Remote Profile Fetching)
 
@@ -195,7 +195,9 @@ Both triggers fire only for devices positively identified as Apple Silicon from 
 
 DDM requires NanoMDM plus KMFDDM. Each device's declarations go in its own set, `<set prefix>.<udid>` (`-ddm-set-prefix`), and are named `<declaration prefix>.<udid>.<kind>.<id>` (`-ddm-declaration-prefix`) with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. An empty prefix drops it and its dot. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
 
-Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
+Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM.
+
+On (re-)enrollment, `RunInitialTasks` clears the device's KMFDDM set before it pushes anything: with `-clear-device-on-enroll` always, otherwise only when the device is not going to use DDM (its per-device opt-in is removed by the enrollment reset). The enrollment→set association is dropped first, then each declaration in the set is removed and deleted, all without notifying, so a device that syncs mid-cleanup sees an empty set rather than a partial one. The cleanup runs under the initial-tasks lease, so it cannot race the declarations the push then writes. See [`tools/README.md`](tools/README.md) for the operator scripts.
 
 ### Database and outbound HTTP
 
