@@ -177,7 +177,7 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 
 	// Exclude user-channel enrollments (see fetchDevicesFromNanoMDM). They are not
 	// devices, so the device-channel info commands never come back for them.
-	err := db.DB.Where("ud_id NOT LIKE ?", "%:%").Find(&dbDevices).Scan(&dbDevices).Error
+	err := db.DB.Where("ud_id NOT LIKE ?", "%:%").Find(&dbDevices).Error
 	if err != nil {
 		return errors.Wrap(err, "PushAll: Scan devices")
 	}

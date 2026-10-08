@@ -174,7 +174,6 @@ func escrowPin(device types.Device, pin string) error {
 
 func generatePin(device types.Device) (string, error) {
 	// Look for an existing unlock pin generated within the last 30 mins
-	var unlockPinModel types.UnlockPin
 	var savedUnlockPin types.UnlockPin
 
 	if device.UnlockPin != "" {
@@ -186,7 +185,7 @@ func generatePin(device types.Device) (string, error) {
 		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
 	}
 
-	if err := db.DB.Model(&unlockPinModel).Where("unlock_pins.pin_set > ? AND unlock_pins.device_ud_id = ?", thirtyMinsAgo, device.UDID).Order("pin_set DESC").First(&unlockPinModel).Scan(&savedUnlockPin).Error; err != nil {
+	if err := db.DB.Where("unlock_pins.pin_set > ? AND unlock_pins.device_ud_id = ?", thirtyMinsAgo, device.UDID).Order("pin_set DESC").First(&savedUnlockPin).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("Pin was created more than 30 mins ago")
 			out := ""

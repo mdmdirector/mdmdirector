@@ -20,13 +20,10 @@ func mockDeviceRow() *sqlmock.Rows {
 		AddRow(udid, "C02TEST123", true, true, false, "")
 }
 
-// mockFirstAndScanDevice is the SELECT pair gorm issues for First(&device).Scan(&other).
-func mockFirstAndScanDevice(mockSpy sqlmock.Sqlmock) {
-	udid := retryTestUDID
+// mockDeviceLookup is the single SELECT a First(&device) issues.
+func mockDeviceLookup(mockSpy sqlmock.Sqlmock) {
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 ORDER BY "devices"\."ud_id" LIMIT 1`).
-		WithArgs(udid).WillReturnRows(mockDeviceRow())
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 AND "devices"\."ud_id" = \$2 ORDER BY "devices"\."ud_id" LIMIT 1`).
-		WithArgs(udid, udid).WillReturnRows(mockDeviceRow())
+		WithArgs(retryTestUDID).WillReturnRows(mockDeviceRow())
 }
 
 func setupWebhookFlags(t *testing.T) {
@@ -60,9 +57,9 @@ func TestHandleAcknowledgeEvent_ErrorAckRetriesInstallProfile(t *testing.T) {
 </dict></plist>`, retryTestCmdUUID, retryTestUDID))
 
 	// previousBuildVersion -> GetDevice
-	mockFirstAndScanDevice(mockSpy)
-	// UpdateDevice: First+Scan, then Assign+FirstOrCreate on the existing row
-	mockFirstAndScanDevice(mockSpy)
+	mockDeviceLookup(mockSpy)
+	// UpdateDevice: load the row, then Assign+FirstOrCreate on it
+	mockDeviceLookup(mockSpy)
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 AND "devices"\."ud_id" = \$2`).
 		WithArgs(retryTestUDID, retryTestUDID).WillReturnRows(mockDeviceRow())
 	mockSpy.ExpectBegin()
@@ -116,8 +113,8 @@ func TestHandleAcknowledgeEvent_AcknowledgedAckDoesNotRetry(t *testing.T) {
 	<key>UDID</key><string>%s</string>
 </dict></plist>`, retryTestCmdUUID, retryTestUDID))
 
-	mockFirstAndScanDevice(mockSpy)
-	mockFirstAndScanDevice(mockSpy)
+	mockDeviceLookup(mockSpy)
+	mockDeviceLookup(mockSpy)
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 AND "devices"\."ud_id" = \$2`).
 		WithArgs(retryTestUDID, retryTestUDID).WillReturnRows(mockDeviceRow())
 	mockSpy.ExpectBegin()

@@ -1138,7 +1138,6 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		},
 	)
 	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var profilesToInstall []types.DeviceProfile
 	var profilesToRemove []types.DeviceProfile
@@ -1195,7 +1194,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		deviceProfileIDs[profileForVerification.PayloadIdentifier] = struct{}{}
 	}
 
-	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Scan(&sharedProfiles).Error
+	err = db.DB.Find(&sharedProfiles).Error
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load shared profiles to install")
 	}
@@ -1504,7 +1503,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	vars := mux.Vars(r)
 
-	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
+	err := db.DB.Where("device_ud_id = ?", vars["udid"]).Find(&profiles).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
 	}
@@ -1523,7 +1522,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.SharedProfile
 
-	err := db.DB.Find(&profiles).Scan(&profiles).Error
+	err := db.DB.Find(&profiles).Error
 	if err != nil {
 		log.Error("Couldn't scan to Shared Profiles model", err)
 	}
@@ -1653,7 +1652,6 @@ func RequestProfileList(device types.Device) error {
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
 
@@ -1678,11 +1676,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
-	err = db.DB.Model(&sharedProfile).
-		Find(&sharedProfiles).
-		Where("installed = true").
-		Scan(&sharedProfiles).
-		Error
+	err = db.DB.Where("installed = true").Find(&sharedProfiles).Error
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}

@@ -409,16 +409,9 @@ func TestPreviousBuildVersion_KnownDeviceReturnsBuild(t *testing.T) {
 	DB, _ := gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 	db.DB = DB
 
-	// GetDevice chains First(...).Scan(...), which re-executes the SELECT.
-	// Both invocations need rows.
-	makeRows := func() *sqlmock.Rows {
-		return sqlmock.NewRows([]string{"ud_id", "build_version"}).
-			AddRow("1234-5678-123456", "25F71")
-	}
 	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WillReturnRows(makeRows())
-	mockSpy.ExpectQuery(`^SELECT \* FROM "devices" WHERE ud_id = \$1`).
-		WillReturnRows(makeRows())
+		WillReturnRows(sqlmock.NewRows([]string{"ud_id", "build_version"}).
+			AddRow("1234-5678-123456", "25F71"))
 
 	got := previousBuildVersion("1234-5678-123456")
 

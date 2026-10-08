@@ -139,20 +139,10 @@ func mockGetDevice(mockSpy sqlmock.Sqlmock, udid string) {
 // mockGetDeviceWithInitialTasks is mockGetDevice with control over initial_tasks_run, for
 // the paths that defer while a device is still enrolling
 func mockGetDeviceWithInitialTasks(mockSpy sqlmock.Sqlmock, udid string, initialTasksRun bool) {
-	deviceRows1 := sqlmock.NewRows([]string{"ud_id", "serial_number", "initial_tasks_run"}).
-		AddRow(udid, "C02TEST123", initialTasksRun)
-	deviceRows2 := sqlmock.NewRows([]string{"ud_id", "serial_number", "initial_tasks_run"}).
-		AddRow(udid, "C02TEST123", initialTasksRun)
-
-	// First query from First()
 	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 ORDER BY "devices"\."ud_id" LIMIT 1`).
 		WithArgs(udid).
-		WillReturnRows(deviceRows1)
-
-	// Second query from Scan() - includes primary key in WHERE clause
-	mockSpy.ExpectQuery(`SELECT \* FROM "devices" WHERE ud_id = \$1 AND "devices"\."ud_id" = \$2 ORDER BY "devices"\."ud_id" LIMIT 1`).
-		WithArgs(udid, udid).
-		WillReturnRows(deviceRows2)
+		WillReturnRows(sqlmock.NewRows([]string{"ud_id", "serial_number", "initial_tasks_run"}).
+			AddRow(udid, "C02TEST123", initialTasksRun))
 }
 
 // fakeMicroMDMServer returns an httptest.Server that mimics the MicroMDM - /v1/commands
@@ -213,10 +203,18 @@ func TestReinstallEnrollmentProfile_Webhook_Success(t *testing.T) {
 	device := types.Device{UDID: "TEST-UDID-WEBHOOK-OK", SerialNumber: "C02WEBHOOKOK"}
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
+	// PushProfiles: nothing pending for this content, send, record the command row.
+	// Until SendCommand checked the Create error this test passed with the last two
+	// expectations missing: the INSERT failed and nobody noticed.
+	mockSpy.ExpectQuery(`SELECT \* FROM "commands" WHERE \(device_ud_id = \$1 AND request_type = \$2 AND identifier = \$3 AND COALESCE\(content_hash, ''\) = \$4\) AND \(status = \$5 OR status = \$6\)`).
+		WithArgs(device.UDID, "InstallProfile", "com.example.test.enrollment", sqlmock.AnyArg(), "", "NotNow").
+		WillReturnRows(sqlmock.NewRows([]string{"command_uuid"}))
 	mockGetDevice(mockSpy, device.UDID)
+	mockCreateCommand(mockSpy)
 
 	err := reinstallEnrollmentProfile(device)
 	require.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
 // TestGetEnrollmentProfile_Found - returns enrollment profile from list of profiles
