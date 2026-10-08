@@ -20,6 +20,13 @@ func DeviceSetName(prefix, udid string) string {
 	return withPrefix(prefix, udid)
 }
 
+// DeviceDeclarationPrefix returns what every declaration identifier MDMDirector creates
+// for a device starts with, trailing dot included.
+// Format: <prefix>.<udid>., or <udid>. with no prefix
+func DeviceDeclarationPrefix(prefix, udid string) string {
+	return withPrefix(prefix, udid) + "."
+}
+
 // LegacyProfileDeclarationID returns the declaration identifier for a LegacyProfile
 // Format: <prefix>.<udid>.legacy_profile.<profileID>, or without <prefix>.
 func LegacyProfileDeclarationID(prefix, udid, profileID string) string {

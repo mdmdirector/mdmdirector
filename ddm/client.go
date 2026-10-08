@@ -307,3 +307,54 @@ func (c *KMFDDMClient) PutEnrollmentSet(enrollmentID, setName string, noNotify b
 		return fmt.Errorf("KMFDDM PUT %s returned unexpected status %d: %s", urlPath, resp.StatusCode, string(respBody))
 	}
 }
+
+// GetSetDeclarations returns the identifiers of every declaration in a set via
+// GET /v1/set-declarations/{set}. A set KMFDDM doesn't know is reported as empty.
+func (c *KMFDDMClient) GetSetDeclarations(setName string) ([]string, error) {
+	urlPath := fmt.Sprintf("/v1/set-declarations/%s", setName)
+	resp, err := c.doRequest("GET", urlPath, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var ids []string
+		if err := json.NewDecoder(resp.Body).Decode(&ids); err != nil {
+			return nil, errors.Wrapf(err, "KMFDDM GET %s: decode response", urlPath)
+		}
+		return ids, nil
+	case http.StatusNotFound, http.StatusNoContent:
+		return nil, nil
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("KMFDDM GET %s returned unexpected status %d: %s", urlPath, resp.StatusCode, string(respBody))
+	}
+}
+
+// DeleteEnrollmentSet removes the association between an enrollment ID and a set via
+// DELETE /v1/enrollment-sets/{id}?set={set}. Once it is gone the enrollment's
+// declaration-items no longer include anything from that set.
+func (c *KMFDDMClient) DeleteEnrollmentSet(enrollmentID, setName string, noNotify bool) error {
+	params := url.Values{}
+	params.Set("set", setName)
+	if noNotify {
+		params.Set("nonotify", "true")
+	}
+
+	urlPath := fmt.Sprintf("/v1/enrollment-sets/%s", enrollmentID)
+	resp, err := c.doRequest("DELETE", urlPath, params, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusNotModified, http.StatusNotFound: // removed, already absent, unknown
+		return nil
+	default:
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("KMFDDM DELETE %s returned unexpected status %d: %s", urlPath, resp.StatusCode, string(respBody))
+	}
+}

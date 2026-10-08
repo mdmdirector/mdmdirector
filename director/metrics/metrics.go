@@ -203,6 +203,26 @@ func InitialTasks(result string) prometheus.Counter {
 	return initialTasksTotal.WithLabelValues(result)
 }
 
+// pushesDeferredTotal counts pushes and info requests that were skipped because the
+// device's initial tasks are pending: RunInitialTasks owns the first push, and anything
+// pushing before it has cleared the previous enrollment's DDM declarations could let the
+// device sync them. Label path names the caller that deferred.
+//
+//nolint:gochecknoglobals
+var pushesDeferredTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "pushes_deferred_total",
+		Help:      "Pushes and info requests skipped because the device's initial tasks are pending, by caller.",
+	},
+	[]string{"path"},
+)
+
+// PushesDeferred - accessor for pushesDeferredTotal
+func PushesDeferred(path string) prometheus.Counter {
+	return pushesDeferredTotal.WithLabelValues(path)
+}
+
 // ddmDeclarationWritesTotal counts KMFDDM declaration write operations issued by mdmdirector
 // Labels:
 //   - declaration_type:    "configuration", "activation", "asset", "management", "unknown"

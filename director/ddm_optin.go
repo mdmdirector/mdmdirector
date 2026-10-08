@@ -12,11 +12,14 @@ import (
 	intErrors "errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
+	"github.com/pkg/errors"
 )
 
 // DDMOptIn marks a single device as opted into DDM (for both profiles and
@@ -101,7 +104,14 @@ func partitionByDDMPackages(devices []types.Device) (ddmDevices, legacyDevices [
 // pushSharedProfilesPerDevice runs PushSharedProfiles split by each device's mode,
 // so a fleet-wide push respects per-device DDM opt-in
 func pushSharedProfilesPerDevice(devices []types.Device, profiles []types.SharedProfile) error {
-	ddmDevices, legacyDevices := partitionByDDM(devices)
+	ready := make([]types.Device, 0, len(devices))
+	for i := range devices {
+		if initialTasksPending(devices[i], deferPathProfilePost) {
+			continue
+		}
+		ready = append(ready, devices[i])
+	}
+	ddmDevices, legacyDevices := partitionByDDM(ready)
 	var errs []error
 	if len(ddmDevices) > 0 {
 		if _, err := PushSharedProfiles(ddmDevices, profiles, true); err != nil {
@@ -173,6 +183,10 @@ func EnableDeviceDDMHandler(w http.ResponseWriter, r *http.Request) {
 	device, err := GetDevice(udid)
 	if err != nil {
 		http.Error(w, "device not found", http.StatusNotFound)
+		return
+	}
+	if initialTasksPending(device, deferPathDDMEnable) {
+		http.Error(w, "device is enrolling; initial tasks pending, retry later", http.StatusConflict)
 		return
 	}
 
@@ -270,4 +284,94 @@ func errorMessages(err error) []string {
 		return msgs
 	}
 	return []string{err.Error()}
+}
+
+// clearDDMForDevice empties a device's KMFDDM set, without needing mdmdirector's own
+// profile or application rows, so it also catches declarations those rows no longer
+// describe. It is the DDM half of clear-device-on-enroll.
+//
+// The enrollment→set association is dropped first. From that point the device's
+// declaration-items are empty, so even if a DeclarativeManagement command reaches the
+// device while the per-declaration work is still running, it can only ever see an empty
+// set, never a partial one. Nothing here notifies the device: it is freshly enrolling and
+// has no DDM state, and the push that follows re-associates the set and notifies if the
+// device uses DDM.
+//
+// Every declaration is removed from the set, but only the ones mdmdirector created, whose
+// identifier starts with ddm.DeviceDeclarationPrefix, are deleted from KMFDDM. Anything
+// else in the set belongs to another system and is left in place, orphaned if this set was
+// its only membership; cleaning that up is that system's job.
+//
+// It returns the number of declarations deleted.
+func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
+	ownPrefix := ddm.DeviceDeclarationPrefix(utils.DDMDeclarationPrefix(), udid)
+	if err := client.DeleteEnrollmentSet(udid, setName, true); err != nil {
+		return 0, errors.Wrapf(err, "clearDDMForDevice: DELETE enrollment-set for %s", udid)
+	}
+
+	ids, err := client.GetSetDeclarations(setName)
+	if err != nil {
+		return 0, errors.Wrapf(err, "clearDDMForDevice: GET set-declarations %s for %s", setName, udid)
+	}
+
+	var errs []error
+	var foreign []string
+	removed := 0
+	for _, id := range ids {
+		if err := client.DeleteSetDeclaration(setName, id, true); err != nil {
+			observeSetMembershipChange(id, "delete", err)
+			errs = append(errs, errors.Wrapf(err, "DELETE set-declaration %s", id))
+			continue
+		}
+		observeSetMembershipChange(id, "delete", nil)
+		if !strings.HasPrefix(id, ownPrefix) {
+			foreign = append(foreign, id)
+			continue
+		}
+		err := client.DeleteDeclaration(id, true)
+		observeDeclarationWriteByID(id, "delete", err)
+		if err != nil {
+			errs = append(errs, errors.Wrapf(err, "DELETE declaration %s", id))
+			continue
+		}
+		removed++
+	}
+	if len(foreign) > 0 {
+		InfoLogger(LogHolder{DeviceUDID: udid, Message: fmt.Sprintf("Removed %d declaration(s) not created by mdmdirector from set %s but left them in KMFDDM: %s", len(foreign), setName, strings.Join(foreign, ", "))})
+	}
+	if len(errs) > 0 {
+		return removed, errors.Wrapf(intErrors.Join(errs...), "clearDDMForDevice: %s", udid)
+	}
+	return removed, nil
+}
+
+// resetDDMForEnrollment runs clearDDMForDevice for a (re-)enrolling device when
+// clear-device-on-enroll is set, or when the device is not going to use DDM at all (so any
+// declarations left in its set are stale, e.g. from a per-device opt-in that ResetDevice
+// just removed). It runs inside RunInitialTasks, under its lease and before any push, so
+// it cannot race the declarations that push writes. A missing KMFDDM client means DDM is
+// not configured and there is nothing to clear.
+func resetDDMForEnrollment(device types.Device) error {
+	usesDDM := ddmForDevice(device) || ddmPackagesForDevice(device)
+	if !utils.FlagProvider.ClearDeviceOnEnroll() && usesDDM {
+		return nil
+	}
+	client, err := ddm.Client()
+	if err != nil {
+		if intErrors.Is(err, ddm.ErrClientNotInitialized) {
+			return nil
+		}
+		return errors.Wrap(err, "resetDDMForEnrollment")
+	}
+
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Clearing DDM declarations for enrollment"})
+	removed, err := clearDDMForDevice(client, device.UDID)
+	if err != nil {
+		return errors.Wrap(err, "resetDDMForEnrollment")
+	}
+	if removed > 0 {
+		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: fmt.Sprintf("Cleared %d DDM declaration(s) for enrollment", removed)})
+	}
+	return nil
 }

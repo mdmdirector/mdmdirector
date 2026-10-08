@@ -210,17 +210,18 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 
-	// ResetDevice: UPDATE device flags
-	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^UPDATE "devices"`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mockSpy.ExpectCommit()
-
-	// ResetDevice: DELETE the DDM opt-in row; none existed, so no teardown follows
+	// ResetDevice: DELETE the DDM opt-in row, before the flags so a concurrent
+	// RunInitialTasks never sees the old enrollment's opt-in
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
 		WithArgs("1234-5678-123456").
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	mockSpy.ExpectCommit()
+
+	// ResetDevice: UPDATE device flags
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^UPDATE "devices"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
 	event := &types.CheckinEvent{
@@ -234,9 +235,10 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
-// expectResetUntilOptInDelete mocks ResetDevice up to and including the opt-in DELETE,
-// in the order the code must issue them: the device flag reset has to land before any
-// DDM work, or a concurrently processed TokenUpdate gets overwritten
+// expectResetUntilOptInDelete mocks every statement ResetDevice issues, in the order the
+// code must issue them: the opt-in row goes before the flag reset, because the moment
+// initial_tasks_run is false a TokenUpdate on another replica can start RunInitialTasks,
+// which must not see the previous enrollment's opt-in
 func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows int64) {
 	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1`).
@@ -244,55 +246,38 @@ func expectResetUntilOptInDelete(mockSpy sqlmock.Sqlmock, udid string, optInRows
 	mockSpy.ExpectCommit()
 
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^UPDATE "devices"`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mockSpy.ExpectCommit()
-
-	mockSpy.ExpectBegin()
 	mockSpy.ExpectExec(`^DELETE FROM "ddm_opt_ins" WHERE device_ud_id = \$1`).
 		WithArgs(udid).
 		WillReturnResult(sqlmock.NewResult(0, optInRows))
 	mockSpy.ExpectCommit()
+
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`^UPDATE "devices"`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
 }
 
-// With global DDM on, an opted-in device stays in DDM mode after the reset, so its
-// declarations must survive: RunInitialTasks may already be re-pushing them, and a
-// teardown would delete what it just wrote. No device_profiles/shared_profiles lookup
-// may follow the opt-in delete
-func TestResetDevice_GlobalDDM_SkipsTeardown(t *testing.T) {
-	setupDDMFlags(t, true, true)
-	postgresMock, mockSpy, _ := sqlmock.New()
-	defer postgresMock.Close()
-	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+// ResetDevice never touches declarations, whatever the DDM flags say: RunInitialTasks may
+// already be running for the new enrollment, and a teardown from here would race the
+// declarations it writes. resetDDMForEnrollment, inside RunInitialTasks, owns that
+// cleanup. So the opt-in delete and the flag reset are all that happens, in that order.
+func TestResetDevice_DoesNotTearDownDeclarations(t *testing.T) {
+	for _, useDDM := range []bool{true, false} {
+		t.Run(fmt.Sprintf("use-ddm=%v", useDDM), func(t *testing.T) {
+			setupDDMFlags(t, useDDM, useDDM)
+			postgresMock, mockSpy, _ := sqlmock.New()
+			defer postgresMock.Close()
+			db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
 
-	udid := "1234-5678-123456"
-	expectResetUntilOptInDelete(mockSpy, udid, 1)
+			udid := "1234-5678-123456"
+			expectResetUntilOptInDelete(mockSpy, udid, 1)
 
-	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
+			err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
 
-	require.NoError(t, err)
-	assert.NoError(t, mockSpy.ExpectationsWereMet())
-}
-
-// With global DDM off, the opt-in was the only reason the device used DDM, so its
-// declarations are torn down after the opt-in row is gone
-func TestResetDevice_OptInOnly_TearsDownAfterOptInDelete(t *testing.T) {
-	setupDDMFlags(t, false, false)
-	postgresMock, mockSpy, _ := sqlmock.New()
-	defer postgresMock.Close()
-	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
-
-	udid := "1234-5678-123456"
-	expectResetUntilOptInDelete(mockSpy, udid, 1)
-	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
-	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
-		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}))
-
-	err := ResetDevice(types.Device{UDID: udid, SerialNumber: "SERIAL"})
-
-	require.NoError(t, err)
-	assert.NoError(t, mockSpy.ExpectationsWereMet())
+			require.NoError(t, err)
+			assert.NoError(t, mockSpy.ExpectationsWereMet())
+		})
+	}
 }
 
 // mdm.CheckOut: if ClearCommands fails the error must propagate.
@@ -517,7 +502,7 @@ func TestPushOnNewBuild_BuildUpgradeTriggersInstall(t *testing.T) {
 	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
 	mockSpy.ExpectQuery(`.*`).WillReturnError(errDBGoneAway)
 
-	device := types.Device{UDID: "1234-5678-123456"}
+	device := types.Device{UDID: "1234-5678-123456", InitialTasksRun: true}
 
 	err := pushOnNewBuild(device, "25F71", "26Z99")
 
@@ -572,4 +557,22 @@ func TestHandleCheckinEvent_UserChannelIgnored(t *testing.T) {
 			assert.NoError(t, mockSpy.ExpectationsWereMet())
 		})
 	}
+}
+
+// A build upgrade on a device whose initial tasks are still pending must not push:
+// RunInitialTasks owns that push, and until it has cleared the old enrollment's DDM
+// declarations a push from here would let the device sync them. No DB query may run.
+func TestPushOnNewBuild_InitialTasksPendingNoOp(t *testing.T) {
+	setPushOnNewBuildFlag(t)
+
+	postgresMock, mockSpy, _ := sqlmock.New()
+	defer postgresMock.Close()
+	db.DB, _ = gorm.Open(postgres.New(postgres.Config{Conn: postgresMock}), &gorm.Config{})
+
+	device := types.Device{UDID: "1234-5678-123456", InitialTasksRun: false}
+
+	err := pushOnNewBuild(device, "25F71", "26Z99")
+
+	assert.NoError(t, err)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }

@@ -242,6 +242,16 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 	}
 
 	if event.Status == "Idle" {
+		// A freshly enrolled device goes Idle before RunInitialTasks has sent it
+		// anything. Requesting its info now would get a ProfileList back while the
+		// previous enrollment's DDM declarations are still being cleared, and
+		// VerifyMDMProfiles would push into that window. RunInitialTasks requests the
+		// same info itself once the cleanup is done. A device whose TokenUpdate was
+		// lost stays here until the next TokenUpdate or the unconfigured-devices sweep
+		// picks it up, so this is logged at info and counted.
+		if initialTasksPending(*currentDevice, deferPathIdleInfoRequest) {
+			return nil
+		}
 		RequestDeviceUpdate(device)
 		return nil
 	}
@@ -362,6 +372,12 @@ func previousBuildVersion(udid string) string {
 }
 
 // pushOnNewBuild re-pushes all profiles when the device's BuildVersion has moved forward (e.g. macOS upgrade).
+//
+// It does nothing while the device's initial tasks are pending. RunInitialTasks pushes
+// everything anyway, and until it has cleared the previous enrollment's DDM declarations
+// (resetDDMForEnrollment) a push from here would re-associate the device's KMFDDM set and
+// notify, letting the device sync declarations that are about to be removed. An erase and
+// reinstall onto a newer build is exactly when both would fire together.
 func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error {
 	if !utils.PushOnNewBuild() {
 		return nil
@@ -382,6 +398,9 @@ func pushOnNewBuild(device types.Device, oldBuild string, newBuild string) error
 		return err
 	}
 	if !oldVersion.LessThan(newVersion) {
+		return nil
+	}
+	if initialTasksPending(device, deferPathPushOnNewBuild) {
 		return nil
 	}
 

@@ -1,6 +1,7 @@
 package ddm
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -165,4 +166,12 @@ func TestProfileDownloadURL(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestDeviceDeclarationPrefix(t *testing.T) {
+	assert.Equal(t, "com.example.ABCD-1234.", DeviceDeclarationPrefix("com.example", "ABCD-1234"))
+	assert.Equal(t, "ABCD-1234.", DeviceDeclarationPrefix("", "ABCD-1234"))
+	// Every ID the package builds for the device carries the prefix
+	assert.True(t, strings.HasPrefix(LegacyProfileDeclarationID("p", "ABCD-1234", "x"), DeviceDeclarationPrefix("p", "ABCD-1234")))
+	assert.True(t, strings.HasPrefix(PackageActivationDeclarationID("", "ABCD-1234", "x"), DeviceDeclarationPrefix("", "ABCD-1234")))
 }
