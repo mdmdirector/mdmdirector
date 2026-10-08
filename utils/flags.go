@@ -150,6 +150,18 @@ func RedisTLS() bool {
 	return flag.Lookup("redis-tls").Value.(flag.Getter).Get().(bool)
 }
 
+func RedisIdleTimeout() int {
+	return flag.Lookup("redis-idle-timeout").Value.(flag.Getter).Get().(int)
+}
+
+func RedisMaxConnAge() int {
+	return flag.Lookup("redis-max-conn-age").Value.(flag.Getter).Get().(int)
+}
+
+func RedisIdleCheckFrequency() int {
+	return flag.Lookup("redis-idle-check-frequency").Value.(flag.Getter).Get().(int)
+}
+
 func OnceIn() int {
 	return flag.Lookup("once-in").Value.(flag.Getter).Get().(int)
 }

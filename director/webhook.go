@@ -50,7 +50,7 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.CheckinEvent != nil {
 		err := handleCheckinEvent(out.Topic, out.CheckinEvent)
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceUDID: out.CheckinEvent.UDID, Message: "webhook: checkin " + out.Topic + ": " + err.Error()})
 		}
 		if utils.Prometheus() {
 			metrics.CheckinRequests(checkinMessageType(out.Topic), metrics.ResultFromError(err)).Inc()
@@ -61,7 +61,12 @@ func WebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if out.AcknowledgeEvent != nil {
 		err := handleAcknowledgeEvent(out.AcknowledgeEvent)
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{
+				DeviceUDID:    out.AcknowledgeEvent.UDID,
+				CommandUUID:   out.AcknowledgeEvent.CommandUUID,
+				CommandStatus: out.AcknowledgeEvent.Status,
+				Message:       "webhook: acknowledge: " + err.Error(),
+			})
 		}
 		if utils.Prometheus() {
 			metrics.CommandResults(commandResultStatus(out.AcknowledgeEvent.Status), metrics.ResultFromError(err)).Inc()

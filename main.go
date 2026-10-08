@@ -108,6 +108,15 @@ var RedisPassword string
 
 var RedisTLS bool
 
+// RedisIdleTimeoutSeconds bounds how long a Redis connection may sit idle in the pool.
+var RedisIdleTimeoutSeconds int
+
+// RedisMaxConnAgeSeconds bounds how long a Redis connection may be reused.
+var RedisMaxConnAgeSeconds int
+
+// RedisIdleCheckFrequencySeconds is how often the Redis pool reaps idle connections.
+var RedisIdleCheckFrequencySeconds int
+
 var OnceIn int
 
 // ControlPlaneInterval is the number of minutes between fleet-wide control-plane scans
@@ -289,6 +298,24 @@ func main() {
 		"redis-tls",
 		env.Bool("REDIS_TLS", false),
 		"Enable TLS for Redis connection",
+	)
+	flag.IntVar(
+		&RedisIdleTimeoutSeconds,
+		"redis-idle-timeout",
+		env.Int("REDIS_IDLE_TIMEOUT", 240),
+		"Maximum seconds a Redis connection may sit idle in the pool before being closed. Keep below the Istio/NLB idle timeout so the pool recycles connections before the mesh resets them. -1 disables the limit.",
+	)
+	flag.IntVar(
+		&RedisMaxConnAgeSeconds,
+		"redis-max-conn-age",
+		env.Int("REDIS_MAX_CONN_AGE", 1800),
+		"Maximum seconds a Redis connection may be reused before being closed. 0 means connections are reused forever.",
+	)
+	flag.IntVar(
+		&RedisIdleCheckFrequencySeconds,
+		"redis-idle-check-frequency",
+		env.Int("REDIS_IDLE_CHECK_FREQUENCY", 60),
+		"Seconds between sweeps that close idle Redis connections. -1 disables the sweep (idle connections are still checked when taken from the pool).",
 	)
 	flag.StringVar(
 		&DBSSLMode,

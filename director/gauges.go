@@ -21,8 +21,9 @@ func PollGauges() {
 func pollDevices() {
 	for range time.Tick(gaugePollInterval) {
 		var count int64
-		if err := db.DB.Model(&types.Device{}).Count(&count).Error; err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+		err := db.RetryRead(func() error { return db.DB.Model(&types.Device{}).Count(&count).Error })
+		if err != nil {
+			ErrorLogger(LogHolder{Message: "pollDevices: count devices: " + err.Error()})
 			continue
 		}
 		metrics.DevicesTotal().Set(float64(count))
@@ -40,8 +41,9 @@ func pollProfiles() {
 func pollDDMOptIns() {
 	for range time.Tick(gaugePollInterval) {
 		var count int64
-		if err := db.DB.Model(&DDMOptIn{}).Count(&count).Error; err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+		err := db.RetryRead(func() error { return db.DB.Model(&DDMOptIn{}).Count(&count).Error })
+		if err != nil {
+			ErrorLogger(LogHolder{Message: "pollDDMOptIns: count ddm opt-ins: " + err.Error()})
 			continue
 		}
 		metrics.DDMEnabledDevices().Set(float64(count))
@@ -50,12 +52,14 @@ func pollDDMOptIns() {
 
 func setProfilesGauge(scope string, model interface{}) {
 	var installed, uninstalled int64
-	if err := db.DB.Model(model).Where("installed = ?", true).Count(&installed).Error; err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+	err := db.RetryRead(func() error { return db.DB.Model(model).Where("installed = ?", true).Count(&installed).Error })
+	if err != nil {
+		ErrorLogger(LogHolder{Message: "pollProfiles: count installed " + scope + " profiles: " + err.Error()})
 		return
 	}
-	if err := db.DB.Model(model).Where("installed = ?", false).Count(&uninstalled).Error; err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+	err = db.RetryRead(func() error { return db.DB.Model(model).Where("installed = ?", false).Count(&uninstalled).Error })
+	if err != nil {
+		ErrorLogger(LogHolder{Message: "pollProfiles: count uninstalled " + scope + " profiles: " + err.Error()})
 		return
 	}
 	metrics.ProfilesTotal(scope, "true").Set(float64(installed))

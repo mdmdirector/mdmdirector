@@ -88,6 +88,9 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-redis-port string` - Port of your Redis instance. (default "6379") Env: `REDIS_PORT`
 - `-redis-password string` - Password for your Redis instance. (default "") Env: `REDIS_PASSWORD`
 - `-redis-tls` - Enable TLS for the Redis connection. (default false) Env: `REDIS_TLS`
+- `-redis-idle-timeout int` - Seconds a pooled Redis connection may sit idle before it is closed. Keep this below any idle timeout between MDMDirector and Redis (service mesh, NLB). -1 disables. (default 240) Env: `REDIS_IDLE_TIMEOUT`
+- `-redis-max-conn-age int` - Seconds a pooled Redis connection may be reused before it is closed. 0 means forever. (default 1800) Env: `REDIS_MAX_CONN_AGE`
+- `-redis-idle-check-frequency int` - Seconds between sweeps that close idle Redis connections. -1 disables the sweep. (default 60) Env: `REDIS_IDLE_CHECK_FREQUENCY`
 
 #### Profile Signing
 
