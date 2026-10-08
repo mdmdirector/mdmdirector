@@ -16,7 +16,7 @@ import (
 // mid-teardown sees an empty declaration-items rather than a partial set; every
 // declaration in the set is then removed from the set and deleted, and nothing notifies.
 func TestClearDDMForDevice_DropsAssociationFirstThenEveryDeclaration(t *testing.T) {
-	setDDMSetPrefix(t, "pfx")
+	setDDMSetPrefix(t)
 	var mu sync.Mutex
 	var calls []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +56,7 @@ func TestClearDDMForDevice_DropsAssociationFirstThenEveryDeclaration(t *testing.
 }
 
 func TestClearDDMForDevice_EmptySet(t *testing.T) {
-	setDDMSetPrefix(t, "pfx")
+	setDDMSetPrefix(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "DELETE" && r.URL.Path == "/v1/enrollment-sets/udid-1":
@@ -76,7 +76,7 @@ func TestClearDDMForDevice_EmptySet(t *testing.T) {
 
 // A failed delete is reported, but the remaining declarations are still attempted.
 func TestClearDDMForDevice_ContinuesPastFailures(t *testing.T) {
-	setDDMSetPrefix(t, "pfx")
+	setDDMSetPrefix(t)
 	var deleted []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -109,7 +109,7 @@ func TestClearDDMForDevice_ContinuesPastFailures(t *testing.T) {
 // If the association delete fails nothing else is attempted: deleting declarations while
 // the enrollment still points at the set is exactly the partial-sync window to avoid.
 func TestClearDDMForDevice_StopsIfAssociationDeleteFails(t *testing.T) {
-	setDDMSetPrefix(t, "pfx")
+	setDDMSetPrefix(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "DELETE" && r.URL.Path == "/v1/enrollment-sets/udid-1" {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -123,8 +123,11 @@ func TestClearDDMForDevice_StopsIfAssociationDeleteFails(t *testing.T) {
 	require.Error(t, err)
 }
 
-func setDDMSetPrefix(t *testing.T, prefix string) {
+// setDDMSetPrefix points the ddm-set-prefix flag at "pfx" for the test, so the set name
+// the cleanup must use is "pfx.<udid>".
+func setDDMSetPrefix(t *testing.T) {
 	t.Helper()
+	const prefix = "pfx"
 	if flag.Lookup("ddm-set-prefix") == nil {
 		flag.String("ddm-set-prefix", "", "ddm-set-prefix")
 	}
