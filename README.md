@@ -128,6 +128,8 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. Also the minimum gap between scheduled pushes to one device (`next_push`). (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
 - `-control-plane-interval int` - Minutes between fleet-wide control-plane scans (scheduled pushes plus DB cleanup). The scan is single-flight across replicas, see [Control plane](#control-plane-and-scheduling). (default 120) Env: `CONTROL_PLANE_INTERVAL`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
+- `-install-profile-retries int` - Fast tier: times an `InstallProfile` the device answered with `Error` is re-sent from the webhook, waiting 1s, 2s, ... before each attempt, see [Command results](#command-results). 0 disables. (default 3) Env: `INSTALL_PROFILE_RETRIES`
+- `-install-profile-total-retries int` - Both tiers: times in all an `InstallProfile` at one content version is re-sent, the fast retries plus one more on each scheduled `ProfileList` until this is reached. Never below `-install-profile-retries`. (default 5) Env: `INSTALL_PROFILE_TOTAL_RETRIES`
 
 #### PIN Escrow
 
@@ -177,6 +179,33 @@ MDMDirector is safe to run with several replicas behind one webhook URL. Webhook
 - The scan fetches the enrollment list from the MDM server, queues a push for every device whose `next_push` is due (`pushAll`), then runs cleanup: orphaned certificate and profile-list rows, unlock PINs older than 30 minutes, and stale `unlock_pin` values on devices that are no longer locked or erased.
 - Pushes go through a Redis-backed `taskq` queue. `PushDevice` sets `next_push = now + ONCE_IN`, and a device is skipped while `next_push` is in the future, so `-once-in` bounds the per-device cadence.
 - Shutdown is graceful: `SIGINT`/`SIGTERM` cancels the root context, the queue consumer drains in-flight work, and the HTTP server gets 15s to finish.
+
+### Command results
+
+Every command result comes back through the webhook and is recorded on the local `commands` row (`status`, `error_string`). An `Error` result is logged at error level with the command UUID and request type, and counted in `mdmdirector_command_results_total{status="Error"}`, so a profile that fails fleet-wide shows up in logs and metrics.
+
+A row with status `Error` never blocks a later push: `CommandInQueue` only treats `""` / `NotNow` as pending. Before the retry below, nothing *started* one either. The two paths that re-push a profile both compared content, not outcome: a profile `POST` only re-pushes when the content hash changed (and, since it last saw the device reject that content, not even then), and the scheduled `ProfileList` verification only re-pushed a profile that was missing or had a different UUID. A device-side failure that leaves the profile present but half-installed was invisible to both.
+
+An `InstallProfile` answered with `Error` is now retried in two tiers that share one counter, `attempt_count` on the command row. The row is inserted with its count (it travels in the `CommandPayload`), so there is no moment where a retry exists with the wrong number.
+
+- **Fast tier, from the webhook.** While the failed row's `attempt_count` is below `-install-profile-retries` (default 3), the handler waits `attempt_count + 1` seconds (1s, 2s, 3s) and re-sends the profile numbered one higher. The command row does not carry the payload, so the retry rebuilds the command from the profile still assigned to the device (device-specific first, then shared) and sends it through the normal push path, which signs it and dedupes against anything already pending. The wait spaces the attempts out; it runs inside the webhook handler, so for that long it occupies one mdmdirector goroutine and holds nanomdm's webhook request open. The device is not waiting on it: nanomdm answers the device first and runs the webhook in a detached goroutine. No lock, transaction or lease is held. No retry when the device is on DDM for profiles, when the assigned profile's content has changed since the failed command was built (the fresh content gets its own push), or when the profile is no longer assigned.
+- **Slow tier, from `VerifyMDMProfiles` on each scheduled `ProfileList`.** A profile the device lists as present with the expected UUID is still reinstalled when its most recent `InstallProfile`, at the current content, came back `Error` with `attempt_count` below `-install-profile-total-retries` (default 5). The new command is numbered one higher than the failed one. Being above the fast limit, it gets no fast chain of its own: if it fails, the next `ProfileList` decides again. Once the count reaches the total the profile is left alone until its content changes.
+
+With the defaults, one content version that never installs costs: the original send, three fast retries over about six seconds, then one more on each of the next two `ProfileList` cycles (`-info-request-interval`, default 6h), then nothing. A fault shorter than the fast chain is fixed within seconds; one that outlasts it is fixed on the next `ProfileList`.
+
+On a device whose profiles are managed via DDM, the `VerifyMDMProfiles` reinstall is a declaration touch rather than a new `InstallProfile` command. This covers the case where an `InstallProfile` that was already queued before the device switched to DDM is delivered afterwards and fails: the device has nothing to do with it, and the Error is the last word on that profile. (Switching a device to DDM does not clear its pending commands; only the whole queue can be cleared.) Because no new command row supersedes that Error, the touched profiles' failed rows are re-labelled `RetriedViaDDM` after the push. Without that, the Error would stay the latest result for the identifier and every scheduled `ProfileList` would touch the declaration again. The row is kept with its payload for history, and `ClearCommands` keeps it across re-enrollment the same way it keeps `Error` and `Acknowledged` rows; it just no longer counts as outstanding.
+
+Every failed result that has not been retried via DDM stays visible at `GET /command/error`.
+
+Both retry paths, like `CommandInQueue` before them, look commands up by device and request type. `commands` keeps a row for every command ever sent, and until now its only index was the `command_uuid` primary key, so every one of these lookups was a sequential scan of the whole table. The model now declares a composite index `idx_commands_device_request` on `(device_ud_id, request_type)`, which AutoMigrate creates at startup.
+
+**Deploying to an existing database:** AutoMigrate runs a plain `CREATE INDEX`, which takes a lock that blocks every write to `commands` until the build finishes, and the build time grows with the table. On a table with millions of rows that can mean minutes during which no command can be queued and no device response can be recorded, all while the new version is starting up. If the start takes long enough for a readiness probe or a deploy timeout to give up, the half-built index is rolled back and the next start tries again from the beginning. To avoid that, build the index before rolling out this version:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
+```
+
+`CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
 ### Initial tasks lease
 

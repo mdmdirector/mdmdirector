@@ -120,6 +120,16 @@ var InfoRequestInterval int
 // deletes it so it can be retried. Defaults to 5 days (7200 minutes).
 var StaleCommandThreshold int
 
+// InstallProfileRetries is how many times an InstallProfile that the device
+// answered with an Error status is re-sent from the webhook, seconds apart,
+// before that fast tier stops. 0 disables the retry. Defaults to 3.
+var InstallProfileRetries int
+
+// InstallProfileTotalRetries is how many times in all an InstallProfile at one
+// content version is re-sent: the fast webhook retries plus one more on each
+// scheduled ProfileList until this is reached. Defaults to 5.
+var InstallProfileTotalRetries int
+
 // AcmeCertIssuer is the issuer of the ACME certificate
 var AcmeCertIssuer string
 
@@ -394,6 +404,18 @@ func main() {
 		"stale-command-threshold",
 		env.Int("STALE_COMMAND_THRESHOLD", 5*24*60),
 		"Minutes a Command may sit unresolved before it's treated as dropped by NanoMDM and expired so it can be retried. Defaults to 5 days (7200).",
+	)
+	flag.IntVar(
+		&InstallProfileRetries,
+		"install-profile-retries",
+		env.Int("INSTALL_PROFILE_RETRIES", 3),
+		"Times an InstallProfile the device answered with Error is re-sent from the webhook, waiting 1s, 2s, ... before each attempt. 0 disables. Defaults to 3.",
+	)
+	flag.IntVar(
+		&InstallProfileTotalRetries,
+		"install-profile-total-retries",
+		env.Int("INSTALL_PROFILE_TOTAL_RETRIES", 5),
+		"Times in all an InstallProfile at one content version is re-sent: the fast webhook retries, then one more on each scheduled ProfileList until this is reached. Never below install-profile-retries. Defaults to 5.",
 	)
 	flag.StringVar(
 		&EnrollWebhookURL,

@@ -205,8 +205,8 @@ func TestHandleCheckinEvent_CheckOut_ResetsDeviceAndReturnsEarly(t *testing.T) {
 
 	// ClearCommands: DELETE pending commands
 	mockSpy.ExpectBegin()
-	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT \(status = \$2 OR status = \$3\)`).
-		WithArgs("1234-5678-123456", "Error", "Acknowledged").
+	mockSpy.ExpectExec(`^DELETE FROM "commands" WHERE device_ud_id = \$1 AND NOT status IN \(\$2,\$3,\$4\)`).
+		WithArgs("1234-5678-123456", "Error", "Acknowledged", commandStatusRetriedViaDDM).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mockSpy.ExpectCommit()
 

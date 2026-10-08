@@ -85,6 +85,7 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
 	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
 
 	InfoLogger(
 		LogHolder{
@@ -152,6 +153,7 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	command.Identifier = commandPayload.Identifier
 	command.ManifestURL = commandPayload.ManifestURL
 	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
@@ -232,13 +234,18 @@ OuterLoop:
 		}
 	} else {
 		if ackEvent.Status == "Error" {
-			InfoLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+			ErrorLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, CommandRequestType: commandRequestType})
 			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),
 			}).Error
 			if err != nil {
 				return err
+			}
+			if commandRequestType == "InstallProfile" {
+				if err := retryErroredInstallProfile(device, ackEvent.CommandUUID); err != nil {
+					ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, Message: "retryErroredInstallProfile: " + err.Error()})
+				}
 			}
 		} else {
 			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
@@ -325,7 +332,8 @@ func ClearCommands(device *types.Device) error {
 	)
 	err := db.DB.Model(&command).
 		Where("device_ud_id = ?", device.UDID).
-		Not("status = ? OR status = ?", "Error", "Acknowledged").
+		// Results are kept as the device's history; only unanswered commands go.
+		Not("status IN ?", []string{"Error", "Acknowledged", commandStatusRetriedViaDDM}).
 		Delete(&commands).
 		Error
 	if err != nil {
