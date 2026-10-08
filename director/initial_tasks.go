@@ -112,9 +112,11 @@ func RunInitialTasks(udid string) (retErr error) {
 
 	// Must finish before InstallAllProfiles/InstallBootstrapPackages: those re-create the
 	// device's set in KMFDDM, and this removes whatever the previous enrollment left in it.
-	err = resetDDMForEnrollment(device)
-	if err != nil {
-		return errors.Wrap(err, "RunInitialTasks:resetDDMForEnrollment")
+	// A failure is logged, not returned: returning would hold the device in Setup
+	// Assistant (no DeviceConfigured) for as long as KMFDDM is unhealthy, which is worse
+	// than a stale declaration surviving one enrollment.
+	if err := resetDDMForEnrollment(device); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: errors.Wrap(err, "RunInitialTasks:resetDDMForEnrollment").Error()})
 	}
 
 	err = RequestAllDeviceInfo(device)

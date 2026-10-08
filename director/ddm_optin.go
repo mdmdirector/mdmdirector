@@ -287,19 +287,20 @@ func errorMessages(err error) []string {
 //
 // It returns the number of declarations removed.
 func clearDDMForDevice(client *ddm.KMFDDMClient, udid string) (int, error) {
-	if err := client.DeleteEnrollmentSet(udid, udid, true); err != nil {
+	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
+	if err := client.DeleteEnrollmentSet(udid, setName, true); err != nil {
 		return 0, errors.Wrapf(err, "clearDDMForDevice: DELETE enrollment-set for %s", udid)
 	}
 
-	ids, err := client.GetSetDeclarations(udid)
+	ids, err := client.GetSetDeclarations(setName)
 	if err != nil {
-		return 0, errors.Wrapf(err, "clearDDMForDevice: GET set-declarations for %s", udid)
+		return 0, errors.Wrapf(err, "clearDDMForDevice: GET set-declarations %s for %s", setName, udid)
 	}
 
 	var errs []error
 	removed := 0
 	for _, id := range ids {
-		if err := client.DeleteSetDeclaration(udid, id, true); err != nil {
+		if err := client.DeleteSetDeclaration(setName, id, true); err != nil {
 			observeSetMembershipChange(id, "delete", err)
 			errs = append(errs, errors.Wrapf(err, "DELETE set-declaration %s", id))
 			continue
