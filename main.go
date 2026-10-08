@@ -121,8 +121,8 @@ var InfoRequestInterval int
 var StaleCommandThreshold int
 
 // InstallProfileRetries is how many times an InstallProfile that the device
-// answered with an Error status is re-sent before mdmdirector gives up on it.
-// 0 disables the retry.
+// answered with an Error status is re-sent from the webhook before mdmdirector
+// stops, waiting one more second before each attempt. 0 disables the retry.
 var InstallProfileRetries int
 
 // AcmeCertIssuer is the issuer of the ACME certificate
@@ -403,8 +403,8 @@ func main() {
 	flag.IntVar(
 		&InstallProfileRetries,
 		"install-profile-retries",
-		env.Int("INSTALL_PROFILE_RETRIES", 2),
-		"Times an InstallProfile the device answered with Error is re-sent before giving up. 0 disables. Defaults to 2.",
+		env.Int("INSTALL_PROFILE_RETRIES", 5),
+		"Times an InstallProfile the device answered with Error is re-sent from the webhook, waiting 1s, 2s, ... before each attempt. 0 disables. Defaults to 5.",
 	)
 	flag.StringVar(
 		&EnrollWebhookURL,

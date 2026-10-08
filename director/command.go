@@ -232,7 +232,7 @@ OuterLoop:
 		}
 	} else {
 		if ackEvent.Status == "Error" {
-			InfoLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+			ErrorLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, CommandRequestType: commandRequestType})
 			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
 				Status:      ackEvent.Status,
 				ErrorString: string(ackEvent.RawPayload),

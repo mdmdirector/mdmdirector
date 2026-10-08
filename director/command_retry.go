@@ -3,6 +3,8 @@ package director
 import (
 	intErrors "errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
@@ -27,7 +29,16 @@ import (
 // shared) and goes through the normal PushProfiles / PushSharedProfiles path, which
 // signs the payload and dedupes against anything already pending. attempt_count on the
 // new command is the failed command's count plus one, so the chain is bounded by
-// -install-profile-retries. The retry is skipped when:
+// -install-profile-retries.
+//
+// Each attempt waits attempt_count+1 seconds before re-sending (1s, 2s, 3s, ...), inside
+// the webhook request. That holds the device's check-in for that long, which is the
+// point: it gives a short-lived fault on the device room to clear before the next try
+// lands. With the default of 5 the longest single wait is 5s, the whole chain ~15s.
+// Anything that outlasts the chain is picked up by VerifyMDMProfiles on the next
+// scheduled ProfileList, see erroredInstallProfiles.
+//
+// The retry is skipped when:
 //
 //   - retries are disabled (-install-profile-retries 0)
 //   - the failed command has already been retried that many times
@@ -70,6 +81,9 @@ func retryErroredInstallProfile(device types.Device, commandUUID string) error {
 		InfoLogger(logFields)
 		return nil
 	}
+
+	// Backoff: 1s before the first retry, one more second for each after that.
+	retrySleep(time.Duration(failed.AttemptCount+1) * time.Second)
 
 	var pushed []types.Command
 
@@ -127,4 +141,50 @@ func retryErroredInstallProfile(device types.Device, commandUUID string) error {
 	logFields.Message = fmt.Sprintf("InstallProfile failed on the device, re-sent (retry %d of %d)", attempt, limit)
 	InfoLogger(logFields)
 	return intErrors.Join(errs...)
+}
+
+// retrySleep is the wait before a retry is re-sent. A variable so tests can stub it.
+//
+//nolint:gochecknoglobals
+var retrySleep = time.Sleep
+
+// erroredInstallProfiles returns, for each profile identifier on the device, the content
+// hash of its most recent InstallProfile when that command's latest result was Error.
+// Identifiers whose latest InstallProfile is pending, acknowledged, or anything other
+// than Error are left out.
+//
+// VerifyMDMProfiles uses this to reinstall a profile the device lists as present but
+// whose last install failed. These are fresh pushes with attempt_count 0: the
+// scheduled verification runs rarely enough that each one is allowed its own short
+// webhook retry chain.
+func erroredInstallProfiles(udid string) (map[string]string, error) {
+	type lastInstall struct {
+		Identifier  string
+		ContentHash string
+		Status      string
+	}
+	var rows []lastInstall
+	err := db.DB.Raw(
+		`SELECT DISTINCT ON (identifier) identifier, content_hash, status FROM commands `+
+			`WHERE device_ud_id = ? AND request_type = ? ORDER BY identifier, updated_at DESC`,
+		udid, "InstallProfile",
+	).Scan(&rows).Error
+	if err != nil {
+		return nil, errors.Wrap(err, "erroredInstallProfiles")
+	}
+	errored := make(map[string]string)
+	for _, r := range rows {
+		if r.Status == "Error" {
+			errored[r.Identifier] = r.ContentHash
+		}
+	}
+	return errored, nil
+}
+
+// lastInstallErrored reports whether the device's most recent InstallProfile for this
+// profile, at its current content, came back with Error. An Error for older content
+// doesn't count: that content is no longer what would be re-sent.
+func lastInstallErrored(errored map[string]string, profile ProfileForVerification) bool {
+	hash, ok := errored[profile.PayloadIdentifier]
+	return ok && strings.EqualFold(hash, profile.HashedPayloadUUID)
 }

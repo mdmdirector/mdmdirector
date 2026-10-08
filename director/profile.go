@@ -1209,6 +1209,14 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
 	}
 
+	// A profile whose most recent InstallProfile came back with Error is reinstalled even
+	// when the device lists it with the expected UUID: a failed install can leave the
+	// profile present but inconsistent on the device in a way the ProfileList can't show.
+	erroredInstalls, err := erroredInstallProfiles(device.UDID)
+	if err != nil {
+		return errors.Wrap(err, "VerifyMDMProfiles: load errored installs")
+	}
+
 	for i := range profilesForVerification {
 		profileForVerification := profilesForVerification[i]
 		isInstalled, needsReinstall, err := validateProfileInProfileList(
@@ -1218,6 +1226,22 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		)
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")
+		}
+		if isInstalled && !needsReinstall && lastInstallErrored(erroredInstalls, profileForVerification) {
+			InfoLogger(
+				LogHolder{
+					DeviceUDID:        device.UDID,
+					DeviceSerial:      device.SerialNumber,
+					ProfileUUID:       profileForVerification.HashedPayloadUUID,
+					ProfileIdentifier: profileForVerification.PayloadIdentifier,
+					Message:           "VerifyMDMProfiles: Profile is present but its last InstallProfile returned Error, reinstalling",
+					Metric:            profileForVerification.Type,
+				},
+			)
+			if utils.Prometheus() {
+				metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
+			}
+			needsReinstall = true
 		}
 		// Profile is present in the ProfileList output
 		if isInstalled {

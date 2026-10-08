@@ -128,7 +128,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. Also the minimum gap between scheduled pushes to one device (`next_push`). (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
 - `-control-plane-interval int` - Minutes between fleet-wide control-plane scans (scheduled pushes plus DB cleanup). The scan is single-flight across replicas, see [Control plane](#control-plane-and-scheduling). (default 120) Env: `CONTROL_PLANE_INTERVAL`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
-- `-install-profile-retries int` - Times an `InstallProfile` the device answered with `Error` is re-sent before giving up, see [Command results](#command-results). 0 disables. (default 2) Env: `INSTALL_PROFILE_RETRIES`
+- `-install-profile-retries int` - Times an `InstallProfile` the device answered with `Error` is re-sent from the webhook, waiting 1s, 2s, ... before each attempt, see [Command results](#command-results). 0 disables. (default 5) Env: `INSTALL_PROFILE_RETRIES`
 
 #### PIN Escrow
 
@@ -181,9 +181,16 @@ MDMDirector is safe to run with several replicas behind one webhook URL. Webhook
 
 ### Command results
 
-Every command result comes back through the webhook and is recorded on the local `commands` row (`status`, `error_string`). A row with status `Error` never blocks a later push: `CommandInQueue` only treats `""` / `NotNow` as pending. It also never *starts* one on its own. The two paths that re-push a profile both compare content, not outcome: a profile `POST` only re-pushes when the content hash changed, and the scheduled `ProfileList` verification only re-pushes a profile that is missing or has a different UUID. A device-side failure that leaves the profile present but half-installed is invisible to both.
+Every command result comes back through the webhook and is recorded on the local `commands` row (`status`, `error_string`). An `Error` result is logged at error level with the command UUID and request type, and counted in `mdmdirector_command_results_total{status="Error"}`, so a profile that fails fleet-wide shows up in logs and metrics.
 
-So an `InstallProfile` answered with `Error` is retried right away, up to `-install-profile-retries` times. The command row does not carry the payload, so the retry rebuilds the command from the profile still assigned to the device (device-specific first, then shared) and sends it through the normal push path, which signs it and dedupes against anything already pending. `attempt_count` on the new row is the failed row's count plus one, which bounds the chain. No retry when the device is on DDM for profiles, when the assigned profile's content has changed since the failed command was built (the fresh content gets its own push), or when the profile is no longer assigned. Every failed result stays visible at `GET /command/error`.
+A row with status `Error` never blocks a later push: `CommandInQueue` only treats `""` / `NotNow` as pending. Before the retry below, nothing *started* one either. The two paths that re-push a profile both compared content, not outcome: a profile `POST` only re-pushes when the content hash changed (and, since it last saw the device reject that content, not even then), and the scheduled `ProfileList` verification only re-pushed a profile that was missing or had a different UUID. A device-side failure that leaves the profile present but half-installed was invisible to both.
+
+An `InstallProfile` answered with `Error` is now retried in two places:
+
+- **From the webhook, right away, with a short backoff.** Up to `-install-profile-retries` times (default 5). Before each attempt the handler waits `attempt_count + 1` seconds (1s, 2s, 3s, ...), inside the webhook request, so the device's check-in is held for that long and a short-lived fault has room to clear. The longest single wait is 5s with the default, the whole chain about 15s. The command row does not carry the payload, so the retry rebuilds the command from the profile still assigned to the device (device-specific first, then shared) and sends it through the normal push path, which signs it and dedupes against anything already pending. `attempt_count` on the new row is the failed row's count plus one, which bounds the chain. No retry when the device is on DDM for profiles, when the assigned profile's content has changed since the failed command was built (the fresh content gets its own push), or when the profile is no longer assigned.
+- **From `VerifyMDMProfiles`, on every scheduled `ProfileList`.** A profile the device lists as present with the expected UUID is still reinstalled when its most recent `InstallProfile`, at the current content, came back `Error`. This is a fresh push with `attempt_count` 0, so it gets its own webhook retry chain. The verification runs on the `-info-request-interval` cadence, so a fault that outlasts the webhook chain is retried again hours later instead of never.
+
+Every failed result stays visible at `GET /command/error`.
 
 ### Initial tasks lease
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/types"
@@ -24,6 +25,16 @@ const (
 // setupRetryFlags registers the flags the retry path and the MicroMDM push path read, sets
 // the retry limit, and points the MicroMDM client at a stub that answers every enqueue
 // with a fixed command UUID.
+// stubRetrySleep replaces the backoff sleep with a recorder and returns the recorded waits.
+func stubRetrySleep(t *testing.T) *[]time.Duration {
+	t.Helper()
+	var waits []time.Duration
+	old := retrySleep
+	retrySleep = func(d time.Duration) { waits = append(waits, d) }
+	t.Cleanup(func() { retrySleep = old })
+	return &waits
+}
+
 func setupRetryFlags(t *testing.T, retries int) {
 	t.Helper()
 	setupDDMFlags(t, false, false)
@@ -132,6 +143,7 @@ func mockInsertRetryCommand(mockSpy sqlmock.Sqlmock, attempt int) {
 
 func TestRetryErroredInstallProfile_ResendsDeviceProfile(t *testing.T) {
 	setupRetryFlags(t, 2)
+	waits := stubRetrySleep(t)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 	device := types.Device{UDID: retryTestUDID, SerialNumber: "C02TEST123"}
@@ -147,11 +159,13 @@ func TestRetryErroredInstallProfile_ResendsDeviceProfile(t *testing.T) {
 	err := retryErroredInstallProfile(device, retryTestCmdUUID)
 
 	require.NoError(t, err)
+	assert.Equal(t, []time.Duration{1 * time.Second}, *waits, "first retry waits 1s")
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
 func TestRetryErroredInstallProfile_FallsBackToSharedProfile(t *testing.T) {
 	setupRetryFlags(t, 2)
+	waits := stubRetrySleep(t)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 	device := types.Device{UDID: retryTestUDID, SerialNumber: "C02TEST123"}
@@ -169,10 +183,13 @@ func TestRetryErroredInstallProfile_FallsBackToSharedProfile(t *testing.T) {
 	err := retryErroredInstallProfile(device, retryTestCmdUUID)
 
 	require.NoError(t, err)
+	assert.Equal(t, []time.Duration{2 * time.Second}, *waits, "second retry waits 2s")
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
 func TestRetryErroredInstallProfile_StopsAtLimit(t *testing.T) {
+	waits := stubRetrySleep(t)
+	defer func() { assert.Empty(t, *waits, "no backoff when the retry is skipped") }()
 	setupRetryFlags(t, 2)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -188,6 +205,8 @@ func TestRetryErroredInstallProfile_StopsAtLimit(t *testing.T) {
 }
 
 func TestRetryErroredInstallProfile_DisabledByFlag(t *testing.T) {
+	waits := stubRetrySleep(t)
+	defer func() { assert.Empty(t, *waits, "no backoff when the retry is skipped") }()
 	setupRetryFlags(t, 0)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -201,6 +220,8 @@ func TestRetryErroredInstallProfile_DisabledByFlag(t *testing.T) {
 }
 
 func TestRetryErroredInstallProfile_SkipsDDMDevice(t *testing.T) {
+	waits := stubRetrySleep(t)
+	defer func() { assert.Empty(t, *waits, "no backoff when the retry is skipped") }()
 	setupRetryFlags(t, 2)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -218,6 +239,7 @@ func TestRetryErroredInstallProfile_SkipsDDMDevice(t *testing.T) {
 }
 
 func TestRetryErroredInstallProfile_SkipsChangedContent(t *testing.T) {
+	stubRetrySleep(t)
 	setupRetryFlags(t, 2)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -235,6 +257,7 @@ func TestRetryErroredInstallProfile_SkipsChangedContent(t *testing.T) {
 }
 
 func TestRetryErroredInstallProfile_SkipsUnassignedProfile(t *testing.T) {
+	stubRetrySleep(t)
 	setupRetryFlags(t, 2)
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
@@ -265,4 +288,34 @@ func TestRetryErroredInstallProfile_UnknownCommandIsNoop(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+func TestErroredInstallProfiles_LatestResultPerIdentifier(t *testing.T) {
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	rows := sqlmock.NewRows([]string{"identifier", "content_hash", "status"}).
+		AddRow("com.example.failed", "hash-a", "Error").
+		AddRow("com.example.recovered", "hash-b", "Acknowledged").
+		AddRow("com.example.pending", "hash-c", "")
+	mockSpy.ExpectQuery(`SELECT DISTINCT ON \(identifier\) identifier, content_hash, status FROM commands WHERE device_ud_id = \$1 AND request_type = \$2 ORDER BY identifier, updated_at DESC`).
+		WithArgs(retryTestUDID, "InstallProfile").
+		WillReturnRows(rows)
+
+	errored, err := erroredInstallProfiles(retryTestUDID)
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"com.example.failed": "hash-a"}, errored)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+func TestLastInstallErrored(t *testing.T) {
+	errored := map[string]string{"com.example.failed": "HASH-A"}
+
+	assert.True(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-a"}),
+		"latest install of the current content errored (case-insensitive)")
+	assert.False(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.failed", HashedPayloadUUID: "hash-newer"}),
+		"the error was for older content")
+	assert.False(t, lastInstallErrored(errored, ProfileForVerification{PayloadIdentifier: "com.example.other", HashedPayloadUUID: "hash-a"}),
+		"no errored install for this identifier")
 }
