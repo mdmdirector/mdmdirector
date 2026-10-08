@@ -112,8 +112,17 @@ func reconcileDeviceState(currentDevice *types.Device) error {
 		return nil
 	}
 
+	// awaiting_configuration is set from a DeviceInformation response. Initial tasks have
+	// already sent DeviceConfigured and cleared it, so the flag being back on means the
+	// device reported it is still in Setup Assistant: send again, and clear the flag
+	// straight away so the acks for this send don't come back through here and send more.
 	if currentDevice.AwaitingConfiguration && currentDevice.InitialTasksRun {
+		InfoLogger(LogHolder{DeviceSerial: currentDevice.SerialNumber, DeviceUDID: currentDevice.UDID, Message: "Device reports it is still awaiting configuration; resending DeviceConfigured"})
 		if err := SendDeviceConfigured(*currentDevice); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
+			return err
+		}
+		if err := clearAwaitingConfiguration(currentDevice); err != nil {
 			ErrorLogger(LogHolder{DeviceUDID: currentDevice.UDID, DeviceSerial: currentDevice.SerialNumber, Message: err.Error()})
 			return err
 		}
