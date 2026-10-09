@@ -109,12 +109,42 @@ func Open() error {
 // migration that builds an index on a large table is not cancelled part way through
 // by -db-statement-timeout. The connection's timeout is restored before it goes back
 // to the pool.
+// migrationLockKey identifies the PostgreSQL advisory lock that serialises startup
+// migrations across instances. Any constant works as long as every instance agrees on it.
+const migrationLockKey int64 = 0x6d646d6469726563 // "mdmdirec"
+
+// Migrate runs AutoMigrate while holding a session advisory lock, so when several
+// instances start at once only one of them changes the schema. The others block on the
+// lock and only run AutoMigrate (a no-op by then) after the first has finished. Callers
+// do not serve traffic or start workers until Migrate returns, so no instance writes
+// against a half-migrated schema. The lock belongs to the connection, so if the
+// migrating instance dies PostgreSQL releases it and the next waiter takes over.
 func Migrate(dst ...interface{}) error {
 	return DB.Connection(func(tx *gorm.DB) error {
+		// Waiting on the lock and building indexes can both take longer than any
+		// statement_timeout set for normal traffic.
 		if err := tx.Exec("SET statement_timeout = 0").Error; err != nil {
 			return errors.Wrap(err, "disabling statement_timeout for migrations")
 		}
+
+		var acquired bool
+		if err := tx.Raw("SELECT pg_try_advisory_lock(?)", migrationLockKey).Scan(&acquired).Error; err != nil {
+			return errors.Wrap(err, "acquiring migration lock")
+		}
+		if !acquired {
+			log.Print("Another instance is running DB migrations, waiting for it to finish")
+			start := time.Now()
+			if err := tx.Exec("SELECT pg_advisory_lock(?)", migrationLockKey).Error; err != nil {
+				return errors.Wrap(err, "waiting for migration lock")
+			}
+			log.Printf("Migration lock acquired after %s", time.Since(start).Round(time.Second))
+		}
+
 		migrateErr := tx.AutoMigrate(dst...)
+
+		if err := tx.Exec("SELECT pg_advisory_unlock(?)", migrationLockKey).Error; err != nil && migrateErr == nil {
+			return errors.Wrap(err, "releasing migration lock")
+		}
 		if err := tx.Exec("RESET statement_timeout").Error; err != nil && migrateErr == nil {
 			return errors.Wrap(err, "restoring statement_timeout after migrations")
 		}
