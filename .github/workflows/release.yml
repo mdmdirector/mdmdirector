@@ -1,14 +1,23 @@
-on: release
+on:
+  release:
+    types: [published]
 name: Handle Release
 jobs:
   upload:
     name: Upload Artifacts
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@master
-      - name: Upload
-        uses: ./.github/actions/release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v5
+      - name: Setup go
+        uses: actions/setup-go@v6
         with:
-          args: "mdmdirector-linux mdmdirector-darwin"
+          go-version-file: "go.mod"
+      - name: Build
+        run: ./.github/build
+      - name: Upload
+        run: gh release upload "$TAG" mdmdirector-linux mdmdirector-linux-arm64 mdmdirector-darwin mdmdirector-darwin-arm64 --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
