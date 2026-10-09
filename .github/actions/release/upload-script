@@ -25,6 +25,10 @@ if [ "$IS_DRAFT" = true ]; then
   exit 0
 fi
 
+# The workspace is checked out by the runner user but this container runs as
+# root, so git refuses to read it and go build fails on VCS stamping.
+git config --global --add safe.directory '*'
+
 # Run the build-script
 if [ -e .github/build ]; then
     chmod 755 .github/build
