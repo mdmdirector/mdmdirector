@@ -29,6 +29,14 @@ func Open() error {
 	dbSSLMode := utils.DBSSLMode()
 
 	dbURI := fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s password=%s", dbHost, dbPort, username, dbName, dbSSLMode, password)
+	// pgx sends unrecognised DSN keys to the server as session parameters, so every
+	// pooled connection starts with this statement_timeout. Without it a query that
+	// stalls (a missing index on a large table, lock contention) holds its connection
+	// indefinitely, and under load the whole pool fills with them while callers queue
+	// with no error. With it the stalled statements fail and are counted as errors.
+	if timeout := utils.DBStatementTimeout(); timeout > 0 {
+		dbURI += fmt.Sprintf(" statement_timeout=%d", timeout*1000)
+	}
 
 	var newLogger logger.Interface
 	if utils.DebugMode() {
@@ -95,4 +103,21 @@ func Open() error {
 	}
 
 	return nil
+}
+
+// Migrate runs AutoMigrate on one connection with statement_timeout disabled, so a
+// migration that builds an index on a large table is not cancelled part way through
+// by -db-statement-timeout. The connection's timeout is restored before it goes back
+// to the pool.
+func Migrate(dst ...interface{}) error {
+	return DB.Connection(func(tx *gorm.DB) error {
+		if err := tx.Exec("SET statement_timeout = 0").Error; err != nil {
+			return errors.Wrap(err, "disabling statement_timeout for migrations")
+		}
+		migrateErr := tx.AutoMigrate(dst...)
+		if err := tx.Exec("RESET statement_timeout").Error; err != nil && migrateErr == nil {
+			return errors.Wrap(err, "restoring statement_timeout after migrations")
+		}
+		return migrateErr
+	})
 }
