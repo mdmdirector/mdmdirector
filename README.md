@@ -211,6 +211,12 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_lists_device_payload ON prof
 
 `CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
+### Startup migrations across replicas
+
+When several instances start at once (a rollout, or scaling up), only one of them migrates the schema. `Migrate` takes a PostgreSQL session advisory lock before AutoMigrate and releases it after; the other instances block on that lock, logging `Another instance is running DB migrations, waiting for it to finish`, and then run AutoMigrate themselves, which is a no-op by then. The HTTP listener and background workers start only after migrations return, so a waiting instance serves no traffic and writes nothing until the schema is complete. The lock belongs to the database connection, so if the migrating instance dies PostgreSQL releases it and the next waiter takes over. Waiting is exempt from `-db-statement-timeout`.
+
+A long migration (a plain `CREATE INDEX` on a large table) therefore holds every new instance in startup, not just the first. If your startup or liveness probe gives up before it finishes, the waiting instances are restarted and simply wait again; give the probe enough headroom, or build large indexes `CONCURRENTLY` beforehand as described above.
+
 ### Initial tasks lease
 
 `RunInitialTasks` (the first `DeviceInformation`, `ProfileList`, `SecurityInfo`, profile and app pushes for a new enrollment) is guarded by a lease in the `devices` row: an atomic `UPDATE` sets `run_initial_tasks_starttime` only when it is NULL or older than 5 minutes. The winner runs the tasks; other replicas see zero rows affected and skip. Command acknowledgements that arrive while a run is in flight do not touch the lease at all, so `mdmdirector_initial_tasks_total{result="lease_contention"}` only counts genuine same-instant races. A holder that dies mid-run is recovered after the 5 minute TTL.
