@@ -19,9 +19,8 @@ import (
 
 func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	var device types.Device
-	var oldDevice types.Device
 
-	if newDevice.UDID == "" && device.SerialNumber == "" {
+	if newDevice.UDID == "" && newDevice.SerialNumber == "" {
 		err := fmt.Errorf("no device UDID or serial set")
 		return &newDevice, errors.Wrap(err, "UpdateDevice")
 	}
@@ -29,9 +28,12 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 
 	newDevice.LastCheckedIn = now
 	if newDevice.UDID != "" {
-		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Scan(&oldDevice).Error; err != nil {
+		if err := db.DB.Where("ud_id = ?", newDevice.UDID).First(&device).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				db.DB.Create(&newDevice)
+				if err := db.DB.Create(&newDevice).Error; err != nil {
+					return &newDevice, errors.Wrap(err, "Update device create udid")
+				}
+				device = newDevice
 			}
 		} else {
 			err := db.DB.Model(&device).Where("ud_id = ?", newDevice.UDID).Assign(&newDevice).FirstOrCreate(&device).Error
@@ -42,9 +44,12 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 	}
 
 	if newDevice.SerialNumber != "" {
-		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Scan(&oldDevice).Error; err != nil {
+		if err := db.DB.Where("serial_number = ?", newDevice.SerialNumber).First(&device).Error; err != nil {
 			if intErrors.Is(err, gorm.ErrRecordNotFound) {
-				db.DB.Create(&newDevice)
+				if err := db.DB.Create(&newDevice).Error; err != nil {
+					return &newDevice, errors.Wrap(err, "Update device create serial")
+				}
+				device = newDevice
 			}
 		} else {
 			err := db.DB.Model(&device).Where("serial_number = ?", newDevice.SerialNumber).Assign(&newDevice).FirstOrCreate(&device).Error
@@ -54,28 +59,21 @@ func UpdateDevice(newDevice types.Device) (*types.Device, error) {
 		}
 	}
 
-	err := UpdateDeviceBools(&newDevice)
-	if err != nil {
-		return &device, errors.Wrap(err, "UpdateDevice")
-	}
-
-	if newDevice.AwaitingConfiguration && newDevice.InitialTasksRun {
-		err := SendDeviceConfigured(newDevice)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:SendDeviceConfigured")
-		}
-	}
-
-	if !newDevice.InitialTasksRun && newDevice.AwaitingConfiguration {
-		err := RunInitialTasks(newDevice.UDID)
-		if err != nil {
-			return &device, errors.Wrap(err, "UpdateDevice:RunInitialTasks")
-		}
-	}
-
 	return &device, nil
 }
 
+// UpdateDeviceBools persists the boolean fields that are only ever populated
+// by an actual DeviceInformation query response (IsSupervised,
+// IsActivationLockEnabled, etc.) via an explicit map-based Updates call,
+// bypassing GORM's default skip-zero-value behavior for struct updates so a
+// legitimate true -> false transition can still persist.
+//
+// Callers MUST only invoke this with a Device decoded from a DeviceInformation
+// QueryResponses payload. Checkin and other Acknowledge payloads (ProfileList,
+// SecurityInfo, CertificateList, command acks, etc.) don't carry these fields
+// at all, so a Device decoded from one of those has them at their Go zero
+// value (false) rather than any real value from the device - calling this with
+// such a Device would silently clobber a correct value back to false.
 func UpdateDeviceBools(newDevice *types.Device) error {
 	var deviceModel types.Device
 	err := db.DB.Model(&deviceModel).
@@ -110,7 +108,7 @@ func GetDevice(udid string) (types.Device, error) {
 		return device, errors.Wrap(err, "GetDevice")
 	}
 
-	err := db.DB.Model(device).Where("ud_id = ?", udid).First(&device).Scan(&device).Error
+	err := db.DB.Where("ud_id = ?", udid).First(&device).Error
 	if err != nil {
 		return device, errors.Wrapf(
 			err,
@@ -221,7 +219,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		for i := range out.SerialNumbers {
 			device, err := GetDeviceSerial(out.SerialNumbers[i])
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				ErrorLogger(LogHolder{DeviceSerial: out.SerialNumbers[i], Message: err.Error()})
 				http.Error(
 					w,
 					http.StatusText(http.StatusInternalServerError),
@@ -364,8 +362,16 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 
 	device, err = GetDevice(vars["udid"])
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		// An unknown UDID is a client error, not a director failure: 404 and
+		// log at info rather than error.
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			InfoLogger(LogHolder{DeviceUDID: vars["udid"], Message: "SingleDeviceHandler: device not found"})
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		ErrorLogger(LogHolder{DeviceUDID: vars["udid"], Message: "SingleDeviceHandler: " + err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	err = SingleDeviceOutput(device, w, r)
@@ -373,7 +379,6 @@ func SingleDeviceHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
 	}
-
 }
 
 func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
@@ -385,10 +390,10 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
 		if strings.Contains(err.Error(), "record not found") {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceSerial: vars["serial"], Message: err.Error()})
 			w.WriteHeader(http.StatusNotFound)
 		} else {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceSerial: vars["serial"], Message: err.Error()})
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
@@ -444,6 +449,16 @@ func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 
 func RequestDeviceInformation(device types.Device) error {
 	requestType := "DeviceInformation"
+
+	inQueue, err := CommandInQueue(device, requestType, "")
+	if err != nil {
+		return errors.Wrap(err, "RequestDeviceInformation:CommandInQueue")
+	}
+	if inQueue {
+		log.Infof("%v already in queue for %v", requestType, device.UDID)
+		return nil
+	}
+
 	InfoLogger(
 		LogHolder{
 			Message:            "Requesting DeviceInfo",
@@ -456,7 +471,7 @@ func RequestDeviceInformation(device types.Device) error {
 	payload.UDID = device.UDID
 	payload.RequestType = requestType
 	payload.Queries = types.DeviceInformationQueries
-	_, err := SendCommand(payload)
+	_, err = SendCommand(payload)
 	if err != nil {
 		return errors.Wrap(err, "RequestDeviceInformation:SendCommand")
 	}
@@ -552,10 +567,8 @@ func InspectDeviceCommands(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
-	response, err := InspectCommandQueue(client, device)
+
+	response, err := InspectCommandQueue(device)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

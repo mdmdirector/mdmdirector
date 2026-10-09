@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	intErrors "errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -19,6 +22,15 @@ import (
 )
 
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		nanoClient, err := mdm.Client()
+		if err != nil {
+			return types.Command{}, err
+		}
+		return sendCommandWithClient(nanoClient, commandPayload)
+	}
+
 	var command types.Command
 	var commandResponse types.CommandResponse
 	device, err := GetDevice(commandPayload.UDID)
@@ -35,31 +47,50 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		},
 	)
 
+	// MicroMDM implementation
 	jsonStr, err := json.Marshal(commandPayload)
 	if err != nil {
 		return command, err
 	}
-	req, _ := http.NewRequest("POST", utils.ServerURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
+	req, _ := http.NewRequest("POST", utils.MicroMDMURL()+"/v1/commands", bytes.NewBuffer(jsonStr))
 
-	req.SetBasicAuth("micromdm", utils.APIKey())
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
 		return command, err
+	}
+	defer resp.Body.Close()
+	if utils.Prometheus() {
+		metrics.EnqueueRequests(commandPayload.RequestType, metrics.ResultLabel(resp.StatusCode)).Inc()
+	}
+
+	// A failed enqueue still answers with a JSON body. Decoding it would give an empty
+	// CommandUUID, and a row with an empty primary key would be recorded for a command
+	// that does not exist (the second such insert fails on the duplicate key).
+	if resp.StatusCode >= 400 {
+		return command, fmt.Errorf("enqueue %s for %s: MicroMDM answered %s", commandPayload.RequestType, commandPayload.UDID, resp.Status)
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&commandResponse)
-
 	if err != nil {
 		return command, err
 	}
-
-	defer resp.Body.Close()
+	if commandResponse.Payload.CommandUUID == "" {
+		return command, fmt.Errorf("enqueue %s for %s: MicroMDM returned no command UUID", commandPayload.RequestType, commandPayload.UDID)
+	}
 
 	command.DeviceUDID = commandPayload.UDID
 	command.CommandUUID = commandResponse.Payload.CommandUUID
 	command.RequestType = commandPayload.RequestType
+	command.Identifier = commandPayload.Identifier
+	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
 
 	InfoLogger(
 		LogHolder{
@@ -71,15 +102,82 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 		},
 	)
 
-	db.DB.Create(&command)
-	if utils.Prometheus() {
-		if commandPayload.RequestType == "InstallProfile" {
-			ProfilesPushed.Inc()
-		}
+	// The command is already on its way to the device. Without this row its result
+	// can't be matched back, so it would get no retry or ack bookkeeping and the
+	// queue dedupe wouldn't see it.
+	if err := db.DB.Create(&command).Error; err != nil {
+		return command, errors.Wrapf(err, "record sent command %s", command.CommandUUID)
+	}
 
-		if commandPayload.RequestType == "InstallApplication" {
-			InstallApplicationsPushed.Inc()
+	return command, nil
+}
+
+// sendCommandWithClient sends a command via NanoMDM using the provided client
+func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.CommandPayload) (types.Command, error) {
+	var command types.Command
+
+	device, err := GetDevice(commandPayload.UDID)
+	if err != nil {
+		return command, err
+	}
+
+	InfoLogger(LogHolder{
+		Message:            "Sending Command",
+		DeviceUDID:         device.UDID,
+		DeviceSerial:       device.SerialNumber,
+		CommandRequestType: commandPayload.RequestType,
+	})
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending command to device via NanoMDM"})
+
+	resp, err := nanoClient.Enqueue([]string{commandPayload.UDID}, commandPayload, nil)
+	if err != nil {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
 		}
+		return command, errors.Wrap(err, "nanoMDM enqueue")
+	}
+
+	// Check per-device errors
+	pushErr, cmdErr := resp.ErrorsForID(commandPayload.UDID)
+	if cmdErr != "" {
+		if utils.Prometheus() {
+			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
+		}
+		return command, errors.Errorf("command enqueue failed: %s", cmdErr)
+	}
+	if utils.Prometheus() {
+		metrics.EnqueueRequests(commandPayload.RequestType, "success").Inc()
+	}
+
+	if pushErr != "" {
+		ErrorLogger(LogHolder{
+			Message:      fmt.Sprintf("Push notification failed, command queued: %s", pushErr),
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+		})
+	}
+
+	command.DeviceUDID = commandPayload.UDID
+	command.CommandUUID = resp.CommandUUID
+	command.RequestType = resp.RequestType
+	command.Identifier = commandPayload.Identifier
+	command.ManifestURL = commandPayload.ManifestURL
+	command.ContentHash = commandPayload.ContentHash
+	command.AttemptCount = commandPayload.AttemptCount
+
+	InfoLogger(LogHolder{
+		Message:            "Sent Command",
+		DeviceUDID:         device.UDID,
+		DeviceSerial:       device.SerialNumber,
+		CommandRequestType: commandPayload.RequestType,
+		CommandUUID:        command.CommandUUID,
+	})
+
+	// The command is already on its way to the device. Without this row its result
+	// can't be matched back, so it would get no retry or ack bookkeeping and the
+	// queue dedupe wouldn't see it.
+	if err := db.DB.Create(&command).Error; err != nil {
+		return command, errors.Wrapf(err, "record sent command %s", command.CommandUUID)
 	}
 
 	return command, nil
@@ -93,7 +191,9 @@ func UpdateCommand(
 	var command types.Command
 
 	if device.UDID == "" {
-		log.Errorf("Cannot update command %v without a device UDID!!!!", ackEvent.CommandUUID)
+		// A malformed acknowledge event. Without the UDID no row can match; return
+		// rather than run a query that can't succeed and log it as an unknown command.
+		return fmt.Errorf("cannot update command %v without a device UDID", ackEvent.CommandUUID)
 	}
 
 	commandRequestType := "unknown"
@@ -145,56 +245,82 @@ OuterLoop:
 		},
 	)
 
-	if err := db.DB.Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Error; err != nil {
-		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("Command not found in the queue")
+	// Record the result on the command's row. A result for a command mdmdirector has no
+	// row for (one enqueued directly on the MDM server, or whose row was expired) is
+	// still a valid response: the caller goes on to process its payload. It just has no
+	// retry or ack bookkeeping to do here.
+	errorString := ""
+	if ackEvent.Status == "Error" {
+		ErrorLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, CommandRequestType: commandRequestType})
+		errorString = string(ackEvent.RawPayload)
+	}
+	result := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
+		Status:      ackEvent.Status,
+		ErrorString: errorString,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		InfoLogger(LogHolder{Message: "Command not found in the queue, result not recorded", CommandStatus: ackEvent.Status, CommandUUID: ackEvent.CommandUUID, DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: commandRequestType})
+		return nil
+	}
+
+	switch {
+	case ackEvent.Status == "Error" && commandRequestType == "InstallProfile":
+		if err := retryErroredInstallProfile(device, ackEvent.CommandUUID); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, Message: "retryErroredInstallProfile: " + err.Error()})
 		}
-	} else {
-		if ackEvent.Status == "Error" {
-			InfoLogger(LogHolder{Message: "Error response received", Metric: string(ackEvent.RawPayload), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
-			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
-				Status:      ackEvent.Status,
-				ErrorString: string(ackEvent.RawPayload),
-			}).Error
-			if err != nil {
-				return err
-			}
-		} else {
-			err := db.DB.Model(&command).Select("status", "error_string").Where("device_ud_id = ? AND command_uuid = ?", device.UDID, ackEvent.CommandUUID).Updates(types.Command{
-				Status:      ackEvent.Status,
-				ErrorString: "",
-			}).Error
-			if err != nil {
-				return err
-			}
+	case ackEvent.Status == "Acknowledged":
+		if err := recordProfileAck(device, ackEvent.CommandUUID); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandUUID: ackEvent.CommandUUID, Message: err.Error()})
 		}
 	}
 	return nil
 }
 
-func CommandInQueue(device types.Device, command string, afterDate time.Time) bool {
+// CommandInQueue reports whether a command of requestType is already pending for the
+// device. For profile commands, pass the profile's identifier so distinct profiles aren't
+// deduped against each other; for commands that aren't profile-scoped (e.g.
+// "SecurityInfo", "DeviceInformation"), pass "". Use InstallProfileInQueue for
+// InstallProfile so content changes aren't deduped away.
+func CommandInQueue(device types.Device, requestType string, identifier string) (bool, error) {
+	return commandInQueue(device, requestType, identifier, "")
+}
+
+// InstallProfileInQueue reports whether an InstallProfile carrying this exact content
+// (contentHash = the profile's HashedPayloadUUID) is already pending. A pending command
+// with an older hash does not count: the delivered payload lives in NanoMDM's queue, not
+// mdmdirector's, and NanoMDM has no per-command dequeue, so the only way to get fresh
+// content to the device is to enqueue it. The stale command is still delivered first and
+// then superseded by the fresh one (same PayloadIdentifier), and its ack updates its own row.
+func InstallProfileInQueue(device types.Device, identifier string, contentHash string) (bool, error) {
+	return commandInQueue(device, "InstallProfile", identifier, contentHash)
+}
+
+func commandInQueue(device types.Device, requestType string, identifier string, contentHash string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ?", device.UDID, command).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND COALESCE(content_hash, '') = ?", device.UDID, requestType, identifier, contentHash).
 		Where("status = ? OR status = ?", "", "NotNow").
-		Where("updated_at > ?", afterDate).
 		First(&commandModel).
 		Error
 	if err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
-			return false
+			return false, nil
 		}
+		return false, errors.Wrap(err, "command in queue")
 	}
 
-	return true
+	return true, nil
 }
 
-func InstallAppInQueue(device types.Device, data string) (bool, error) {
+func InstallAppInQueue(device types.Device, manifestURL string) (bool, error) {
 	var commandModel types.Command
 
 	err := db.DB.Model(&commandModel).
-		Where("device_ud_id = ? AND request_type = ? AND data = ?", device.UDID, "InstallApplication", data).
+		Where("device_ud_id = ? AND request_type = ? AND manifest_url = ?", device.UDID, "InstallApplication", manifestURL).
 		Where("status = ? OR status = ?", "", "NotNow").
 		First(&commandModel).
 		Error
@@ -220,7 +346,8 @@ func ClearCommands(device *types.Device) error {
 	)
 	err := db.DB.Model(&command).
 		Where("device_ud_id = ?", device.UDID).
-		Not("status = ? OR status = ?", "Error", "Acknowledged").
+		// Results are kept as the device's history; only unanswered commands go.
+		Not("status IN ?", []string{"Error", "Acknowledged", commandStatusRetriedViaDDM}).
 		Delete(&commands).
 		Error
 	if err != nil {
@@ -261,7 +388,7 @@ func ClearCommands(device *types.Device) error {
 func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 	var commands []types.Command
 
-	err := db.DB.Find(&commands).Scan(&commands).Error
+	err := db.DB.Find(&commands).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Commands model: %v", err)
 	}
@@ -275,6 +402,49 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
+}
+
+// staleCommandExemptRequestTypes are never expired by expireStaleCommands,
+// regardless of how long they've sat unresolved. DeviceLock/EraseDevice are
+// one-shot, high-consequence commands - CommandInQueue treating one as
+// expired would let a retry path enqueue a second lock/wipe for the same
+// device while the original might still be in flight, which could wipe a
+// device twice or stack conflicting lock PINs. Better to leave the row
+// blocking retries than risk a duplicate.
+var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
+
+// expireStaleCommands deletes local Command bookkeeping rows that have sat
+// with an empty (never-acknowledged) status for longer than
+// utils.StaleCommandThreshold() minutes (defaults to 5 days; override with
+// --stale-command-threshold or STALE_COMMAND_THRESHOLD), excluding
+// staleCommandExemptRequestTypes. NanoMDM's own Authenticate check-in handler
+// unconditionally clears any unresolved queue entries for a device, per the
+// MDM spec, to avoid stale commands surviving an unenrollment. If a device
+// re-authenticates while RunInitialTasks/InstallAllProfiles is still
+// mid-flight sending its serial batch of commands, NanoMDM can silently
+// deactivate the not-yet-acknowledged ones before the device ever requests
+// them. mdmdirector has no visibility into that: the local Command row is
+// left at status="" forever, and CommandInQueue then treats it as "already
+// queued", permanently blocking any future retry of that device+profile.
+// Expiring the row here unblocks CommandInQueue so the next scheduled push or
+// ProfileList verification can retry instead of treating the device as
+// permanently caught up.
+func expireStaleCommands() error {
+	var commands []types.Command
+	threshold := time.Duration(utils.StaleCommandThreshold()) * time.Minute
+	cutoff := time.Now().Add(-threshold)
+	err := db.DB.Where("status = ? AND updated_at < ? AND request_type NOT IN ?", "", cutoff, staleCommandExemptRequestTypes).Find(&commands).Error
+	if err != nil {
+		return errors.Wrap(err, "expireStaleCommands: find")
+	}
+	if len(commands) == 0 {
+		return nil
+	}
+	if err := db.DB.Delete(&commands).Error; err != nil {
+		return errors.Wrap(err, "expireStaleCommands: delete")
+	}
+	InfoLogger(LogHolder{Message: fmt.Sprintf("Expired %d stale command(s) with no response after %s", len(commands), threshold)})
+	return nil
 }
 
 func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
@@ -322,7 +492,7 @@ func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
 func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	var commands []types.Command
 
-	err := db.DB.Find(&commands).Where("status = ?", "Error").Scan(&commands).Error
+	err := db.DB.Where("status = ?", "Error").Find(&commands).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Commands model: %v", err)
 	}
@@ -355,11 +525,21 @@ func ExpireCommands() error {
 }
 
 func clearCommandQueue(device types.Device) error {
-	var client = &http.Client{
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		nanoClient, err := mdm.Client()
+		if err != nil {
+			return err
+		}
+		return clearCommandQueueWithClient(nanoClient, device)
+	}
+
+	// MicroMDM implementation
+	var httpClient = &http.Client{
 		Timeout: time.Second * 1,
 	}
 
-	endpoint, err := url.Parse(utils.ServerURL())
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		return err
 	}
@@ -367,8 +547,8 @@ func clearCommandQueue(device types.Device) error {
 	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
 
 	req, _ := http.NewRequest("DELETE", endpoint.String(), bytes.NewBufferString("{}"))
-	req.SetBasicAuth("micromdm", utils.APIKey())
-	resp, err := client.Do(req)
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -376,17 +556,30 @@ func clearCommandQueue(device types.Device) error {
 	return resp.Body.Close()
 }
 
-func InspectCommandQueue(client *http.Client, device types.Device) ([]byte, error) {
+func InspectCommandQueue(device types.Device) ([]byte, error) {
+	// Use NanoMDM client if enabled
+	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
+		nanoClient, err := mdm.Client()
+		if err != nil {
+			return nil, err
+		}
+		return inspectCommandQueueWithClient(nanoClient, device)
+	}
 
-	endpoint, err := url.Parse(utils.ServerURL())
+	// MicroMDM implementation
+	endpoint, err := url.Parse(utils.MicroMDMURL())
 	if err != nil {
 		return nil, err
 	}
 
 	endpoint.Path = path.Join(endpoint.Path, "v1", "commands", device.UDID)
 	req, _ := http.NewRequest("GET", endpoint.String(), nil)
-	req.SetBasicAuth("micromdm", utils.APIKey())
-	resp, err := client.Do(req)
+	req.SetBasicAuth("micromdm", utils.MicroMDMAPIKey())
+
+	httpClient := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -399,4 +592,33 @@ func InspectCommandQueue(client *http.Client, device types.Device) ([]byte, erro
 		return nil, errors.Wrap(err, "failed to read response body")
 	}
 	return buf.Bytes(), nil
+}
+
+// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client
+func clearCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) error {
+	_, err := nanoClient.ClearQueue(device.UDID)
+	if err != nil {
+		return errors.Wrap(err, "clearCommandQueue via NanoMDM")
+	}
+	return nil
+}
+
+// inspectCommandQueueWithClient inspects the NanoMDM command queue using the provided client
+func inspectCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) ([]byte, error) {
+	resp, err := nanoClient.InspectQueue(device.UDID)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue via NanoMDM")
+	}
+
+	// Convert nanoMDM response to microMDM-compatible format
+	unified, err := mdm.ConvertToUnifiedResponse(resp)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue: convert response")
+	}
+
+	jsonData, err := json.Marshal(unified)
+	if err != nil {
+		return nil, errors.Wrap(err, "InspectCommandQueue: marshal response")
+	}
+	return jsonData, nil
 }

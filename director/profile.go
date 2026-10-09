@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/pkcs12"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -28,6 +30,54 @@ import (
 
 	"gorm.io/gorm"
 )
+
+var signingPrivKey crypto.PrivateKey
+var signingCert *x509.Certificate
+
+// InitSigningKey loads the signing key and certificate at startup
+func InitSigningKey() error {
+	var err error
+	signingPrivKey, signingCert, err = loadSigningKey(
+		utils.KeyPassword(),
+		utils.KeyPath(),
+		utils.CertPath(),
+	)
+	if err != nil {
+		return err
+	}
+
+	reportSigningCertExpiry()
+
+	return nil
+}
+
+const signingCertExpiryInterval = 6 * time.Hour
+
+// PollSigningCertExpiry re-reports the signing certificate's expiry every 6 hours.
+func PollSigningCertExpiry() {
+	go func() {
+		for range time.Tick(signingCertExpiryInterval) {
+			reportSigningCertExpiry()
+		}
+	}()
+}
+
+// reportSigningCertExpiry publishes the loaded signing certificate's expiry as both a
+// gauge and a structured log line. No-op when signing is disabled or the certificate was
+// never loaded - deliberately leaving the gauge UNSET rather than writing 0
+func reportSigningCertExpiry() {
+	if signingCert == nil {
+		return
+	}
+
+	metrics.SigningCertNotAfter().Set(float64(signingCert.NotAfter.Unix()))
+
+	log.WithFields(log.Fields{
+		"cert":              "profile_signing",
+		"not_after":         signingCert.NotAfter.UTC().Format(time.RFC3339),
+		"days_until_expiry": int(time.Until(signingCert.NotAfter).Hours() / 24),
+	}).Info("signing cert expiry check")
+}
 
 func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
@@ -87,6 +137,8 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 
 		profile.HashedPayloadUUID = uuid.NewSHA1(uuid.NameSpaceDNS, mobileconfig).String()
 
+		originalHash := sha256.Sum256(mobileconfig)
+
 		tempProfileDict["PayloadUUID"] = profile.HashedPayloadUUID
 
 		mobileconfig, err = plist.MarshalIndent(&tempProfileDict, "\t")
@@ -100,10 +152,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		mutatedHash := sha256.Sum256(mobileconfig)
 		profile.MobileconfigData = mobileconfig
-		mobileconfigData := mobileconfig
-		hash := sha256.Sum256(mobileconfigData)
-		profile.MobileconfigHash = hash[:]
+		profile.MobileconfigHash = mutatedHash[:]
+		profile.OriginalMobileconfigHash = originalHash[:]
 
 		profiles = append(profiles, profile)
 
@@ -144,8 +196,10 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		sharedMutatedHash := sha256.Sum256(mobileconfig)
 		sharedProfile.MobileconfigData = mobileconfig
-		sharedProfile.MobileconfigHash = hash[:]
+		sharedProfile.MobileconfigHash = sharedMutatedHash[:]
+		sharedProfile.OriginalMobileconfigHash = originalHash[:]
 		sharedProfiles = append(sharedProfiles, sharedProfile)
 	}
 
@@ -154,7 +208,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.DeviceUDIDs) > 0 {
 			// Targeting all devices
 			if out.DeviceUDIDs[0] == "*" {
-				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+				err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(
@@ -169,7 +223,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if out.PushNow {
-					_, err = PushSharedProfiles(devices, sharedProfiles)
+					err = pushSharedProfilesPerDevice(devices, sharedProfiles)
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 					}
@@ -179,7 +233,14 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.DeviceUDIDs {
 					device, err := GetDevice(item)
 					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
+						// An unknown UDID is a client error, not a director failure: 404 and
+						// log at info rather than error.
+						if intErrors.Is(err, gorm.ErrRecordNotFound) {
+							InfoLogger(LogHolder{DeviceUDID: item, Message: "PostProfileHandler: device not found"})
+							http.Error(w, "device not found", http.StatusNotFound)
+							return
+						}
+						ErrorLogger(LogHolder{DeviceUDID: item, Message: "PostProfileHandler: " + err.Error()})
 						http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 						return
 					}
@@ -197,7 +258,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 		if len(out.SerialNumbers) > 0 {
 			// Targeting all devices
 			if out.SerialNumbers[0] == "*" {
-				err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+				err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 				if err != nil {
 					ErrorLogger(LogHolder{Message: err.Error()})
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -209,7 +270,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if out.PushNow {
-					_, err = PushSharedProfiles(devices, sharedProfiles)
+					err = pushSharedProfilesPerDevice(devices, sharedProfiles)
 					if err != nil {
 						ErrorLogger(LogHolder{Message: err.Error()})
 					}
@@ -218,6 +279,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.SerialNumbers {
 					device, err := GetDeviceSerial(item)
 					if err != nil {
+						ErrorLogger(LogHolder{DeviceSerial: item, Message: "skipping serial in POST to /profiles: " + err.Error()})
 						continue
 					}
 					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
@@ -258,6 +320,15 @@ func ProcessDeviceProfiles(
 	var profileMetadataList []types.ProfileMetadata
 	var profilesToSave []types.DeviceProfile
 
+	useDDM := ddmForDevice(device)
+
+	// Save but don't push while the device is enrolling: RunInitialTasks pushes every
+	// saved profile once it has cleared the previous enrollment's DDM declarations, and a
+	// push from here would race that cleanup.
+	if pushNow && initialTasksPending(device, deferPathProfilePost) {
+		pushNow = false
+	}
+
 	// metadata.Device = device
 	for i := range profiles {
 		var profileMetadata types.ProfileMetadata
@@ -274,17 +345,39 @@ func ProcessDeviceProfiles(
 					"Could not determine if saved profile differs from incoming profile.",
 				)
 			}
+			// A matching saved row only means the profile is assigned. Without DDM, also
+			// check that the device reported it, so a POST re-pushes an install the device
+			// never got instead of waiting for the next scheduled ProfileList.
+			if !profileDiffers && !useDDM {
+				profileDiffers, err = profileMissingFromDevice(device, profile)
+				if err != nil {
+					return metadata, errors.Wrap(err, "Could not check device ProfileList")
+				}
+			}
 			profile.Installed = true
 			if profileDiffers {
-				profilesToSave = append(profilesToSave, profile)
 				status = "changed"
 				if pushNow {
-					_, err = PushProfiles(devices, []types.DeviceProfile{profile})
-					if err != nil {
-						ErrorLogger(LogHolder{Message: err.Error()})
+					// Persist the profile before pushing as in DDM flow the device fetches the mobileconfig from /profiledownload
+					// using the ProfileURL in the declaration, so the row must already be in DB
+					if err := SaveProfiles([]types.Device{device}, []types.DeviceProfile{profile}); err != nil {
+						return metadata, errors.Wrap(err, "Save profile before push")
 					}
-					status = "pushed"
+					_, err = PushProfiles(devices, []types.DeviceProfile{profile}, useDDM)
+					if err != nil {
+						ErrorLogger(LogHolder{
+							Message:           err.Error(),
+							DeviceUDID:        device.UDID,
+							DeviceSerial:      device.SerialNumber,
+							ProfileIdentifier: profile.PayloadIdentifier,
+							ProfileUUID:       profile.HashedPayloadUUID,
+						})
+						status = "error"
+					} else {
+						status = "pushed"
+					}
 				} else {
+					profilesToSave = append(profilesToSave, profile)
 					status = "saved"
 				}
 			}
@@ -316,7 +409,7 @@ func ProcessDeviceProfiles(
 
 			if pushNow && profilePresent {
 				deletedProfile := []types.DeviceProfile{profile}
-				_, err := DeleteDeviceProfiles(devices, deletedProfile)
+				_, err := DeleteDeviceProfiles(devices, deletedProfile, useDDM)
 				if err != nil {
 					return metadata, errors.Wrap(err, "Delete device profiles")
 				}
@@ -362,9 +455,110 @@ func SavedProfileIsPresent(device types.Device, profile types.DeviceProfile) (bo
 	return false, nil
 }
 
+// profileMissingFromDevice reports whether the device's stored ProfileList lacks this exact
+// profile (identifier and PayloadUUID). The list is replaced by every ProfileList response
+// and kept current between them by recordProfileAck, so an acknowledged install counts as
+// present and is not re-pushed. It returns false when there is nothing reliable to compare
+// against: the device has never sent a ProfileList, or the device already rejected this
+// exact content (VerifyMDMProfiles retries those on the next ProfileList, so a profile the
+// device refuses isn't re-sent on every POST).
+func profileMissingFromDevice(device types.Device, profile types.DeviceProfile) (bool, error) {
+	var listed []types.ProfileList
+	err := db.DB.Where("device_ud_id = ?", device.UDID).
+		Limit(1).
+		Find(&listed).
+		Error
+	if err != nil {
+		return false, errors.Wrap(err, "profileMissingFromDevice: load ProfileList")
+	}
+	if len(listed) == 0 {
+		return false, nil
+	}
+
+	var entry types.ProfileList
+	err = db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).
+		First(&entry).
+		Error
+	if err != nil && !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		return false, errors.Wrap(err, "profileMissingFromDevice: load ProfileList entry")
+	}
+	if err == nil && strings.EqualFold(entry.PayloadUUID, profile.HashedPayloadUUID) {
+		return false, nil
+	}
+
+	var rejected int64
+	err = db.DB.Model(&types.Command{}).
+		Where("device_ud_id = ? AND request_type = ? AND identifier = ? AND content_hash = ? AND status = ?",
+			device.UDID, "InstallProfile", profile.PayloadIdentifier, profile.HashedPayloadUUID, "Error").
+		Count(&rejected).
+		Error
+	if err != nil {
+		return false, errors.Wrap(err, "profileMissingFromDevice: count rejected installs")
+	}
+	if rejected > 0 {
+		return false, nil
+	}
+
+	InfoLogger(
+		LogHolder{
+			DeviceUDID:        device.UDID,
+			DeviceSerial:      device.SerialNumber,
+			ProfileIdentifier: profile.PayloadIdentifier,
+			ProfileUUID:       profile.HashedPayloadUUID,
+			Message:           "Profile is saved but not in the device's ProfileList",
+		},
+	)
+	return true, nil
+}
+
+// recordProfileAck keeps the stored ProfileList current between ProfileList responses: an
+// acknowledged InstallProfile adds or replaces the profile's row, and an acknowledged
+// RemoveProfile deletes it. The next ProfileList response replaces the whole list with what
+// the device reports.
+func recordProfileAck(device types.Device, commandUUID string) error {
+	var command types.Command
+	err := db.DB.Select("request_type", "identifier", "content_hash").
+		Where("device_ud_id = ? AND command_uuid = ?", device.UDID, commandUUID).
+		First(&command).
+		Error
+	if err != nil {
+		if intErrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return errors.Wrap(err, "recordProfileAck: load command")
+	}
+	if command.Identifier == "" {
+		return nil
+	}
+
+	switch command.RequestType {
+	case "InstallProfile":
+		if command.ContentHash == "" {
+			return nil
+		}
+		return db.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, command.Identifier).
+				Delete(&types.ProfileList{}).Error; err != nil {
+				return errors.Wrap(err, "recordProfileAck: delete old entry")
+			}
+			entry := types.ProfileList{
+				DeviceUDID:        device.UDID,
+				PayloadIdentifier: command.Identifier,
+				PayloadUUID:       command.ContentHash,
+				IsManaged:         true,
+			}
+			return errors.Wrap(tx.Create(&entry).Error, "recordProfileAck: create entry")
+		})
+	case "RemoveProfile":
+		err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, command.Identifier).
+			Delete(&types.ProfileList{}).Error
+		return errors.Wrap(err, "recordProfileAck: delete entry")
+	}
+	return nil
+}
+
 func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile) (bool, error) {
 	var savedProfile types.DeviceProfile
-	var profileList types.ProfileList
 	// Profile isn't in the db
 	if err := db.DB.Where("device_ud_id = ? AND payload_identifier = ? AND installed = ?", device.UDID, profile.PayloadIdentifier, true).First(&savedProfile).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
@@ -397,21 +591,6 @@ func SavedDeviceProfileDiffers(device types.Device, profile types.DeviceProfile)
 		return true, nil
 	}
 
-	// Profile isn't what we have saved in the profilelist
-	err := db.DB.Model(&profileList).
-		Where("device_ud_id = ? AND payload_identifier = ?", device.UDID, profile.PayloadIdentifier).
-		Error
-	if err != nil {
-		if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-			// If it's not found, we'll catch in the false return at the end. Else raise an error
-			return true, errors.Wrap(err, "Could not load ProfileList for device")
-		}
-	}
-
-	if !strings.EqualFold(profileList.PayloadUUID, profile.HashedPayloadUUID) {
-		return false, nil
-	}
-
 	InfoLogger(
 		LogHolder{
 			DeviceUDID:        device.UDID,
@@ -428,7 +607,7 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 	var sharedProfileModel types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
-	err := db.DB.Select("ud_id", "serial_number").Find(&devices).Error
+	err := db.DB.Select("ud_id", "serial_number", "initial_tasks_run").Find(&devices).Error
 	if err != nil {
 		return errors.Wrap(err, "Profiles::DisableSharedProfiles: Could not get all devices")
 	}
@@ -448,7 +627,7 @@ func DisableSharedProfiles(payload types.DeleteProfilePayload) error {
 			)
 		}
 	}
-	_, err = DeleteSharedProfiles(devices, sharedProfiles)
+	err = deleteSharedProfilesPerDevice(devices, sharedProfiles)
 	if err != nil {
 		return errors.Wrap(err, "Profiles::DisableSharedProfiles: DeleteSharedProfiles")
 	}
@@ -566,6 +745,7 @@ func DeleteProfileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error {
+	var errs []error
 	for i := range devices {
 		device := devices[i]
 		if device.UDID == "" {
@@ -580,7 +760,10 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 			err := db.DB.Save(&profileData).Error
 			if err != nil {
 				if !intErrors.Is(err, gorm.ErrRecordNotFound) {
-					return errors.Wrap(err, "Save incoming profile")
+					wrappedErr := fmt.Errorf("device %s profile %s: save incoming profile: %w", device.UDID, profileData.PayloadIdentifier, err)
+					log.Errorf("%v", wrappedErr)
+					errs = append(errs, wrappedErr)
+					continue
 				}
 			}
 
@@ -599,22 +782,45 @@ func SaveProfiles(devices []types.Device, profiles []types.DeviceProfile) error 
 				}).
 				Error
 			if err != nil {
-				return errors.Wrap(err, "Update boolean on profile")
+				wrappedErr := fmt.Errorf("device %s profile %s: update installed bool: %w", device.UDID, profileData.PayloadIdentifier, err)
+				log.Errorf("%v", wrappedErr)
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 		}
 	}
-	return nil
+	return intErrors.Join(errs...)
 }
 
-func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]types.Command, error) {
+func PushProfiles(devices []types.Device, profiles []types.DeviceProfile, useDDM bool, opts ...pushOption) ([]types.Command, error) {
+	if useDDM {
+		if err := PushProfilesViaDDM(devices, profiles); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	var pushedCommands []types.Command
+	var errs []error
+
 	for i := range devices {
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
+
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("InstallProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.RequestType = "InstallProfile"
+			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{
@@ -627,37 +833,33 @@ func PushProfiles(devices []types.Device, profiles []types.DeviceProfile) ([]typ
 				},
 			)
 
-			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					log.Errorf("loading signing certificate and private key: %v", err)
-				}
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
-				if err != nil {
-					log.Errorf("signing profile with the specified key: %v", err)
-				}
-
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
-			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				log.Errorf("signing profile for push: %v", err)
 			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
 
 			commandPayload.UDID = device.UDID
+			for _, opt := range opts {
+				opt(&commandPayload)
+			}
 
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "pushed", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func SaveSharedProfiles(profiles []types.SharedProfile) error {
@@ -666,6 +868,7 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 		return nil
 	}
 
+	var errs []error
 	for _, profileData := range profiles {
 		if profileData.PayloadIdentifier != "" {
 			err := db.DB.Model(&profile).
@@ -673,34 +876,41 @@ func SaveSharedProfiles(profiles []types.SharedProfile) error {
 				Delete(&profile).
 				Error
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-				return errors.Wrap(err, "Deleting shared profiles")
+				wrappedErr := fmt.Errorf("profile %s: delete shared profile: %w", profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 		}
 	}
 
-	tx2 := db.DB.Model(&profile)
 	for _, profileData := range profiles {
 		// utils.PrintStruct(profileData)
-		err := tx2.Create(&profileData).Error
+		err := db.DB.Model(&profile).Create(&profileData).Error
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			wrappedErr := fmt.Errorf("profile %s: create shared profile: %w", profileData.PayloadIdentifier, err)
+			ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+			errs = append(errs, wrappedErr)
 		}
 	}
 
-	err := tx2.Error
-	if err != nil {
-		return errors.Wrap(err, "Saving shared profiles")
-	}
-	// db.DB.Create(&profiles)
-	return nil
+	return intErrors.Join(errs...)
 }
 
 func DeleteSharedProfiles(
 	devices []types.Device,
 	profiles []types.SharedProfile,
+	useDDM bool,
 ) ([]types.Command, error) {
+	if useDDM {
+		if err := DeleteSharedProfilesViaDDM(devices, profiles); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	var pushedCommands []types.Command
+	var errs []error
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -708,7 +918,10 @@ func DeleteSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("DeleteSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -721,6 +934,14 @@ func DeleteSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("RemoveProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -736,25 +957,47 @@ func DeleteSharedProfiles(
 				},
 			)
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "deleted", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteSharedProfiles")
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
 	}
 
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 func DeleteDeviceProfiles(
 	devices []types.Device,
 	profiles []types.DeviceProfile,
+	useDDM bool,
 ) ([]types.Command, error) {
+	if useDDM {
+		if err := DeleteDeviceProfilesViaDDM(devices, profiles); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	var pushedCommands []types.Command
 	for i := range devices {
 		device := devices[i]
 		for i := range profiles {
 			profileData := profiles[i]
+			inQueue, err := CommandInQueue(device, "RemoveProfile", profileData.PayloadIdentifier)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("RemoveProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "RemoveProfile"
@@ -770,8 +1013,12 @@ func DeleteDeviceProfiles(
 				},
 			)
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("device", "deleted", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "DeleteDeviceProfiles")
+				ErrorLogger(LogHolder{Message: err.Error()})
+				continue
 			}
 			pushedCommands = append(pushedCommands, command)
 		}
@@ -783,8 +1030,19 @@ func DeleteDeviceProfiles(
 func PushSharedProfiles(
 	devices []types.Device,
 	profiles []types.SharedProfile,
+	useDDM bool,
+	opts ...pushOption,
 ) ([]types.Command, error) {
+	if useDDM {
+		if err := PushSharedProfilesViaDDM(devices, profiles); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
 	var pushedCommands []types.Command
+	var errs []error
+
 	for i := range profiles {
 		profileData := profiles[i]
 
@@ -792,7 +1050,10 @@ func PushSharedProfiles(
 		var skipProfileDevices []types.DeviceProfile
 		err := db.DB.Select("device_ud_id").Where("payload_identifier = ?", profileData.PayloadIdentifier).Find(&skipProfileDevices).Error
 		if err != nil {
-			return nil, errors.Wrap(err, "PushSharedProfiles: could not get query device-specific profiles")
+			wrappedErr := fmt.Errorf("profile %s: query device-specific profiles: %w", profileData.PayloadIdentifier, err)
+			log.Errorf("PushSharedProfiles: %v", wrappedErr)
+			errs = append(errs, wrappedErr)
+			continue
 		}
 		skipUDIDs := make(map[string]struct{})
 		for _, deviceProfile := range skipProfileDevices {
@@ -805,10 +1066,20 @@ func PushSharedProfiles(
 			if _, ok := skipUDIDs[device.UDID]; ok {
 				continue
 			}
+			inQueue, err := InstallProfileInQueue(device, profileData.PayloadIdentifier, profileData.HashedPayloadUUID)
+			if err != nil {
+				ErrorLogger(LogHolder{Message: err.Error()})
+			} else if inQueue {
+				log.Infof("InstallProfile %v is already in queue for %v", profileData.PayloadIdentifier, device.UDID)
+				continue
+			}
+
 			var commandPayload types.CommandPayload
 
 			commandPayload.UDID = device.UDID
 			commandPayload.RequestType = "InstallProfile"
+			commandPayload.Identifier = profileData.PayloadIdentifier
+			commandPayload.ContentHash = profileData.HashedPayloadUUID
 
 			InfoLogger(
 				LogHolder{
@@ -821,35 +1092,31 @@ func PushSharedProfiles(
 				},
 			)
 
-			if utils.Sign() {
-				priv, pub, err := loadSigningKey(
-					utils.KeyPassword(),
-					utils.KeyPath(),
-					utils.CertPath(),
-				)
-				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-				}
-				signed, err := SignProfile(priv, pub, profileData.MobileconfigData)
-				if err != nil {
-					return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
-				}
-
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(signed)
-			} else {
-				commandPayload.Payload = base64.StdEncoding.EncodeToString(profileData.MobileconfigData)
+			payload, err := signIfRequired(profileData.MobileconfigData)
+			if err != nil {
+				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+			}
+			commandPayload.Payload = base64.StdEncoding.EncodeToString(payload)
+			for _, opt := range opts {
+				opt(&commandPayload)
 			}
 
 			command, err := SendCommand(commandPayload)
+			if utils.Prometheus() {
+				metrics.ProfileOperations("shared", "pushed", metrics.ResultFromError(err)).Inc()
+			}
 			if err != nil {
-				return pushedCommands, errors.Wrap(err, "PushSharedProfiles")
+				wrappedErr := fmt.Errorf("device %s profile %s: send command: %w", device.UDID, profileData.PayloadIdentifier, err)
+				ErrorLogger(LogHolder{Message: wrappedErr.Error()})
+				errs = append(errs, wrappedErr)
+				continue
 			}
 
 			pushedCommands = append(pushedCommands, command)
 
 		}
 	}
-	return pushedCommands, nil
+	return pushedCommands, intErrors.Join(errs...)
 }
 
 type ProfileForVerification struct {
@@ -872,7 +1139,6 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		},
 	)
 	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var profilesToInstall []types.DeviceProfile
 	var profilesToRemove []types.DeviceProfile
@@ -929,7 +1195,7 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		deviceProfileIDs[profileForVerification.PayloadIdentifier] = struct{}{}
 	}
 
-	err = db.DB.Model(&sharedProfile).Find(&sharedProfiles).Scan(&sharedProfiles).Error
+	err = db.DB.Find(&sharedProfiles).Error
 	if err != nil {
 		return errors.Wrap(err, "VerifyMDMProfiles: Cannot load shared profiles to install")
 	}
@@ -951,26 +1217,57 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 		profilesForVerification = append(profilesForVerification, profileForVerification)
 	}
 
-	_, cert, err := loadSigningKey(utils.KeyPassword(), utils.KeyPath(), utils.CertPath())
-	if err != nil {
-		log.Errorf("loading signing certificate and private key: %v", err)
-	}
-
 	// ensure certificate matches on enrollment profile
-	err = ensureCertOnEnrollmentProfile(device, profileLists, cert)
+	err = ensureCertOnEnrollmentProfile(device, profileLists, signingCert)
 	if err != nil {
 		return errors.Wrap(err, "checkCertOnEnrollmentProfile")
 	}
+
+	// A profile whose most recent InstallProfile came back with Error is reinstalled even
+	// when the device lists it with the expected UUID: a failed install can leave the
+	// profile present but inconsistent on the device in a way the ProfileList can't show.
+	erroredInstalls, err := erroredInstallProfiles(device.UDID)
+	if err != nil {
+		return errors.Wrap(err, "VerifyMDMProfiles: load errored installs")
+	}
+	totalRetries := utils.InstallProfileTotalRetries()
+	// Profiles reinstalled for that reason, by identifier, with the attempt_count the
+	// new command carries (the failed row's count plus one, so the two retry tiers share
+	// one counter). On a DDM device the reinstall is a declaration touch that writes no
+	// command row, so the Error rows are marked afterwards instead (see
+	// markErroredInstallsRetriedViaDDM).
+	erroredReinstallAttempt := map[string]int{}
+	erroredReinstalls := map[string][]string{}
 
 	for i := range profilesForVerification {
 		profileForVerification := profilesForVerification[i]
 		isInstalled, needsReinstall, err := validateProfileInProfileList(
 			profileForVerification,
 			profileLists,
-			cert,
+			signingCert,
 		)
 		if err != nil {
 			return errors.Wrap(err, "validateProfileInProfileList")
+		}
+		if isInstalled && !needsReinstall && profileForVerification.Installed {
+			if attempt, retry := lastInstallErrored(erroredInstalls, profileForVerification, totalRetries); retry {
+				InfoLogger(
+					LogHolder{
+						DeviceUDID:        device.UDID,
+						DeviceSerial:      device.SerialNumber,
+						ProfileUUID:       profileForVerification.HashedPayloadUUID,
+						ProfileIdentifier: profileForVerification.PayloadIdentifier,
+						Message:           fmt.Sprintf("VerifyMDMProfiles: Profile is present but its last InstallProfile returned Error, reinstalling (retry %d of %d)", attempt, totalRetries),
+						Metric:            profileForVerification.Type,
+					},
+				)
+				if utils.Prometheus() {
+					metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
+				}
+				needsReinstall = true
+				erroredReinstallAttempt[profileForVerification.PayloadIdentifier] = attempt
+				erroredReinstalls[profileForVerification.Type] = append(erroredReinstalls[profileForVerification.Type], profileForVerification.PayloadIdentifier)
+			}
 		}
 		// Profile is present in the ProfileList output
 		if isInstalled {
@@ -1029,6 +1326,9 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 			// But it should be installed
 			if profileForVerification.Installed {
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is present not in the profile list and should be installed", Metric: profileForVerification.Type})
+				if utils.Prometheus() {
+					metrics.ProfileVerificationMismatches(profileForVerification.Type).Inc()
+				}
 				sharedProfilesToInstall, profilesToInstall = addProfileToLists(profileForVerification, sharedProfilesToInstall, profilesToInstall)
 			} else { // Not present, and shouldn't be installed
 				InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, ProfileUUID: profileForVerification.HashedPayloadUUID, ProfileIdentifier: profileForVerification.PayloadIdentifier, Message: "VerifyMDMProfiles: Profile is not present and should not be installed", Metric: profileForVerification.Type})
@@ -1037,27 +1337,79 @@ func VerifyMDMProfiles(profileListData types.ProfileListData, device types.Devic
 	}
 
 	devices = append(devices, device)
-	_, err = PushProfiles(devices, profilesToInstall)
+	useDDM := ddmForDevice(device)
+
+	if useDDM {
+		// Declarations carry no attempt count; the Error rows are marked instead.
+		if _, err := PushProfiles(devices, profilesToInstall, true); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		} else if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["device"]); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
+		}
+		if _, err := PushSharedProfiles(devices, sharedProfilesToInstall, true); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		} else if err := markErroredInstallsRetriedViaDDM(device.UDID, erroredReinstalls["shared"]); err != nil {
+			ErrorLogger(LogHolder{DeviceUDID: device.UDID, Message: "VerifyMDMProfiles: " + err.Error()})
+		}
+	} else {
+		// A profile re-sent because its last install errored carries the continued
+		// attempt_count; everything else is a fresh install at 0.
+		var plainProfiles []types.DeviceProfile
+		for i := range profilesToInstall {
+			if attempt, ok := erroredReinstallAttempt[profilesToInstall[i].PayloadIdentifier]; ok {
+				if _, err := PushProfiles(devices, profilesToInstall[i:i+1], false, withAttemptCount(attempt)); err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+				}
+				continue
+			}
+			plainProfiles = append(plainProfiles, profilesToInstall[i])
+		}
+		if _, err := PushProfiles(devices, plainProfiles, false); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+
+		var plainShared []types.SharedProfile
+		for i := range sharedProfilesToInstall {
+			if attempt, ok := erroredReinstallAttempt[sharedProfilesToInstall[i].PayloadIdentifier]; ok {
+				if _, err := PushSharedProfiles(devices, sharedProfilesToInstall[i:i+1], false, withAttemptCount(attempt)); err != nil {
+					ErrorLogger(LogHolder{Message: err.Error()})
+				}
+				continue
+			}
+			plainShared = append(plainShared, sharedProfilesToInstall[i])
+		}
+		if _, err := PushSharedProfiles(devices, plainShared, false); err != nil {
+			ErrorLogger(LogHolder{Message: err.Error()})
+		}
+	}
+
+	_, err = DeleteDeviceProfiles(devices, profilesToRemove, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
-	_, err = PushSharedProfiles(devices, sharedProfilesToInstall)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	}
-
-	_, err = DeleteDeviceProfiles(devices, profilesToRemove)
-	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
-	}
-
-	_, err = DeleteSharedProfiles(devices, sharedProfilesToRemove)
+	_, err = DeleteSharedProfiles(devices, sharedProfilesToRemove, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 
 	return nil
+}
+
+// signingCertMatches checks whether any of the signer certificates match the local signing certificate
+func signingCertMatches(signerCertificates [][]byte, signingCert *x509.Certificate) (bool, error) {
+	for _, cert := range signerCertificates {
+		parsed, err := x509.ParseCertificate(cert)
+		if err != nil {
+			return false, errors.Wrap(err, "parse signer certificate")
+		}
+		if parsed.Subject.String() == signingCert.Subject.String() &&
+			parsed.NotAfter.Equal(signingCert.NotAfter) &&
+			parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Checks if a) if the certificate used to sign the profile returned by ProfileList matches the one we have locally (if we are signing profiles), b) if the certificate returned by ProfileList has the same hashed payload as the one we have locally and c) if the profile is present, but we should remove it
@@ -1077,7 +1429,7 @@ func validateProfileInProfileList(
 			return true, false, nil
 		}
 
-		// Verify the certifacte
+		// Verify the certificate
 		if utils.Sign() &&
 			profileForVerification.PayloadIdentifier == profileList.PayloadIdentifier {
 			InfoLogger(
@@ -1086,25 +1438,17 @@ func validateProfileInProfileList(
 					Message:           "Verifying signing certificate for profile",
 				},
 			)
-			certMatched := false
-			for _, cert := range profileList.SignerCertificates {
-				parsed, err := x509.ParseCertificate(cert)
-				if err != nil {
-					return true, false, errors.Wrap(err, "parse PEM certificate data")
-				}
-				if parsed.Subject.String() == signingCert.Subject.String() &&
-					parsed.NotAfter.Equal(signingCert.NotAfter) &&
-					parsed.Issuer.CommonName == signingCert.Issuer.CommonName {
-					msg := fmt.Sprintf(
-						"%v Parsed certificate matches local signing certificate",
-						signingCert.Subject.String(),
-					)
-					InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
-					certMatched = true
-					break
-				}
+			certMatched, err := signingCertMatches(profileList.SignerCertificates, signingCert)
+			if err != nil {
+				return true, false, errors.Wrap(err, "signingCertMatches")
 			}
-			if !certMatched {
+			if certMatched {
+				msg := fmt.Sprintf(
+					"%v Parsed certificate matches local signing certificate",
+					signingCert.Subject.String(),
+				)
+				InfoLogger(LogHolder{Message: msg, DeviceUDID: profileList.DeviceUDID})
+			} else {
 				msg := fmt.Sprintf(
 					"%v No certificates found matching local certificates",
 					signingCert.Subject.String(),
@@ -1160,7 +1504,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.DeviceProfile
 	vars := mux.Vars(r)
 
-	err := db.DB.Find(&profiles).Where("device_ud_id = ?", vars["udid"]).Scan(&profiles).Error
+	err := db.DB.Where("device_ud_id = ?", vars["udid"]).Find(&profiles).Error
 	if err != nil {
 		log.Errorf("Couldn't scan to Device Profiles model: %v", err)
 	}
@@ -1179,7 +1523,7 @@ func GetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
 func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	var profiles []types.SharedProfile
 
-	err := db.DB.Find(&profiles).Scan(&profiles).Error
+	err := db.DB.Find(&profiles).Error
 	if err != nil {
 		log.Error("Couldn't scan to Shared Profiles model", err)
 	}
@@ -1193,6 +1537,20 @@ func GetSharedProfiles(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
+}
+
+func signIfRequired(mobileconfigData []byte) ([]byte, error) {
+	if !utils.Sign() {
+		return mobileconfigData, nil
+	}
+	if signingPrivKey == nil || signingCert == nil {
+		return nil, errors.New("signing is enabled but the signing key was not loaded at startup")
+	}
+	signed, err := SignProfile(signingPrivKey, signingCert, mobileconfigData)
+	if err != nil {
+		return nil, errors.Wrap(err, "signing profile")
+	}
+	return signed, nil
 }
 
 // Sign takes an unsigned payload and signs it with the provided private key and certificate.
@@ -1269,12 +1627,22 @@ func loadSigningKey(
 
 func RequestProfileList(device types.Device) error {
 	requestType := "ProfileList"
+
+	inQueue, err := CommandInQueue(device, requestType, "")
+	if err != nil {
+		return errors.Wrap(err, "RequestProfileList: CommandInQueue")
+	}
+	if inQueue {
+		log.Infof("%v already in queue for %v", requestType, device.UDID)
+		return nil
+	}
+
 	log.Debugf("Requesting Profile List for %v", device.UDID)
 	var commandPayload types.CommandPayload
 	commandPayload.UDID = device.UDID
 	commandPayload.RequestType = requestType
 
-	_, err := SendCommand(commandPayload)
+	_, err = SendCommand(commandPayload)
 	if err != nil {
 		return errors.Wrap(err, "RequestProfileList: SendCommand")
 	}
@@ -1285,13 +1653,13 @@ func RequestProfileList(device types.Device) error {
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	var profile types.DeviceProfile
 	var profiles []types.DeviceProfile
-	var sharedProfile types.SharedProfile
 	var sharedProfiles []types.SharedProfile
 	var devices []types.Device
 
 	var pushedCommands []types.Command
 
 	devices = append(devices, device)
+	useDDM := ddmForDevice(device)
 
 	// Get the profiles that should be installed on the device
 	err := db.DB.Model(&profile).
@@ -1302,18 +1670,14 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 	log.Debugf("Pushing Profiles %v", device.UDID)
-	commands, err := PushProfiles(devices, profiles)
+	commands, err := PushProfiles(devices, profiles, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
 		pushedCommands = append(pushedCommands, commands...)
 	}
 
-	err = db.DB.Model(&sharedProfile).
-		Find(&sharedProfiles).
-		Where("installed = true").
-		Scan(&sharedProfiles).
-		Error
+	err = db.DB.Where("installed = true").Find(&sharedProfiles).Error
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
@@ -1331,7 +1695,7 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	}
 
 	log.Debugf("Pushing Shared Profiles %v", device.UDID)
-	commands, err = PushSharedProfiles(devices, unskippedSharedProfiles)
+	commands, err = PushSharedProfiles(devices, unskippedSharedProfiles, useDDM)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	} else {
@@ -1344,4 +1708,125 @@ func InstallAllProfiles(device types.Device) ([]types.Command, error) {
 	}
 
 	return pushedCommands, nil
+}
+
+// Scopes reported on the profile_download_requests_total metric. "none" means nothing was
+// served, so the request had no scope.
+const (
+	profileScopeDevice = "device"
+	profileScopeShared = "shared"
+	profileScopeNone   = "none"
+)
+
+// findMobileconfigData returns the mobileconfig to serve for a device/identifier pair
+// along with the scope it was found in (profileScopeDevice or profileScopeShared).
+func findMobileconfigData(udid, profileIdentifier string) ([]byte, string, error) {
+	var deviceProfile types.DeviceProfile
+	err := db.DB.Where("device_ud_id = ? AND payload_identifier = ?", udid, profileIdentifier).First(&deviceProfile).Error
+	if err == nil {
+		if !deviceProfile.Installed {
+			return nil, profileScopeNone, gorm.ErrRecordNotFound
+		}
+		return deviceProfile.MobileconfigData, profileScopeDevice, nil
+	}
+	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, profileScopeNone, fmt.Errorf("device profile lookup: %w", err)
+	}
+
+	var sharedProfile types.SharedProfile
+	err = db.DB.Where("payload_identifier = ?", profileIdentifier).First(&sharedProfile).Error
+	if err == nil {
+		if !sharedProfile.Installed {
+			return nil, profileScopeNone, gorm.ErrRecordNotFound
+		}
+		return sharedProfile.MobileconfigData, profileScopeShared, nil
+	}
+	if !intErrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, profileScopeNone, fmt.Errorf("shared profile lookup: %w", err)
+	}
+
+	return nil, profileScopeNone, gorm.ErrRecordNotFound
+}
+
+// recordProfileDownload counts the terminal outcome of a /profiledownload request
+func recordProfileDownload(scope, outcome string) {
+	if utils.Prometheus() {
+		metrics.ProfileDownloadRequests(scope, outcome).Inc()
+	}
+}
+
+func ProfileDownloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	udid := vars["udid"]
+	profileIdentifier := vars["profileIdentifier"]
+
+	if r.Header.Get("X-Enrollment-ID") != udid {
+		InfoLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           "Profile download rejected: X-Enrollment-ID does not match the requested device",
+			},
+		)
+		recordProfileDownload(profileScopeNone, "unauthorized")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	mobileconfigData, scope, err := findMobileconfigData(udid, profileIdentifier)
+	if intErrors.Is(err, gorm.ErrRecordNotFound) {
+		// The device was given a ProfileURL for a profile we don't have, or that is
+		// marked as not installed - the declaration is dangling
+		InfoLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           "Profile download: no installed profile found for identifier",
+			},
+		)
+		recordProfileDownload(profileScopeNone, "not_found")
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download lookup: %v", err),
+			},
+		)
+		recordProfileDownload(profileScopeNone, "error")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	responseData, err := signIfRequired(mobileconfigData)
+	if err != nil {
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download signing: %v", err),
+			},
+		)
+		recordProfileDownload(scope, "error")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-apple-aspen-config")
+	if _, err := w.Write(responseData); err != nil {
+		// Headers are already sent, so the device sees a truncated response
+		ErrorLogger(
+			LogHolder{
+				DeviceUDID:        udid,
+				ProfileIdentifier: profileIdentifier,
+				Message:           fmt.Sprintf("Profile download write: %v", err),
+			},
+		)
+		recordProfileDownload(scope, "error")
+		return
+	}
+	recordProfileDownload(scope, "success")
 }

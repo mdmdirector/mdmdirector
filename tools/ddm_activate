@@ -1,0 +1,12 @@
+#!/bin/bash
+# Send a bare DeclarativeManagement command to a device so it enters declarative mode and
+# can use DDM as needed. Converts nothing: no profiles or apps become declarations, and no
+# opt-in state is written (future pushes keep whatever the global flags / opt-in decide).
+# Whole-fleet activation is the server's --activate-ddm-fleet startup flag, not an API call.
+# Example:
+#          ./tools/ddm_activate $udid
+#
+source $MDMDIRECTOR_ENV_PATH
+endpoint="device/$1/ddm/activate"
+
+curl -u "mdmdirector:$API_TOKEN" -X POST "$SERVER_URL/$endpoint"
