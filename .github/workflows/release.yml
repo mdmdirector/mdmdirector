@@ -17,7 +17,7 @@ jobs:
       - name: Build
         run: ./.github/build
       - name: Upload
-        run: gh release upload "$TAG" mdmdirector-linux mdmdirector-darwin --clobber
+        run: gh release upload "$TAG" mdmdirector-linux mdmdirector-linux-arm64 mdmdirector-darwin mdmdirector-darwin-arm64 --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
