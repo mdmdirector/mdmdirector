@@ -219,7 +219,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		for i := range out.SerialNumbers {
 			device, err := GetDeviceSerial(out.SerialNumbers[i])
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				ErrorLogger(LogHolder{DeviceSerial: out.SerialNumbers[i], Message: err.Error()})
 				http.Error(
 					w,
 					http.StatusText(http.StatusInternalServerError),
@@ -390,10 +390,10 @@ func SingleDeviceSerialHandler(w http.ResponseWriter, r *http.Request) {
 	device, err = GetDeviceSerial(vars["serial"])
 	if err != nil {
 		if strings.Contains(err.Error(), "record not found") {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceSerial: vars["serial"], Message: err.Error()})
 			w.WriteHeader(http.StatusNotFound)
 		} else {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceSerial: vars["serial"], Message: err.Error()})
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return

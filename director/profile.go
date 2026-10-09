@@ -279,6 +279,7 @@ func PostProfileHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.SerialNumbers {
 					device, err := GetDeviceSerial(item)
 					if err != nil {
+						ErrorLogger(LogHolder{DeviceSerial: item, Message: "skipping serial in POST to /profiles: " + err.Error()})
 						continue
 					}
 					InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Processing POST to /profiles"})
