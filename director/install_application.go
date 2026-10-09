@@ -108,6 +108,7 @@ func PostInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 				for _, item := range out.SerialNumbers {
 					device, err := GetDeviceSerial(item)
 					if err != nil {
+						ErrorLogger(LogHolder{DeviceSerial: item, Message: "skipping serial in install application request: " + err.Error()})
 						continue
 					}
 					devices = append(devices, device)
