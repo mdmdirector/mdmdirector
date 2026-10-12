@@ -81,6 +81,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-db-max-connections int` - Maximum number of database connections. (default 100)
 - `-db-conn-max-idle-time int` - Seconds a pooled connection may sit idle before it is closed. Keep this below any idle timeout enforced between MDMDirector and PostgreSQL (service mesh, NLB, RDS proxy) so the pool recycles connections before the network does. 0 disables. (default 240) Env: `DB_CONN_MAX_IDLE_TIME`
 - `-db-conn-max-lifetime int` - Seconds a pooled connection may be reused before it is closed. 0 means forever. (default 1800) Env: `DB_CONN_MAX_LIFETIME`
+- `-db-statement-timeout int` - Seconds PostgreSQL lets a single statement run before cancelling it, set as `statement_timeout` on every connection. A stalled query then fails and is counted as an error instead of holding its connection until the pool is exhausted. Startup migrations run with the limit disabled. Set it well above your slowest legitimate query (bulk cleanup, large reports). 0 disables. (default 0) Env: `DB_STATEMENT_TIMEOUT`
 
 #### Redis Configuration
 

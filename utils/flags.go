@@ -94,6 +94,10 @@ func DBConnMaxLifetime() int {
 	return flag.Lookup("db-conn-max-lifetime").Value.(flag.Getter).Get().(int)
 }
 
+func DBStatementTimeout() int {
+	return flag.Lookup("db-statement-timeout").Value.(flag.Getter).Get().(int)
+}
+
 func EscrowURL() string {
 	return flag.Lookup("escrowurl").Value.(flag.Getter).Get().(string)
 }

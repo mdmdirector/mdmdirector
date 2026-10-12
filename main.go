@@ -74,6 +74,9 @@ var DBConnMaxIdleTimeSeconds int
 // DBConnMaxLifetimeSeconds bounds how long a connection may be reused.
 var DBConnMaxLifetimeSeconds int
 
+// DBStatementTimeoutSeconds bounds how long a single SQL statement may run.
+var DBStatementTimeoutSeconds int
+
 // DBSSLMode is used to connect to the database
 var DBSSLMode string
 
@@ -319,6 +322,12 @@ func main() {
 		"db-conn-max-lifetime",
 		env.Int("DB_CONN_MAX_LIFETIME", 1800),
 		"Maximum seconds a connection may be reused before being closed. 0 means connections are reused forever.",
+	)
+	flag.IntVar(
+		&DBStatementTimeoutSeconds,
+		"db-statement-timeout",
+		env.Int("DB_STATEMENT_TIMEOUT", 0),
+		"Maximum seconds PostgreSQL lets a single statement run before cancelling it (statement_timeout). Startup migrations are exempt. 0 disables the limit.",
 	)
 	flag.StringVar(
 		&LogLevel,
@@ -671,7 +680,7 @@ func main() {
 
 	director.InfoLogger(director.LogHolder{Message: "Performing DB migrations if required"})
 
-	err = db.DB.AutoMigrate(
+	err = db.Migrate(
 		&types.Device{},
 		&types.DeviceProfile{},
 		&types.Command{},
