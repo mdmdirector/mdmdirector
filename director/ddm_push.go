@@ -271,8 +271,28 @@ func PushSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedPro
 	return nil
 }
 
-// DeleteProfileViaDDM removes a single profile's DDM declarations for a device
+// DeleteProfileViaDDM removes a single profile's DDM declarations for a device and notifies
+// it. To delete several profiles, stage each with stageProfileDeleteViaDDM and notify once
+// through a ddmNotifyBatch, as PushProfileViaDDM explains.
 func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string) error {
+	if err := stageProfileDeleteViaDDM(client, udid, payloadIdentifier); err != nil {
+		return err
+	}
+
+	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
+	// always receives a DeclarativeManagement command and removes the deleted declarations.
+	err := client.NotifyEnrollment(udid)
+	observeDDMNotify(err)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteProfileViaDDM: notify enrollment for %s", udid)
+	}
+
+	return nil
+}
+
+// stageProfileDeleteViaDDM removes a profile's DDM declarations and set membership (steps
+// 1-5 of DeleteProfileViaDDM) without notifying the device.
+func stageProfileDeleteViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifier string) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
 	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	legacyDeclID := ddm.LegacyProfileDeclarationID(declarationPrefix, udid, payloadIdentifier)
@@ -306,17 +326,9 @@ func DeleteProfileViaDDM(client *ddm.KMFDDMClient, udid string, payloadIdentifie
 		return errors.Wrapf(err, "DeleteProfileViaDDM: DELETE declaration (activation) for %s on %s", payloadIdentifier, udid)
 	}
 
-	// Step 5: Re-associate enrollment with set (noNotify=true - notify done explicitly in step 6)
+	// Step 5: Re-associate enrollment with set (noNotify=true - the caller notifies)
 	if err := client.PutEnrollmentSet(udid, setName, true); err != nil {
 		return errors.Wrapf(err, "DeleteProfileViaDDM: PUT enrollment-set for %s", udid)
-	}
-
-	// Step 6: Notify kmfddm to trigger DDM sync - bypasses the changed-check so the device
-	// always receives a DeclarativeManagement command and removes the deleted declarations.
-	err = client.NotifyEnrollment(udid)
-	observeDDMNotify(err)
-	if err != nil {
-		return errors.Wrapf(err, "DeleteProfileViaDDM: notify enrollment for %s", udid)
 	}
 
 	return nil
@@ -328,6 +340,10 @@ func DeleteDeviceProfilesViaDDM(devices []types.Device, profiles []types.DeviceP
 	if err != nil {
 		return err
 	}
+
+	// Notify each device once after all its profile deletes are staged.
+	var notify ddmNotifyBatch
+	defer notify.Flush(client)
 
 	for i := range devices {
 		device := devices[i]
@@ -343,7 +359,7 @@ func DeleteDeviceProfilesViaDDM(devices []types.Device, profiles []types.DeviceP
 				},
 			)
 
-			err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier)
+			err := stageProfileDeleteViaDDM(client, device.UDID, profileData.PayloadIdentifier)
 			if utils.Prometheus() {
 				metrics.ProfileOperations("device", "deleted", metrics.ResultFromError(err)).Inc()
 			}
@@ -365,6 +381,7 @@ func DeleteDeviceProfilesViaDDM(devices []types.Device, profiles []types.DeviceP
 					ProfileIdentifier: profileData.PayloadIdentifier,
 				},
 			)
+			notify.Add(device)
 		}
 	}
 
@@ -378,6 +395,10 @@ func DeleteSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedP
 	if err != nil {
 		return err
 	}
+
+	// Notify each device once after all shared profile deletes are staged.
+	var notify ddmNotifyBatch
+	defer notify.Flush(client)
 
 	for i := range profiles {
 		profileData := profiles[i]
@@ -404,7 +425,7 @@ func DeleteSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedP
 				},
 			)
 
-			err := DeleteProfileViaDDM(client, device.UDID, profileData.PayloadIdentifier)
+			err := stageProfileDeleteViaDDM(client, device.UDID, profileData.PayloadIdentifier)
 			if utils.Prometheus() {
 				metrics.ProfileOperations("shared", "deleted", metrics.ResultFromError(err)).Inc()
 			}
@@ -426,6 +447,7 @@ func DeleteSharedProfilesViaDDM(devices []types.Device, profiles []types.SharedP
 					ProfileIdentifier: profileData.PayloadIdentifier,
 				},
 			)
+			notify.Add(device)
 		}
 	}
 

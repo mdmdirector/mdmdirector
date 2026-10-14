@@ -141,8 +141,22 @@ func PushApplicationsViaDDM(devices []types.Device, manifestURL string) error {
 	return nil
 }
 
-// DeleteSharedInstallApplicationViaDDM removes DDM declarations for a shared app from a single device
+// DeleteSharedInstallApplicationViaDDM removes DDM declarations for a shared app from a single
+// device and notifies it. To delete several apps, stage each with
+// stageSharedInstallApplicationDeleteViaDDM and notify once through a ddmNotifyBatch.
 func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
+	if err := stageSharedInstallApplicationDeleteViaDDM(client, udid, app); err != nil {
+		return err
+	}
+	if err := client.NotifyEnrollment(udid); err != nil {
+		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: notify enrollment for %s", udid)
+	}
+	return nil
+}
+
+// stageSharedInstallApplicationDeleteViaDDM removes a shared app's DDM declarations and set
+// membership without notifying the device.
+func stageSharedInstallApplicationDeleteViaDDM(client *ddm.KMFDDMClient, udid string, app types.SharedInstallApplication) error {
 	declarationPrefix := utils.DDMDeclarationPrefix()
 	setName := ddm.DeviceSetName(utils.DDMSetPrefix(), udid)
 	pkgID := ddm.PackageDeclarationID(declarationPrefix, udid, app.ID.String())
@@ -159,9 +173,6 @@ func DeleteSharedInstallApplicationViaDDM(client *ddm.KMFDDMClient, udid string,
 	}
 	if err := client.DeleteDeclaration(actID, true); err != nil {
 		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: delete activation declaration for %s on %s", app.ManifestURL, udid)
-	}
-	if err := client.NotifyEnrollment(udid); err != nil {
-		return errors.Wrapf(err, "DeleteSharedInstallApplicationViaDDM: notify enrollment for %s", udid)
 	}
 	return nil
 }
