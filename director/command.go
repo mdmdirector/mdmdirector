@@ -414,6 +414,9 @@ func GetAllCommands(w http.ResponseWriter, r *http.Request) {
 // blocking retries than risk a duplicate.
 var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
 
+// staleCommandDeleteBatch is how many rows one DELETE in expireStaleCommands removes.
+const staleCommandDeleteBatch = 10000
+
 // expireStaleCommands deletes local Command bookkeeping rows that have sat
 // with an empty (never-acknowledged) status for longer than
 // utils.StaleCommandThreshold() minutes (defaults to 5 days; override with
@@ -431,20 +434,33 @@ var staleCommandExemptRequestTypes = []string{"DeviceLock", "EraseDevice"}
 // ProfileList verification can retry instead of treating the device as
 // permanently caught up.
 func expireStaleCommands() error {
-	var commands []types.Command
 	threshold := time.Duration(utils.StaleCommandThreshold()) * time.Minute
 	cutoff := time.Now().Add(-threshold)
-	err := db.DB.Where("status = ? AND updated_at < ? AND request_type NOT IN ?", "", cutoff, staleCommandExemptRequestTypes).Find(&commands).Error
-	if err != nil {
-		return errors.Wrap(err, "expireStaleCommands: find")
+	// Delete in batches by subquery rather than loading the rows and deleting them by
+	// primary key: one DELETE listing every key fails outright past PostgreSQL's 65535
+	// bind parameters, so a large backlog was never cleared, and loading the rows held
+	// every stale payload in memory. A bounded batch also keeps each statement well
+	// inside -db-statement-timeout.
+	var expired int64
+	for {
+		stale := db.DB.Model(&types.Command{}).
+			Select("command_uuid").
+			// status is literal, not a parameter, so idx_commands_pending stays usable
+			// once PostgreSQL switches the prepared statement to a generic plan.
+			Where("status = '' AND updated_at < ? AND request_type NOT IN ?", cutoff, staleCommandExemptRequestTypes).
+			Limit(staleCommandDeleteBatch)
+		result := db.DB.Where("command_uuid IN (?)", stale).Delete(&types.Command{})
+		if result.Error != nil {
+			return errors.Wrap(result.Error, "expireStaleCommands: delete")
+		}
+		expired += result.RowsAffected
+		if result.RowsAffected < staleCommandDeleteBatch {
+			break
+		}
 	}
-	if len(commands) == 0 {
-		return nil
+	if expired > 0 {
+		InfoLogger(LogHolder{Message: fmt.Sprintf("Expired %d stale command(s) with no response after %s", expired, threshold)})
 	}
-	if err := db.DB.Delete(&commands).Error; err != nil {
-		return errors.Wrap(err, "expireStaleCommands: delete")
-	}
-	InfoLogger(LogHolder{Message: fmt.Sprintf("Expired %d stale command(s) with no response after %s", len(commands), threshold)})
 	return nil
 }
 
@@ -491,7 +507,7 @@ func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
 
 	tx := db.DB.Model(&types.Command{}).
 		Select(pendingCommandColumns).
-		Where("status IN ?", pendingCommandStatuses)
+		Where(pendingStatusClause)
 	if udid := query.Get("udid"); udid != "" {
 		tx = tx.Where("device_ud_id = ?", udid)
 	}
@@ -593,22 +609,6 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ExpireCommands() error {
-	var commands []types.Command
-	thirtyDaysAgo := time.Now().Add(-720 * time.Hour)
-	err := db.DB.Unscoped().
-		Find(&commands).
-		Where("status = ? OR status = ?", "", "NotNow").
-		Where("updated_at < ?", thirtyDaysAgo).
-		Delete(&commands).
-		Error
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func clearCommandQueue(device types.Device) error {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
@@ -650,6 +650,12 @@ func clearCommandQueue(device types.Device) error {
 // dedupe checks treat a row in one of these as already queued.
 var pendingCommandStatuses = []string{"", "NotNow"}
 
+// pendingStatusClause is pendingCommandStatuses written into the SQL. With the statuses
+// bound as parameters, PostgreSQL stops using idx_commands_pending once it switches the
+// prepared statement to a generic plan (after five runs on a connection), because the
+// generic plan cannot prove that the rows it wants are inside the index's WHERE.
+const pendingStatusClause = "status IN ('', 'NotNow')"
+
 // deletePendingCommandRows deletes mdmdirector's pending rows (pendingCommandStatuses) for
 // udid, or for every device when udid is "", optionally only of requestType. It only
 // touches mdmdirector's bookkeeping, not the MDM server's queue. Results (Error,
@@ -668,10 +674,11 @@ func deletePendingCommandRows(udid string, requestType string) (int64, error) {
 
 // clearPendingCommandRows runs once the MDM server's queue for device has been cleared.
 // The device's pending rows no longer have a command behind them, and left in place they
-// would make CommandInQueue skip every re-send as "already in queue" until ExpireCommands
-// drops them 30 days later. They are deleted, as ClearCommands and expireStaleCommands do
-// with rows that will get no result; a late result for one of them is logged and ignored
-// by UpdateCommand like any unknown command.
+// would make CommandInQueue skip every re-send as "already in queue" until
+// expireStaleCommands drops them after -stale-command-threshold (NotNow rows it never
+// drops). They are deleted, as ClearCommands and expireStaleCommands do with rows that
+// will get no result; a late result for one of them is logged and ignored by
+// UpdateCommand like any unknown command.
 func clearPendingCommandRows(device types.Device) error {
 	deleted, err := deletePendingCommandRows(device.UDID, "")
 	if err != nil {
