@@ -378,13 +378,18 @@ func DeleteInstallApplicationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Notify each device once after all its app deletes are staged.
+	var notify ddmNotifyBatch
 	for _, app := range sharedApps {
 		for _, device := range ddmDevices {
-			if err := DeleteSharedInstallApplicationViaDDM(client, device.UDID, app); err != nil {
+			if err := stageSharedInstallApplicationDeleteViaDDM(client, device.UDID, app); err != nil {
 				ErrorLogger(LogHolder{Message: err.Error(), DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber})
+				continue
 			}
+			notify.Add(device)
 		}
 	}
+	notify.Flush(client)
 
 	if err := db.DB.Where("manifest_url IN (?)", manifestURLs).Delete(&types.SharedInstallApplication{}).Error; err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})

@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/stretchr/testify/assert"
@@ -398,4 +400,153 @@ func TestDDMNotifyBatch_NotifyErrorContinues(t *testing.T) {
 	assert.Len(t, errs, 2)
 	assert.Len(t, *requests, 2)
 	assert.Contains(t, errs[0].Error(), "UDID-A")
+}
+
+// setupDDMGlobalPushTest points the global KMFDDM client at a request-logging mock, for the
+// multi-profile functions that call ddm.Client() themselves.
+func setupDDMGlobalPushTest(t *testing.T) (*[]requestLog, map[string]int) {
+	t.Helper()
+	// The multi-profile functions read the prometheus flag
+	if flag.Lookup("prometheus") == nil {
+		flag.Bool("prometheus", false, "Enable prometheus metrics")
+	}
+	server, requests, statusOverrides := newMockKMFDDM(t)
+	t.Cleanup(server.Close)
+	ddm.InitClient(server.URL, "testapikey")
+	return requests, statusOverrides
+}
+
+// notifiedUDIDs returns the id= of every POST /v1/notify, in order.
+func notifiedUDIDs(requests []requestLog) []string {
+	var udids []string
+	for _, r := range requests {
+		if r.Method == "POST" && r.Path == "/v1/notify" {
+			udids = append(udids, strings.TrimPrefix(r.Query, "id="))
+		}
+	}
+	return udids
+}
+
+func testDeviceProfiles(ids ...string) []types.DeviceProfile {
+	profiles := make([]types.DeviceProfile, 0, len(ids))
+	for _, id := range ids {
+		profiles = append(profiles, types.DeviceProfile{PayloadIdentifier: id})
+	}
+	return profiles
+}
+
+// stageProfileDeleteViaDDM does steps 1-5 only: the caller notifies.
+func TestStageProfileDeleteViaDDM_DoesNotNotify(t *testing.T) {
+	client, requests, _, cleanup := setupDDMPushTest(t)
+	defer cleanup()
+
+	err := stageProfileDeleteViaDDM(client, ddmTestUDID, "com.example.wifi")
+	require.NoError(t, err)
+
+	reqs := *requests
+	require.Len(t, reqs, 5)
+	for _, r := range reqs {
+		assert.NotEqual(t, "/v1/notify", r.Path)
+		assert.Contains(t, r.Query, "nonotify=true")
+	}
+}
+
+// Deleting several profiles notifies each device once, after all its deletes are staged.
+func TestDeleteDeviceProfilesViaDDM_NotifiesEachDeviceOnce(t *testing.T) {
+	tests := []struct {
+		name  string
+		udids []string
+	}{
+		{name: "one device", udids: []string{"UDID-A"}},
+		{name: "two devices", udids: []string{"UDID-A", "UDID-B"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			requests, _ := setupDDMGlobalPushTest(t)
+
+			devices := make([]types.Device, 0, len(tc.udids))
+			for _, udid := range tc.udids {
+				devices = append(devices, types.Device{UDID: udid})
+			}
+			profiles := testDeviceProfiles("com.example.a", "com.example.b", "com.example.c")
+
+			require.NoError(t, DeleteDeviceProfilesViaDDM(devices, profiles))
+
+			reqs := *requests
+			// 5 staged calls per profile per device, then one notify per device
+			assert.Len(t, reqs, 5*len(profiles)*len(devices)+len(devices))
+			assert.Equal(t, tc.udids, notifiedUDIDs(reqs))
+			for _, r := range reqs[:len(reqs)-len(devices)] {
+				assert.NotEqual(t, "/v1/notify", r.Path)
+			}
+		})
+	}
+}
+
+// A device whose deletes all failed has nothing to sync, so it isn't notified.
+func TestDeleteDeviceProfilesViaDDM_AllStagesFail_NoNotify(t *testing.T) {
+	requests, statusOverrides := setupDDMGlobalPushTest(t)
+	statusOverrides["DELETE /v1/set-declarations/com.example.set.UDID-A"] = http.StatusInternalServerError
+
+	devices := []types.Device{{UDID: "UDID-A"}}
+	require.NoError(t, DeleteDeviceProfilesViaDDM(devices, testDeviceProfiles("com.example.a", "com.example.b")))
+
+	assert.Empty(t, notifiedUDIDs(*requests))
+}
+
+// One failed delete doesn't stop the others, and the device is still notified for them.
+func TestDeleteDeviceProfilesViaDDM_SomeStagesFail_NotifiesOnce(t *testing.T) {
+	requests, statusOverrides := setupDDMGlobalPushTest(t)
+	statusOverrides["DELETE /v1/declarations/com.example.UDID-A.legacy_profile.com.example.a"] = http.StatusInternalServerError
+
+	devices := []types.Device{{UDID: "UDID-A"}}
+	require.NoError(t, DeleteDeviceProfilesViaDDM(devices, testDeviceProfiles("com.example.a", "com.example.b")))
+
+	assert.Equal(t, []string{"UDID-A"}, notifiedUDIDs(*requests))
+}
+
+// Shared deletes batch the same way, and skip a device with a device-specific version.
+func TestDeleteSharedProfilesViaDDM_NotifiesEachDeviceOnce(t *testing.T) {
+	requests, _ := setupDDMGlobalPushTest(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	profiles := []types.SharedProfile{
+		{PayloadIdentifier: "com.example.a"},
+		{PayloadIdentifier: "com.example.b"},
+	}
+	// getDeviceSpecificProfileUDIDs: UDID-B has its own com.example.b
+	mockSpy.ExpectQuery(`SELECT "device_ud_id" FROM "device_profiles" WHERE payload_identifier = \$1`).
+		WithArgs("com.example.a").
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	mockSpy.ExpectQuery(`SELECT "device_ud_id" FROM "device_profiles" WHERE payload_identifier = \$1`).
+		WithArgs("com.example.b").
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}).AddRow("UDID-B"))
+
+	devices := []types.Device{{UDID: "UDID-A"}, {UDID: "UDID-B"}}
+	require.NoError(t, DeleteSharedProfilesViaDDM(devices, profiles))
+	require.NoError(t, mockSpy.ExpectationsWereMet())
+
+	reqs := *requests
+	// A: 2 profiles, B: 1 profile, 5 staged calls each, then one notify per device
+	assert.Len(t, reqs, 5*3+2)
+	assert.Equal(t, []string{"UDID-A", "UDID-B"}, notifiedUDIDs(reqs))
+}
+
+func TestDeleteSharedProfilesViaDDM_AllStagesFail_NoNotify(t *testing.T) {
+	requests, statusOverrides := setupDDMGlobalPushTest(t)
+	statusOverrides["DELETE /v1/set-declarations/com.example.set.UDID-A"] = http.StatusInternalServerError
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockSpy.ExpectQuery(`SELECT "device_ud_id" FROM "device_profiles" WHERE payload_identifier = \$1`).
+		WithArgs("com.example.a").
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+
+	devices := []types.Device{{UDID: "UDID-A"}}
+	require.NoError(t, DeleteSharedProfilesViaDDM(devices, []types.SharedProfile{{PayloadIdentifier: "com.example.a"}}))
+	require.NoError(t, mockSpy.ExpectationsWereMet())
+
+	assert.Empty(t, notifiedUDIDs(*requests))
 }

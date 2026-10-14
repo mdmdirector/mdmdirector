@@ -400,3 +400,34 @@ func TestEnableDeviceDDMHandler_InitialTasksPending(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rr.Code)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
+
+// Opting out tears down every profile with one notify per delete function: once for the
+// device profiles and once for the shared ones, not once per profile
+func TestTeardownDDMForDevice_NotifiesOncePerProfileKind(t *testing.T) {
+	requests, _ := setupDDMGlobalPushTest(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockSpy.ExpectQuery(`SELECT \* FROM "device_profiles" WHERE device_ud_id = \$1`).
+		WithArgs("udid-1").
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id", "payload_identifier"}).
+			AddRow("udid-1", "com.example.d1").
+			AddRow("udid-1", "com.example.d2").
+			AddRow("udid-1", "com.example.d3"))
+	mockSpy.ExpectQuery(`SELECT \* FROM "shared_profiles"`).
+		WillReturnRows(sqlmock.NewRows([]string{"payload_identifier"}).
+			AddRow("com.example.s1").
+			AddRow("com.example.s2"))
+	for _, id := range []string{"com.example.s1", "com.example.s2"} {
+		mockSpy.ExpectQuery(`SELECT "device_ud_id" FROM "device_profiles" WHERE payload_identifier = \$1`).
+			WithArgs(id).
+			WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	}
+
+	require.NoError(t, teardownDDMForDevice(types.Device{UDID: "udid-1"}))
+	require.NoError(t, mockSpy.ExpectationsWereMet())
+
+	reqs := *requests
+	assert.Len(t, reqs, 5*5+2)
+	assert.Equal(t, []string{"udid-1", "udid-1"}, notifiedUDIDs(reqs))
+}

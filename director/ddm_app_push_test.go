@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/mdmdirector/mdmdirector/ddm"
 	"github.com/mdmdirector/mdmdirector/types"
@@ -362,4 +364,59 @@ func TestDeleteSharedInstallApplicationViaDDM_NotifyError(t *testing.T) {
 	err := DeleteSharedInstallApplicationViaDDM(client, "DEVICE-UDID-1234", app)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "notify enrollment")
+}
+
+// stageSharedInstallApplicationDeleteViaDDM does the deletes only: the caller notifies.
+func TestStageSharedInstallApplicationDeleteViaDDM_DoesNotNotify(t *testing.T) {
+	server, requests, _ := newMockKMFDDM(t)
+	defer server.Close()
+
+	client := ddm.NewKMFDDMClient(server.URL, "testapikey")
+
+	err := stageSharedInstallApplicationDeleteViaDDM(client, "DEVICE-UDID-1234", newTestSharedApp())
+	require.NoError(t, err)
+
+	reqs := *requests
+	require.Len(t, reqs, 4)
+	for _, r := range reqs {
+		assert.NotEqual(t, "/v1/notify", r.Path)
+		assert.Contains(t, r.Query, "nonotify=true")
+	}
+}
+
+// Deleting several shared apps notifies each device once, not once per app
+func TestDeleteInstallApplicationHandler_NotifiesEachDeviceOnce(t *testing.T) {
+	setupDDMFlags(t, false, true)
+	requests, _ := setupDDMGlobalPushTest(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockSpy.ExpectQuery(`SELECT \* FROM "shared_install_applications" WHERE manifest_url IN`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "manifest_url"}).
+			AddRow(uuid.New().String(), "https://example.com/a.plist").
+			AddRow(uuid.New().String(), "https://example.com/b.plist"))
+	mockSpy.ExpectQuery(`SELECT \* FROM "devices"`).
+		WillReturnRows(sqlmock.NewRows([]string{"ud_id", "serial_number"}).
+			AddRow("UDID-A", "SERIAL-A").
+			AddRow("UDID-B", "SERIAL-B"))
+	mockSpy.ExpectQuery(`SELECT \* FROM "os_update_settings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	mockSpy.ExpectQuery(`SELECT \* FROM "security_infos"`).
+		WillReturnRows(sqlmock.NewRows([]string{"device_ud_id"}))
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`DELETE FROM "shared_install_applications" WHERE manifest_url IN`).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mockSpy.ExpectCommit()
+
+	body := `{"manifest_urls":[{"url":"https://example.com/a.plist"},{"url":"https://example.com/b.plist"}]}`
+	rr := httptest.NewRecorder()
+	DeleteInstallApplicationHandler(rr, httptest.NewRequest(http.MethodDelete, "/installapplication", strings.NewReader(body)))
+
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+
+	reqs := *requests
+	// 4 staged calls per app per device, then one notify per device
+	assert.Len(t, reqs, 4*2*2+2)
+	assert.Equal(t, []string{"UDID-A", "UDID-B"}, notifiedUDIDs(reqs))
 }
