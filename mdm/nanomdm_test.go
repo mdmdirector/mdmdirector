@@ -498,6 +498,21 @@ func TestNanoMDMClient_ClearQueue(t *testing.T) {
 		assert.Equal(t, "device not found", result.Status["device-2"])
 	})
 
+	t.Run("non-500 error status is an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(QueueDeleteResponse{Error: "unauthorized"})
+		}))
+		defer server.Close()
+
+		client := createTestClient(server.URL, "test-key")
+
+		_, err := client.ClearQueue("device-1")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unauthorized")
+		assert.Contains(t, err.Error(), "401")
+	})
+
 	t.Run("clear with no IDs returns error", func(t *testing.T) {
 		client := createTestClient("https://example.com", "key")
 

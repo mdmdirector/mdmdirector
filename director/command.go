@@ -552,8 +552,48 @@ func clearCommandQueue(device types.Device) error {
 	if err != nil {
 		return err
 	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("clearCommandQueue for %s: MicroMDM answered %s", device.UDID, resp.Status)
+	}
 
-	return resp.Body.Close()
+	return clearPendingCommandRows(device)
+}
+
+// pendingCommandStatuses are the statuses of a command that has had no final result: none
+// yet (""), or NotNow (the device will be asked again). CommandInQueue and the other
+// dedupe checks treat a row in one of these as already queued.
+var pendingCommandStatuses = []string{"", "NotNow"}
+
+// deletePendingCommandRows deletes mdmdirector's pending rows (pendingCommandStatuses) for
+// udid, or for every device when udid is "", optionally only of requestType. It only
+// touches mdmdirector's bookkeeping, not the MDM server's queue. Results (Error,
+// Acknowledged, RetriedViaDDM) are kept as the device's history.
+func deletePendingCommandRows(udid string, requestType string) (int64, error) {
+	tx := db.DB.Where("status IN ?", pendingCommandStatuses)
+	if udid != "" {
+		tx = tx.Where("device_ud_id = ?", udid)
+	}
+	if requestType != "" {
+		tx = tx.Where("request_type = ?", requestType)
+	}
+	result := tx.Delete(&types.Command{})
+	return result.RowsAffected, result.Error
+}
+
+// clearPendingCommandRows runs once the MDM server's queue for device has been cleared.
+// The device's pending rows no longer have a command behind them, and left in place they
+// would make CommandInQueue skip every re-send as "already in queue" until ExpireCommands
+// drops them 30 days later. They are deleted, as ClearCommands and expireStaleCommands do
+// with rows that will get no result; a late result for one of them is logged and ignored
+// by UpdateCommand like any unknown command.
+func clearPendingCommandRows(device types.Device) error {
+	deleted, err := deletePendingCommandRows(device.UDID, "")
+	if err != nil {
+		return errors.Wrapf(err, "clearCommandQueue: delete pending commands for %s", device.UDID)
+	}
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: fmt.Sprintf("Cleared command queue, deleted %d pending command row(s)", deleted)})
+	return nil
 }
 
 func InspectCommandQueue(device types.Device) ([]byte, error) {
@@ -594,13 +634,15 @@ func InspectCommandQueue(device types.Device) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client
+// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client,
+// then mdmdirector's pending rows for the device. If NanoMDM fails the rows are left: the
+// commands may still be queued there.
 func clearCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) error {
 	_, err := nanoClient.ClearQueue(device.UDID)
 	if err != nil {
 		return errors.Wrap(err, "clearCommandQueue via NanoMDM")
 	}
-	return nil
+	return clearPendingCommandRows(device)
 }
 
 // inspectCommandQueueWithClient inspects the NanoMDM command queue using the provided client

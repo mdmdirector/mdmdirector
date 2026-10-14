@@ -181,9 +181,13 @@ func GetAllDevicesAndAssociations() ([]types.Device, error) {
 	return devices, nil
 }
 
+// PostDeviceCommandHandler applies command to every device in the payload. A device that
+// can't be found, or whose command fails, is logged and skipped so the rest are still
+// processed; the response is then a single 500 naming the devices that failed.
 func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 	var out types.DeviceCommandPayload
 	var devices []types.Device
+	var failed []string
 	vars := mux.Vars(r)
 
 	err := json.NewDecoder(r.Body).Decode(&out)
@@ -194,6 +198,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 			http.StatusText(http.StatusInternalServerError),
 			http.StatusInternalServerError,
 		)
+		return
 	}
 
 	command := vars["command"]
@@ -204,12 +209,9 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		for i := range out.DeviceUDIDs {
 			device, err := GetDevice(out.DeviceUDIDs[i])
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-				http.Error(
-					w,
-					http.StatusText(http.StatusInternalServerError),
-					http.StatusInternalServerError,
-				)
+				ErrorLogger(LogHolder{DeviceUDID: out.DeviceUDIDs[i], Message: err.Error()})
+				failed = append(failed, out.DeviceUDIDs[i])
+				continue
 			}
 			devices = append(devices, device)
 		}
@@ -220,11 +222,8 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 			device, err := GetDeviceSerial(out.SerialNumbers[i])
 			if err != nil {
 				ErrorLogger(LogHolder{DeviceSerial: out.SerialNumbers[i], Message: err.Error()})
-				http.Error(
-					w,
-					http.StatusText(http.StatusInternalServerError),
-					http.StatusInternalServerError,
-				)
+				failed = append(failed, out.SerialNumbers[i])
+				continue
 			}
 			devices = append(devices, device)
 		}
@@ -236,14 +235,10 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		if command == "clear_queue" {
 			err = clearCommandQueue(device)
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
-				http.Error(
-					w,
-					http.StatusText(http.StatusInternalServerError),
-					http.StatusInternalServerError,
-				)
+				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
+				failed = append(failed, device.UDID)
 			}
-			return
+			continue
 		}
 		if command == "device_lock" {
 			if pin != "" {
@@ -301,6 +296,14 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+	}
+
+	if len(failed) > 0 {
+		http.Error(
+			w,
+			fmt.Sprintf("%s failed for: %s", command, strings.Join(failed, ", ")),
+			http.StatusInternalServerError,
+		)
 	}
 }
 

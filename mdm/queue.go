@@ -132,12 +132,22 @@ func (c *NanoMDMClient) ClearQueue(enrollmentIDs ...string) (*QueueDeleteRespons
 		return nil, errors.Wrap(err, "ClearQueue")
 	}
 
+	// 500 = every ID failed. Any other error status (an auth failure, a proxy error) means
+	// nothing was cleared either; treating it as success would let the caller drop its
+	// own record of commands that are still queued.
 	if status == http.StatusInternalServerError {
 		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "all operations failed"
 		}
 		return result, errors.New(errMsg)
+	}
+	if status >= http.StatusBadRequest {
+		errMsg := result.Error
+		if errMsg == "" {
+			errMsg = "unexpected status code"
+		}
+		return result, errors.Errorf("ClearQueue: %s (status %d)", errMsg, status)
 	}
 
 	// 204 = empty queue (doRequest returns new(T)), 207 = partial success - both returned without error

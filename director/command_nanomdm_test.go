@@ -515,6 +515,9 @@ func TestInspectCommandQueue_NanoMDM_Error(t *testing.T) {
 // Test successful queue clear
 func TestClearCommandQueue_NanoMDM_Success(t *testing.T) {
 	setupNanoMDMFlag(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	mockDeletePendingRows(mockSpy, "test-udid-123", 0)
 
 	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
@@ -546,6 +549,9 @@ func TestClearCommandQueue_NanoMDM_Error(t *testing.T) {
 // Test queue clear verifies correct UDID is passed
 func TestClearCommandQueue_NanoMDM_CorrectUDID(t *testing.T) {
 	setupNanoMDMFlag(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	mockDeletePendingRows(mockSpy, "specific-device-udid-789", 0)
 
 	var capturedPath string
 	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {

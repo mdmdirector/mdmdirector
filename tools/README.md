@@ -61,7 +61,7 @@ Profiles are base64-encoded by the script. If MDMDirector runs with `-sign`, it 
 ./tools/device_unlock $udid           # cancel a pending lock (value=false)
 ./tools/erase_device $udid            # EraseDevice, PIN generated and escrowed
 ./tools/unerase_device $udid          # cancel a pending erase (DELETE)
-./tools/clear_device_queue $udid      # clear the device's pending command queue on the MDM server
+./tools/clear_device_queue $udid      # clear the device's pending command queue on the MDM server and MDMDirector's pending records
 ./tools/inspect_device_queue $udid    # show the device's pending command queue
 ```
 
