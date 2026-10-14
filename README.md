@@ -158,7 +158,7 @@ All routes except `/webhook`, `/health`, `/metrics` and `/profiledownload/...` r
 | GET | `/device/{udid}` | One device by UDID. | |
 | GET | `/device/serial/{serial}` | One device by serial. | |
 | GET | `/device/push/{udid}` | Push the device now (queue a checkin). | |
-| GET | `/device/{udid}/commands` | Inspect the device's pending queue on the MDM server. | `inspect_device_queue` |
+| GET | `/device/{udid}/commands` | Inspect the device's pending queue on the MDM server. On NanoMDM the whole queue is read (up to 5000 commands); `total` is the count returned and `truncated` is true if the queue was longer. | `inspect_device_queue` |
 | POST | `/device/command/{command}` | Device commands: `device_lock` (`value`, `pin`), `erase_device` (`value`), `clear_queue`. `value:false` on `device_lock` cancels a pending lock. | `device_lock`, `device_unlock`, `erase_device`, `clear_device_queue` |
 | DELETE | `/device/command/erase_device` | Cancel a pending erase. | `unerase_device` |
 | GET | `/command` | All commands MDMDirector has issued. | |

@@ -3,9 +3,11 @@ package mdm
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -317,6 +319,135 @@ func TestNanoMDMClient_InspectQueue(t *testing.T) {
 	})
 }
 
+// fakeQueueServer serves a queue of n commands the way NanoMDM's queue API does: by
+// limit/offset, 100 per page when no limit is given, with no next cursor.
+func fakeQueueServer(t *testing.T, n int, requests *[]string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*requests = append(*requests, r.URL.RawQuery)
+		limit, offset := 100, 0
+		if v := r.URL.Query().Get("limit"); v != "" {
+			limit, _ = strconv.Atoi(v)
+		}
+		if v := r.URL.Query().Get("offset"); v != "" {
+			offset, _ = strconv.Atoi(v)
+		}
+		resp := QueueResponse{Commands: []QueueCommand{}}
+		for i := offset; i < n && i < offset+limit; i++ {
+			resp.Commands = append(resp.Commands, QueueCommand{CommandUUID: fmt.Sprintf("cmd-%d", i), RequestType: "InstallProfile"})
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestNanoMDMClient_InspectQueue_Paging(t *testing.T) {
+	t.Run("pages past NanoMDM's default of 100", func(t *testing.T) {
+		var requests []string
+		server := fakeQueueServer(t, 250, &requests)
+		client := createTestClient(server.URL, "test-key")
+
+		result, err := client.InspectQueue("device-123")
+		require.NoError(t, err)
+		assert.Len(t, result.Commands, 250)
+		assert.False(t, result.Truncated)
+		assert.Equal(t, "cmd-249", result.Commands[249].CommandUUID)
+		assert.Equal(t, []string{"limit=100&offset=0", "limit=100&offset=100", "limit=100&offset=200"}, requests)
+	})
+
+	t.Run("exactly one full page", func(t *testing.T) {
+		var requests []string
+		server := fakeQueueServer(t, 100, &requests)
+		client := createTestClient(server.URL, "test-key")
+
+		result, err := client.InspectQueue("device-123")
+		require.NoError(t, err)
+		assert.Len(t, result.Commands, 100)
+		assert.False(t, result.Truncated)
+		assert.Len(t, requests, 2)
+	})
+
+	t.Run("stops at the cap and reports truncation", func(t *testing.T) {
+		old := queueInspectMaxCommands
+		queueInspectMaxCommands = 150
+		defer func() { queueInspectMaxCommands = old }()
+
+		var requests []string
+		server := fakeQueueServer(t, 1000, &requests)
+		client := createTestClient(server.URL, "test-key")
+
+		result, err := client.InspectQueue("device-123")
+		require.NoError(t, err)
+		assert.Len(t, result.Commands, 150)
+		assert.True(t, result.Truncated)
+		assert.Equal(t, []string{"limit=100&offset=0", "limit=51&offset=100"}, requests)
+
+		unified, err := ConvertToUnifiedResponse(result)
+		require.NoError(t, err)
+		assert.Equal(t, 150, unified.Total)
+		assert.True(t, unified.Truncated)
+	})
+
+	t.Run("queue of exactly the cap is not truncated", func(t *testing.T) {
+		old := queueInspectMaxCommands
+		queueInspectMaxCommands = 150
+		defer func() { queueInspectMaxCommands = old }()
+
+		var requests []string
+		server := fakeQueueServer(t, 150, &requests)
+		client := createTestClient(server.URL, "test-key")
+
+		result, err := client.InspectQueue("device-123")
+		require.NoError(t, err)
+		assert.Len(t, result.Commands, 150)
+		assert.False(t, result.Truncated)
+	})
+
+	t.Run("server that ignores limit", func(t *testing.T) {
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			resp := QueueResponse{}
+			for i := 0; i < 120; i++ {
+				resp.Commands = append(resp.Commands, QueueCommand{CommandUUID: fmt.Sprintf("cmd-%d", i)})
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+		client := createTestClient(server.URL, "test-key")
+
+		result, err := client.InspectQueue("device-123")
+		require.NoError(t, err)
+		assert.Len(t, result.Commands, 120)
+		assert.Equal(t, 1, calls)
+	})
+
+	t.Run("error on a later page", func(t *testing.T) {
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if calls > 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(QueueResponse{Error: "invalid pagination"})
+				return
+			}
+			resp := QueueResponse{}
+			for i := 0; i < 100; i++ {
+				resp.Commands = append(resp.Commands, QueueCommand{CommandUUID: fmt.Sprintf("cmd-%d", i)})
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+		client := createTestClient(server.URL, "test-key")
+
+		_, err := client.InspectQueue("device-123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid pagination")
+	})
+}
+
 func TestNanoMDMClient_ClearQueue(t *testing.T) {
 	t.Run("successful clear with 204", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -601,6 +732,9 @@ func TestConvertToUnifiedResponse(t *testing.T) {
 	assert.Equal(t, "cmd-1", unified.Commands[0].UUID)
 	assert.Equal(t, "base64data1", unified.Commands[0].Payload)
 	assert.Equal(t, "cmd-2", unified.Commands[1].UUID)
+	assert.Equal(t, "ProfileList", unified.Commands[1].RequestType)
+	assert.Equal(t, 2, unified.Total)
+	assert.False(t, unified.Truncated)
 }
 
 // createTestClient creates a NanoMDMClient for testing with a custom server URL

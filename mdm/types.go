@@ -82,6 +82,9 @@ type QueueResponse struct {
 	Commands   []QueueCommand `json:"commands,omitempty"`
 	NextCursor string         `json:"next_cursor,omitempty"`
 	Error      string         `json:"error,omitempty"`
+	// Truncated is set by InspectQueue, not NanoMDM: the queue held more commands than
+	// queueInspectMaxCommands and only the first ones are in Commands.
+	Truncated bool `json:"-"`
 }
 
 // QueueDeleteResponse is the response from queue delete API
@@ -173,11 +176,16 @@ type EnrollmentsResponse struct {
 
 // UnifiedQueueCommand represents a command in the queue
 type UnifiedQueueCommand struct {
-	UUID    string `json:"uuid"`
-	Payload string `json:"payload"` // Base64-encoded plist
+	UUID        string `json:"uuid"`
+	RequestType string `json:"request_type,omitempty"`
+	Payload     string `json:"payload"` // Base64-encoded plist
 }
 
-// UnifiedQueueResponse is the unified response format for queue inspection (microMDM-compatible)
+// UnifiedQueueResponse is the unified response format for queue inspection (microMDM-compatible).
+// Total and Truncated are additions to the MicroMDM shape: Total is len(Commands), and
+// Truncated means the queue was longer than that and the rest wasn't fetched.
 type UnifiedQueueResponse struct {
-	Commands []UnifiedQueueCommand `json:"commands"`
+	Commands  []UnifiedQueueCommand `json:"commands"`
+	Total     int                   `json:"total"`
+	Truncated bool                  `json:"truncated"`
 }
