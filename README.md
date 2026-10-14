@@ -161,10 +161,10 @@ All routes except `/webhook`, `/health`, `/metrics` and `/profiledownload/...` r
 | GET | `/device/{udid}/commands` | Inspect the device's pending queue on the MDM server. On NanoMDM the whole queue is read (up to 5000 commands); `total` is the count returned and `truncated` is true if the queue was longer. | `inspect_device_queue` |
 | POST | `/device/command/{command}` | Device commands: `device_lock` (`value`, `pin`), `erase_device` (`value`), `clear_queue`. `value:false` on `device_lock` cancels a pending lock. `clear_queue` clears the queue on the MDM server, then deletes MDMDirector's pending records for the device so its commands can be sent again. Every device in `udids`/`serial_numbers` is processed; any that fail are named in a 500. | `device_lock`, `device_unlock`, `erase_device`, `clear_device_queue` |
 | DELETE | `/device/command/erase_device` | Cancel a pending erase. | `unerase_device` |
-| GET | `/command` | All commands MDMDirector has issued. | |
-| GET | `/command/pending` | Commands still pending on devices, oldest first, without payloads. Filters `udid`, `request_type`; page with `limit` (default 100, max 1000) and `offset`. `X-Next-Offset` is set when there are more. | |
+| GET | `/command` | All commands MDMDirector has issued, ordered by `command_uuid`. Page with `limit` (default 100, max 1000) and `cursor`; `X-Next-Cursor` is set when there are more. | |
+| GET | `/command/pending` | Commands still pending on devices, oldest first, without payloads. Filters `udid`, `request_type`; page with `limit` (default 100, max 1000) and `cursor`. `X-Next-Cursor` is set when there are more. `offset` still works (not together with `cursor`) and sets `X-Next-Offset`, but can skip rows when commands are answered between pages; prefer the cursor. | |
 | GET | `/command/pending/delete` | Delete MDMDirector's pending command records (not the MDM server's queue). Requires `udid`, or `all=true` for every device; optional `request_type`. Returns `{"deleted": n}`. | |
-| GET | `/command/error` | Commands that returned an error. | |
+| GET | `/command/error` | Commands that returned an error, ordered by `command_uuid`. Page with `limit` (default 100, max 1000) and `cursor`; `X-Next-Cursor` is set when there are more. | |
 | POST | `/device/{udid}/ddm/activate` | Send a bare `DeclarativeManagement` command (no conversion). | `ddm_activate` |
 | POST | `/device/{udid}/ddm` | Opt the device in to DDM and convert its profiles/apps to declarations. | `ddm_enable` |
 | DELETE | `/device/{udid}/ddm` | Opt out: remove profile declarations and re-push via `InstallProfile`. | `ddm_disable` |

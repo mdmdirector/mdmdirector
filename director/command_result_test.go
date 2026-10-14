@@ -102,8 +102,7 @@ func TestGetErrorCommands_FiltersInTheQuery(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockSpy.ExpectQuery(`SELECT \* FROM "commands" WHERE status = \$1`).
-		WithArgs("Error").
+	mockSpy.ExpectQuery(`^SELECT \* FROM "commands" WHERE status = 'Error' ORDER BY command_uuid LIMIT 101$`).
 		WillReturnRows(sqlmock.NewRows([]string{"command_uuid", "status"}).AddRow("cmd-1", "Error"))
 
 	rr := httptest.NewRecorder()
