@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
@@ -447,46 +448,130 @@ func expireStaleCommands() error {
 	return nil
 }
 
-func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
-	var commands []types.Command
+const (
+	// pendingCommandsDefaultLimit and pendingCommandsMaxLimit bound one page of
+	// GET /command/pending.
+	pendingCommandsDefaultLimit = 100
+	pendingCommandsMaxLimit     = 1000
+)
 
-	err := db.DB.Find(&commands).
-		Where("status = ? OR status = ?", "", "NotNow").
-		Scan(&commands).
-		Error
-	if err != nil {
-		log.Errorf("Couldn't scan to Commands model: %v", err)
+// pendingCommandColumns are the columns GET /command/pending returns. Payload, Queries and
+// ErrorString are left out: they can be large, and a pending command has no result yet.
+var pendingCommandColumns = []string{
+	"command_uuid", "status", "device_ud_id", "request_type", "identifier",
+	"manifest_url", "content_hash", "attempt_count", "updated_at",
+}
+
+// GetPendingCommands lists mdmdirector's pending command rows (no result yet, or NotNow),
+// oldest first, one page at a time. Query parameters, all optional:
+//   - udid: only this device's rows
+//   - request_type: only rows of this request type
+//   - limit: page size, default 100, capped at 1000
+//   - offset: rows to skip, default 0
+//
+// The body is still a JSON array of commands. When more rows match, the X-Next-Offset
+// header carries the offset of the next page. This used to return every pending row in
+// the fleet in one response (after first loading the whole table), which ran a pod out of
+// memory.
+func GetPendingCommands(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	limit, err := nonNegativeIntParam(query, "limit", pendingCommandsDefaultLimit)
+	if err != nil || limit == 0 {
+		http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+		return
 	}
+	if limit > pendingCommandsMaxLimit {
+		limit = pendingCommandsMaxLimit
+	}
+	offset, err := nonNegativeIntParam(query, "offset", 0)
+	if err != nil {
+		http.Error(w, "offset must be a non-negative integer", http.StatusBadRequest)
+		return
+	}
+
+	tx := db.DB.Model(&types.Command{}).
+		Select(pendingCommandColumns).
+		Where("status IN ?", pendingCommandStatuses)
+	if udid := query.Get("udid"); udid != "" {
+		tx = tx.Where("device_ud_id = ?", udid)
+	}
+	if requestType := query.Get("request_type"); requestType != "" {
+		tx = tx.Where("request_type = ?", requestType)
+	}
+
+	// One row past the page says whether there is a next one.
+	commands := []types.Command{}
+	err = tx.Order("updated_at, command_uuid").Limit(limit + 1).Offset(offset).Find(&commands).Error
+	if err != nil {
+		ErrorLogger(LogHolder{Message: "GetPendingCommands: " + err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	if len(commands) > limit {
+		commands = commands[:limit]
+		w.Header().Set("X-Next-Offset", strconv.Itoa(offset+limit))
+	}
+
 	output, err := json.MarshalIndent(&commands, "", "    ")
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(output)
 	if err != nil {
 		ErrorLogger(LogHolder{Message: err.Error()})
 	}
 }
 
+// DeletePendingCommands deletes mdmdirector's pending command rows (no result yet, or
+// NotNow). It removes only mdmdirector's records, not commands queued on the MDM server;
+// POST /device/command/clear_queue clears both. Query parameters:
+//   - udid: the device whose rows are deleted. Required unless all=true.
+//   - all=true: delete pending rows for every device. Ignored when udid is set.
+//   - request_type: optional, only rows of this request type
+//
+// Responds {"deleted": n}.
 func DeletePendingCommands(w http.ResponseWriter, r *http.Request) {
-	var commands []types.Command
-
-	err := db.DB.Find(&commands).
-		Where("status = ? OR status = ?", "", "NotNow").
-		Scan(&commands).
-		Delete(&commands).
-		Error
-	if err != nil {
-		log.Errorf("Couldn't scan to Commands model: %v", err)
+	query := r.URL.Query()
+	udid := query.Get("udid")
+	if udid == "" && query.Get("all") != "true" {
+		http.Error(w, "udid is required (or all=true to delete pending commands for every device)", http.StatusBadRequest)
+		return
 	}
-	// output, err := json.MarshalIndent(&commands, "", "    ")
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// 	w.WriteHeader(http.StatusInternalServerError)
-	// }
 
-	// w.Write(output)
+	deleted, err := deletePendingCommandRows(udid, query.Get("request_type"))
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: "DeletePendingCommands: " + err.Error()})
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	InfoLogger(LogHolder{DeviceUDID: udid, Message: fmt.Sprintf("Deleted %d pending command row(s)", deleted)})
+
+	w.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(map[string]int64{"deleted": deleted})
+	if err != nil {
+		ErrorLogger(LogHolder{Message: err.Error()})
+	}
+}
+
+// nonNegativeIntParam reads the query parameter name as a non-negative integer, or
+// returns def when it is absent.
+func nonNegativeIntParam(query url.Values, name string, def int) (int, error) {
+	raw := query.Get(name)
+	if raw == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, err
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("%s must not be negative", name)
+	}
+	return n, nil
 }
 
 func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
@@ -552,8 +637,48 @@ func clearCommandQueue(device types.Device) error {
 	if err != nil {
 		return err
 	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("clearCommandQueue for %s: MicroMDM answered %s", device.UDID, resp.Status)
+	}
 
-	return resp.Body.Close()
+	return clearPendingCommandRows(device)
+}
+
+// pendingCommandStatuses are the statuses of a command that has had no final result: none
+// yet (""), or NotNow (the device will be asked again). CommandInQueue and the other
+// dedupe checks treat a row in one of these as already queued.
+var pendingCommandStatuses = []string{"", "NotNow"}
+
+// deletePendingCommandRows deletes mdmdirector's pending rows (pendingCommandStatuses) for
+// udid, or for every device when udid is "", optionally only of requestType. It only
+// touches mdmdirector's bookkeeping, not the MDM server's queue. Results (Error,
+// Acknowledged, RetriedViaDDM) are kept as the device's history.
+func deletePendingCommandRows(udid string, requestType string) (int64, error) {
+	tx := db.DB.Where("status IN ?", pendingCommandStatuses)
+	if udid != "" {
+		tx = tx.Where("device_ud_id = ?", udid)
+	}
+	if requestType != "" {
+		tx = tx.Where("request_type = ?", requestType)
+	}
+	result := tx.Delete(&types.Command{})
+	return result.RowsAffected, result.Error
+}
+
+// clearPendingCommandRows runs once the MDM server's queue for device has been cleared.
+// The device's pending rows no longer have a command behind them, and left in place they
+// would make CommandInQueue skip every re-send as "already in queue" until ExpireCommands
+// drops them 30 days later. They are deleted, as ClearCommands and expireStaleCommands do
+// with rows that will get no result; a late result for one of them is logged and ignored
+// by UpdateCommand like any unknown command.
+func clearPendingCommandRows(device types.Device) error {
+	deleted, err := deletePendingCommandRows(device.UDID, "")
+	if err != nil {
+		return errors.Wrapf(err, "clearCommandQueue: delete pending commands for %s", device.UDID)
+	}
+	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: fmt.Sprintf("Cleared command queue, deleted %d pending command row(s)", deleted)})
+	return nil
 }
 
 func InspectCommandQueue(device types.Device) ([]byte, error) {
@@ -594,13 +719,15 @@ func InspectCommandQueue(device types.Device) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client
+// clearCommandQueueWithClient clears the NanoMDM command queue using the provided client,
+// then mdmdirector's pending rows for the device. If NanoMDM fails the rows are left: the
+// commands may still be queued there.
 func clearCommandQueueWithClient(nanoClient *mdm.NanoMDMClient, device types.Device) error {
 	_, err := nanoClient.ClearQueue(device.UDID)
 	if err != nil {
 		return errors.Wrap(err, "clearCommandQueue via NanoMDM")
 	}
-	return nil
+	return clearPendingCommandRows(device)
 }
 
 // inspectCommandQueueWithClient inspects the NanoMDM command queue using the provided client

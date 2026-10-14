@@ -3,8 +3,10 @@ package director
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -454,6 +456,41 @@ func TestInspectCommandQueue_NanoMDM_Success(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// NanoMDM returns 100 commands per inspect call by default. A longer queue must be read
+// to the end, so InstallProfile commands queued behind 100 others still show.
+func TestInspectCommandQueue_NanoMDM_PagesPastDefaultLimit(t *testing.T) {
+	setupNanoMDMFlag(t)
+
+	const queued = 230
+	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		if limit == 0 {
+			limit = 100
+		}
+		resp := mdm.QueueResponse{Commands: []mdm.QueueCommand{}}
+		for i := offset; i < queued && i < offset+limit; i++ {
+			requestType := "DeclarativeManagement"
+			if i >= 200 {
+				requestType = "InstallProfile"
+			}
+			resp.Commands = append(resp.Commands, mdm.QueueCommand{CommandUUID: fmt.Sprintf("cmd-%d", i), RequestType: requestType})
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	result, err := inspectCommandQueueWithClient(nanoClient, types.Device{UDID: "test-udid-123"})
+	require.NoError(t, err)
+
+	var parsed mdm.UnifiedQueueResponse
+	require.NoError(t, json.Unmarshal(result, &parsed))
+	assert.Len(t, parsed.Commands, queued)
+	assert.Equal(t, queued, parsed.Total)
+	assert.False(t, parsed.Truncated)
+	assert.Equal(t, "InstallProfile", parsed.Commands[queued-1].RequestType)
+}
+
 // Test queue inspection when NanoMDM returns an error
 func TestInspectCommandQueue_NanoMDM_Error(t *testing.T) {
 	setupNanoMDMFlag(t)
@@ -478,6 +515,9 @@ func TestInspectCommandQueue_NanoMDM_Error(t *testing.T) {
 // Test successful queue clear
 func TestClearCommandQueue_NanoMDM_Success(t *testing.T) {
 	setupNanoMDMFlag(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	mockDeletePendingRows(mockSpy, "test-udid-123", 0)
 
 	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
@@ -509,6 +549,9 @@ func TestClearCommandQueue_NanoMDM_Error(t *testing.T) {
 // Test queue clear verifies correct UDID is passed
 func TestClearCommandQueue_NanoMDM_CorrectUDID(t *testing.T) {
 	setupNanoMDMFlag(t)
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+	mockDeletePendingRows(mockSpy, "specific-device-udid-789", 0)
 
 	var capturedPath string
 	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
