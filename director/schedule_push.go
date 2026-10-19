@@ -29,11 +29,21 @@ var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
 	Handler: func(uuid string) error {
 		err := PushDevice(uuid)
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceUDID: uuid, Message: err.Error()})
 		}
 		return nil
 	},
 })
+
+// errNoNanoMDMEnrollment marks a push that failed because NanoMDM has no
+// enrollment (and so no push token) for the device. Retrying on every scan
+// can't succeed; only a re-enroll fixes it.
+var errNoNanoMDMEnrollment = errors.New("no NanoMDM enrollment for device")
+
+// noEnrollmentPushBackoff is how long a device without a NanoMDM enrollment
+// waits before its next scheduled push. A re-enroll resets next_push to now
+// (see initial tasks), so a fixed device isn't held back by this.
+const noEnrollmentPushBackoff = 24 * time.Hour
 
 // ScheduledCheckin runs the control plane: a periodic, fleet-wide scan that enqueues
 // due devices for push and performs DB cleanup. It runs once immediately and then every
@@ -177,7 +187,9 @@ func pushAll(pushQueue taskq.Queue, task *taskq.Task, onceIn time.Duration) erro
 
 	// Exclude user-channel enrollments (see fetchDevicesFromNanoMDM). They are not
 	// devices, so the device-channel info commands never come back for them.
-	err := db.DB.Where("ud_id NOT LIKE ?", "%:%").Find(&dbDevices).Error
+	// Also exclude inactive devices: CheckOut (ResetDevice) sets active = false,
+	// and a checked-out device can't be pushed.
+	err := db.DB.Where("ud_id NOT LIKE ? AND active = ?", "%:%", true).Find(&dbDevices).Error
 	if err != nil {
 		return errors.Wrap(err, "PushAll: Scan devices")
 	}
@@ -299,15 +311,19 @@ func PushDevice(udid string) (err error) {
 		// control-plane scan (deviceNeedsPush) skips devices whose NextPush is still in
 		// the future, so this bounds per-device push cadence at ONCE_IN and stops
 		// pushAll re-enqueuing recently pushed devices on every scan.
-		updateNextPush(udid)
+		updateNextPush(udid, time.Minute*time.Duration(utils.OnceIn()))
+	} else if errors.Is(err, errNoNanoMDMEnrollment) {
+		// Without an enrollment every push fails, so back off instead of
+		// retrying on every scan.
+		updateNextPush(udid, noEnrollmentPushBackoff)
 	}
 	return err
 }
 
-// updateNextPush persists a device's next eligible scheduled-push time (now + ONCE_IN).
-// Best-effort: a failure is logged but does not fail the push that already succeeded.
-func updateNextPush(udid string) {
-	next := time.Now().Add(time.Minute * time.Duration(utils.OnceIn()))
+// updateNextPush persists a device's next eligible scheduled-push time (now + after).
+// Best-effort: a failure is logged but does not fail the push.
+func updateNextPush(udid string, after time.Duration) {
+	next := time.Now().Add(after)
 	if err := db.DB.Model(&types.Device{}).Where("ud_id = ?", udid).Update("next_push", next).Error; err != nil {
 		ErrorLogger(LogHolder{DeviceUDID: udid, Message: errors.Wrap(err, "updateNextPush").Error()})
 	}
@@ -368,13 +384,19 @@ func pushDeviceWithClient(nanoClient *mdm.NanoMDMClient, udid string) error {
 	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sending push to device via NanoMDM"})
 
 	resp, err := nanoClient.Push(udid)
+	// NanoMDM answers 500 when every push fails, with the per-device reason in
+	// the body. Check that first, so a missing enrollment is told apart from a
+	// transient server error.
+	if resp != nil {
+		if pushErr, _ := resp.ErrorsForID(udid); pushErr != "" {
+			if pushErr == mdm.PushErrorNoEnrollment {
+				return errors.Wrapf(errNoNanoMDMEnrollment, "push failed: %s", pushErr)
+			}
+			return errors.Errorf("push failed: %s", pushErr)
+		}
+	}
 	if err != nil {
 		return errors.Wrap(err, "PushDevice")
-	}
-
-	pushErr, _ := resp.ErrorsForID(udid)
-	if pushErr != "" {
-		return errors.Errorf("push failed: %s", pushErr)
 	}
 
 	InfoLogger(LogHolder{DeviceUDID: udid, Message: "Sent push to device via NanoMDM"})

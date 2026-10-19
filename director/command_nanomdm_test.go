@@ -402,6 +402,27 @@ func TestPushDevice_NanoMDM_APNsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "BadDeviceToken")
 }
 
+// Test a 500 with NanoMDM's "no enrollment" body is classified, not reported as a bare 500
+func TestPushDevice_NanoMDM_NoEnrollment500(t *testing.T) {
+	setupNanoMDMFlag(t)
+
+	nanoClient := newMockNanoMDMServer(t, func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"test-udid-123": {PushError: mdm.PushErrorNoEnrollment},
+			},
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(resp)
+	}, mdm.WithMaxRetries(0))
+
+	err := pushDeviceWithClient(nanoClient, "test-udid-123")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errNoNanoMDMEnrollment)
+	assert.Contains(t, err.Error(), mdm.PushErrorNoEnrollment)
+}
+
 // Test push verifies correct UDID is passed to client
 func TestPushDevice_NanoMDM_CorrectUDID(t *testing.T) {
 	setupNanoMDMFlag(t)

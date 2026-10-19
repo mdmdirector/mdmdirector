@@ -1,6 +1,7 @@
 package director
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"flag"
 	"net/http"
@@ -78,8 +79,78 @@ func TestUpdateNextPush(t *testing.T) {
 	mockSpy.ExpectExec(`UPDATE "devices" SET "next_push"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mockSpy.ExpectCommit()
 
-	updateNextPush("test-udid")
+	updateNextPush("test-udid", time.Hour)
 	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// TestPushDeviceNoEnrollmentBacksOff verifies a push that fails because NanoMDM has no
+// enrollment for the device sets next_push about noEnrollmentPushBackoff ahead, so the
+// next scans skip it instead of failing again every time.
+func TestPushDeviceNoEnrollmentBacksOff(t *testing.T) {
+	setupNanoMDMFlag(t)
+	setupOnceInFlag(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"udid-orphan": {PushError: mdm.PushErrorNoEnrollment},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+	mdm.InitClient(server.URL, "test-api-key")
+
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	minNext := time.Now().Add(noEnrollmentPushBackoff - time.Minute)
+	mockSpy.ExpectBegin()
+	mockSpy.ExpectExec(`UPDATE "devices" SET "next_push"`).
+		WithArgs(timeAfter{minNext}, sqlmock.AnyArg(), "udid-orphan"). // next_push, updated_at, ud_id
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockSpy.ExpectCommit()
+
+	err := PushDevice("udid-orphan")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errNoNanoMDMEnrollment)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// TestPushDeviceOtherErrorNoBackoff verifies other push errors leave next_push alone,
+// so the device is retried on the next scan as before.
+func TestPushDeviceOtherErrorNoBackoff(t *testing.T) {
+	setupNanoMDMFlag(t)
+	setupOnceInFlag(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := mdm.APIResponse{
+			Status: map[string]mdm.EnrollmentStatus{
+				"udid-abc": {PushError: "BadDeviceToken"},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+	mdm.InitClient(server.URL, "test-api-key")
+
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	err := PushDevice("udid-abc")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, errNoNanoMDMEnrollment)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
+}
+
+// timeAfter matches a time.Time SQL argument that is after t.
+type timeAfter struct{ t time.Time }
+
+func (a timeAfter) Match(v driver.Value) bool {
+	got, ok := v.(time.Time)
+	return ok && got.After(a.t)
 }
 
 // TestPushDeviceUpdatesNextPush verifies a successful NanoMDM push persists next_push, so

@@ -253,6 +253,33 @@ func TestHTTPClient_Do_MaxRetriesExhausted(t *testing.T) {
 	assert.Equal(t, int32(3), atomic.LoadInt32(&requestCount))
 }
 
+// TestHTTPClient_Do_MaxRetriesExhaustedBodyReadable verifies the last response's body
+// is still readable after retries run out, so callers can decode an error body.
+func TestHTTPClient_Do_MaxRetriesExhaustedBodyReadable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"push_error":"x"}`))
+	}))
+	defer server.Close()
+
+	config := &RetryConfig{
+		MaxRetries:    1,
+		MaxBackoff:    10 * time.Millisecond,
+		BackoffFactor: 1.1,
+	}
+	client := NewHTTPClient(10*time.Second, config)
+	req, _ := http.NewRequest("GET", server.URL, nil)
+
+	resp, err := client.Do(req)
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	require.NoError(t, readErr)
+	assert.Equal(t, `{"push_error":"x"}`, string(body))
+}
+
 func TestIsRetryableStatusCode(t *testing.T) {
 	retryable := []int{
 		http.StatusTooManyRequests,     // 429
