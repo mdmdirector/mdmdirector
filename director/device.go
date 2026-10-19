@@ -292,7 +292,7 @@ func PostDeviceCommandHandler(w http.ResponseWriter, r *http.Request) {
 		if pushNow {
 			err = EraseLockDevice(device.UDID)
 			if err != nil {
-				ErrorLogger(LogHolder{Message: err.Error()})
+				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: err.Error()})
 			}
 		}
 
