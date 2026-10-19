@@ -280,3 +280,62 @@ func TestIsRetryableStatusCode(t *testing.T) {
 		assert.False(t, isRetryableStatusCode(code), "Status %d should NOT be retryable", code)
 	}
 }
+
+func TestHTTPClient_Do_OnRetry(t *testing.T) {
+	var requestCount int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&requestCount, 1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	var attempts, statuses []int
+	config := &RetryConfig{
+		MaxRetries:    3,
+		MaxBackoff:    10 * time.Millisecond,
+		BackoffFactor: 1.1,
+		OnRetry: func(attempt int, wait time.Duration, err error, statusCode int) {
+			assert.NoError(t, err)
+			attempts = append(attempts, attempt)
+			statuses = append(statuses, statusCode)
+		},
+	}
+	client := NewHTTPClient(10*time.Second, config)
+
+	req, _ := http.NewRequest("GET", server.URL, nil)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	assert.Equal(t, []int{1, 2}, attempts)
+	assert.Equal(t, []int{http.StatusBadGateway, http.StatusBadGateway}, statuses)
+}
+
+func TestHTTPClient_Do_OnRetryNotCalledAfterLastAttempt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	var calls int
+	config := &RetryConfig{
+		MaxRetries:    2,
+		MaxBackoff:    10 * time.Millisecond,
+		BackoffFactor: 1.1,
+		OnRetry: func(int, time.Duration, error, int) {
+			calls++
+		},
+	}
+	client := NewHTTPClient(10*time.Second, config)
+
+	req, _ := http.NewRequest("GET", server.URL, nil)
+	_, err := client.Do(req)
+	assert.Error(t, err)
+
+	// 3 attempts, so 2 retries announced
+	assert.Equal(t, 2, calls)
+}
