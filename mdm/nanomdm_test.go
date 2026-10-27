@@ -3,6 +3,7 @@ package mdm
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,8 +14,10 @@ import (
 	"time"
 
 	"github.com/groob/plist"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
+	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -769,4 +772,33 @@ func createTestHTTPClient() *utils.HTTPClient {
 		MaxBackoff:    time.Millisecond,
 		BackoffFactor: 1.0,
 	})
+}
+
+func TestNanoMDMClient_CountsRetries(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	counter := metrics.NanoMDMRetries("503")
+	before := prometheustestutil.ToFloat64(counter)
+
+	client := NewClient(server.URL, "test-key")
+	_, err := client.Push("device-123")
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, before+1, prometheustestutil.ToFloat64(counter))
+}
+
+func TestRetryReason(t *testing.T) {
+	assert.Equal(t, "network", retryReason(errors.New("connection refused"), 0))
+	assert.Equal(t, "500", retryReason(nil, http.StatusInternalServerError))
 }
