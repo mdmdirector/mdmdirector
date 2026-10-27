@@ -15,7 +15,9 @@ type Certificate struct {
 	NotBefore  time.Time
 	Data       []byte
 	Issuer     string
-	DeviceUDID string
+	// Every CertificateList response replaces the device's rows (Association Replace) and
+	// GetDevice preloads them, both by device_ud_id; without this each was a full scan.
+	DeviceUDID string `gorm:"index:idx_certificates_device"`
 }
 
 // CertificateListData - returned data from the CertificateList MDM command
