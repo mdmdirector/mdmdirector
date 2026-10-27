@@ -593,22 +593,6 @@ func GetErrorCommands(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func ExpireCommands() error {
-	var commands []types.Command
-	thirtyDaysAgo := time.Now().Add(-720 * time.Hour)
-	err := db.DB.Unscoped().
-		Find(&commands).
-		Where("status = ? OR status = ?", "", "NotNow").
-		Where("updated_at < ?", thirtyDaysAgo).
-		Delete(&commands).
-		Error
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func clearCommandQueue(device types.Device) error {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
@@ -668,10 +652,10 @@ func deletePendingCommandRows(udid string, requestType string) (int64, error) {
 
 // clearPendingCommandRows runs once the MDM server's queue for device has been cleared.
 // The device's pending rows no longer have a command behind them, and left in place they
-// would make CommandInQueue skip every re-send as "already in queue" until ExpireCommands
-// drops them 30 days later. They are deleted, as ClearCommands and expireStaleCommands do
-// with rows that will get no result; a late result for one of them is logged and ignored
-// by UpdateCommand like any unknown command.
+// would make CommandInQueue skip every re-send as "already in queue" until
+// expireStaleCommands drops them after -stale-command-threshold. They are deleted, as
+// ClearCommands and expireStaleCommands do with rows that will get no result; a late
+// result for one of them is logged and ignored by UpdateCommand like any unknown command.
 func clearPendingCommandRows(device types.Device) error {
 	deleted, err := deletePendingCommandRows(device.UDID, "")
 	if err != nil {
