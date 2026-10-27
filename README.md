@@ -268,8 +268,8 @@ Enable with `-prometheus`. All names are prefixed `mdmdirector_`.
 | `ddm_set_membership_changes_total` | counter | same | KMFDDM set membership changes. |
 | `ddm_notify_total` | counter | `result` | KMFDDM notify calls. |
 | `db_operations_total` | counter | `operation`, `result` | gorm operations, see above. |
-| `devices_total` | gauge | | Devices in the DB (polled every minute). |
-| `profiles_total` | gauge | `scope`, `installed` | Profiles by scope and install state. |
+| `devices_total` | gauge | | Devices in the DB (polled every 5 minutes). |
+| `profiles_total` | gauge | `scope`, `installed` | Profiles by scope and install state (polled every 5 minutes). |
 | `ddm_enabled_devices_total` | gauge | | Rows in `ddm_opt_ins`. |
 | `signing_cert_not_after_timestamp_seconds` | gauge | | Expiry of the loaded signing certificate. Alert well before it. |
 | `go_sql_*` | mixed | | `database/sql` pool stats. |
