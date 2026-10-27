@@ -103,7 +103,17 @@ func doRequest[T any](c *NanoMDMClient, req *http.Request) (*T, int, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, 0, errors.Wrap(err, "execute request")
+		if resp == nil {
+			return nil, 0, errors.Wrap(err, "execute request")
+		}
+		// Retries exhausted on a retryable status. Decode the body anyway
+		// (best effort) so callers can see per-enrollment errors.
+		defer resp.Body.Close()
+		var result T
+		if body, readErr := io.ReadAll(resp.Body); readErr == nil && json.Unmarshal(body, &result) == nil {
+			return &result, resp.StatusCode, errors.Wrap(err, "execute request")
+		}
+		return nil, resp.StatusCode, errors.Wrap(err, "execute request")
 	}
 	defer resp.Body.Close()
 

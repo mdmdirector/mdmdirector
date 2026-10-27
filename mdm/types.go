@@ -2,6 +2,10 @@ package mdm
 
 import "strings"
 
+// PushErrorNoEnrollment is the per-enrollment push_error NanoMDM returns when it
+// has no enrollment (and so no push token) for the ID (push.ErrIdNotFound).
+const PushErrorNoEnrollment = "push data missing for id"
+
 // EnrollmentStatus is the per-enrollment ID results of Push or Enqueue APIs
 type EnrollmentStatus struct {
 	PushError    string `json:"push_error,omitempty"`
