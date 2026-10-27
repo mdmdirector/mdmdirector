@@ -205,9 +205,14 @@ Both retry paths, like `CommandInQueue` before them, look commands up by device 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_lists_device_payload ON profile_lists (device_ud_id, payload_identifier);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_pending ON commands (updated_at, command_uuid) WHERE status = '' OR status = 'NotNow';
 ```
 
 `profile_lists` had the same problem: only its `id` primary key, while every `ProfileList` response and profile verification looks rows up by `device_ud_id` (and usually `payload_identifier`). Each of those was a full scan, and under check-in load enough of them run at once to hold every connection in the pool. The model now declares `idx_profile_lists_device_payload` on `(device_ud_id, payload_identifier)`, which also serves device-only lookups.
+
+`idx_commands_pending` is a partial index over only the rows with no final result (status `""` or `NotNow`), so it stays small however much history the table holds. It serves `GET /command/pending`, which filters on those statuses and orders by `updated_at`, and the stale-command cleanup, which looks for `""` rows older than `-stale-command-threshold`. Without it both scan and sort the whole table: on 2M rows a pending page took about 130ms and the cleanup lookup about 580ms, against about 2ms and 3ms with it. Both queries write the statuses into the SQL instead of binding them, because PostgreSQL cannot use a partial index from a generic plan of a prepared statement whose filter is a parameter.
+
+The cleanup also deletes stale rows in batches of 10,000 by subquery. It used to load every stale row and delete them by primary key in one statement, which fails once more than 65,535 rows are stale (PostgreSQL's bind-parameter limit) and then fails the same way on every later run, so the backlog was never cleared.
 
 `CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
