@@ -17,6 +17,7 @@ import (
 
 	"github.com/groob/plist"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
@@ -29,7 +30,7 @@ func EraseLockDevice(udid string) error {
 
 	device, err := GetDevice(udid)
 	if err != nil {
-		ErrorLogger(LogHolder{Message: err.Error()})
+		return errors.Wrap(err, "EraseLockDevice:GetDevice")
 	}
 
 	var requestType string
@@ -53,11 +54,9 @@ func EraseLockDevice(udid string) error {
 		log.Info("Neither lock or erase are set")
 		return nil
 	}
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
+
 	// Inspect the devices queue to see if the command is already there
-	deviceQueue, err := InspectCommandQueue(client, device)
+	deviceQueue, err := InspectCommandQueue(device)
 	if err != nil {
 		return errors.Wrap(err, "EraseLockDevice:InspectCommandQueue")
 	}
@@ -95,6 +94,19 @@ func EraseLockDevice(udid string) error {
 	return nil
 }
 
+// escrowTimeout bounds each escrow attempt. EraseLockDevice runs inline in the
+// Idle check-in webhook, so the worst case (4 attempts plus backoff, ~25s) has
+// to stay short.
+var escrowTimeout = 5 * time.Second
+
+// escrowRetryConfig retries network errors, 429 and 5xx. A failed escrow also
+// blocks the lock/erase command, so the next Idle check-in tries again.
+var escrowRetryConfig = utils.RetryConfig{
+	MaxRetries:    3,
+	MaxBackoff:    5 * time.Second,
+	BackoffFactor: 1.5,
+}
+
 func escrowPin(device types.Device, pin string) error {
 	escrowURL := utils.EscrowURL()
 	if escrowURL == "" {
@@ -129,10 +141,43 @@ func escrowPin(device types.Device, pin string) error {
 		return errors.Wrap(err, "escrowPin")
 	}
 
-	log.Debugf("Escrowing %v to %v", device.UDID, urlString)
-	response, err := http.PostForm(urlString, encoded)
-
+	req, err := http.NewRequest(http.MethodPost, urlString, strings.NewReader(encoded.Encode()))
 	if err != nil {
+		return errors.Wrap(err, "escrowPin:NewRequest")
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	retryConfig := escrowRetryConfig
+	retryConfig.OnRetry = func(attempt int, wait time.Duration, err error, statusCode int) {
+		reason := fmt.Sprintf("status %v", statusCode)
+		if err != nil {
+			reason = err.Error()
+		}
+		WarnLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      fmt.Sprintf("Failed to escrow pin on attempt %d of %d (%v), retrying in %v", attempt, retryConfig.MaxRetries+1, reason, wait),
+		})
+		if utils.Prometheus() {
+			metrics.PinEscrow("retry").Inc()
+		}
+	}
+	client := utils.NewHTTPClient(escrowTimeout, &retryConfig)
+
+	log.Debugf("Escrowing %v to %v", device.UDID, urlString)
+	response, err := client.Do(req)
+	if err != nil {
+		if response != nil {
+			response.Body.Close()
+		}
+		ErrorLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      fmt.Sprintf("Failed to escrow pin: %v", err),
+		})
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
 		return errors.Wrap(err, "escrowPin")
 	}
 
@@ -140,7 +185,15 @@ func escrowPin(device types.Device, pin string) error {
 	body, err := io.ReadAll(response.Body)
 
 	if err != nil {
-		return errors.Wrap(err, "escrowPin:"+string(body))
+		ErrorLogger(LogHolder{
+			DeviceUDID:   device.UDID,
+			DeviceSerial: device.SerialNumber,
+			Message:      fmt.Sprintf("Failed to read escrow response: %v", err),
+		})
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
+		return errors.Wrap(err, "escrowPin:ReadBody")
 	}
 
 	if response.StatusCode != http.StatusOK {
@@ -149,6 +202,9 @@ func escrowPin(device types.Device, pin string) error {
 			DeviceSerial: device.SerialNumber,
 			Message:      fmt.Sprintf("Failed to escrow pin, status %v: %v", response.StatusCode, string(body)),
 		})
+		if utils.Prometheus() {
+			metrics.PinEscrow("error").Inc()
+		}
 		return errors.Errorf("escrowPin: server returned %v: %v", response.StatusCode, string(body))
 	}
 
@@ -158,12 +214,14 @@ func escrowPin(device types.Device, pin string) error {
 		Message:      "Successfully escrowed pin",
 	})
 
+	if utils.Prometheus() {
+		metrics.PinEscrow("success").Inc()
+	}
 	return nil
 }
 
 func generatePin(device types.Device) (string, error) {
 	// Look for an existing unlock pin generated within the last 30 mins
-	var unlockPinModel types.UnlockPin
 	var savedUnlockPin types.UnlockPin
 
 	if device.UnlockPin != "" {
@@ -175,7 +233,7 @@ func generatePin(device types.Device) (string, error) {
 		thirtyMinsAgo = time.Now().Add(-5 * time.Minute)
 	}
 
-	if err := db.DB.Model(&unlockPinModel).Where("unlock_pins.pin_set > ? AND unlock_pins.device_ud_id = ?", thirtyMinsAgo, device.UDID).Order("pin_set DESC").First(&unlockPinModel).Scan(&savedUnlockPin).Error; err != nil {
+	if err := db.DB.Where("unlock_pins.pin_set > ? AND unlock_pins.device_ud_id = ?", thirtyMinsAgo, device.UDID).Order("pin_set DESC").First(&savedUnlockPin).Error; err != nil {
 		if intErrors.Is(err, gorm.ErrRecordNotFound) {
 			log.Debug("Pin was created more than 30 mins ago")
 			out := ""
@@ -197,6 +255,7 @@ func generatePin(device types.Device) (string, error) {
 
 			return out, nil
 		}
+		return "", errors.Wrap(err, "generatePin:LookupPin")
 	}
 	// Found a saved one
 	return savedUnlockPin.UnlockPin, nil

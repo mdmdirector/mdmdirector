@@ -1,41 +1,128 @@
 package director
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
+	"gorm.io/gorm"
 )
 
-func RunInitialTasks(udid string) error {
+// initialTasksLeaseDuration is the maximum time RunInitialTasks is presumed to be running
+// before another caller may take the lease. It is the single source of truth for the lease
+// window: the in-process check (initialTasksInFlight) uses it directly and the SQL lease
+// UPDATE uses initialTasksLeaseInterval, which is derived from it.
+const initialTasksLeaseDuration = 5 * time.Minute
+
+// initialTasksLeaseInterval is initialTasksLeaseDuration rendered as a PostgreSQL interval
+// literal (e.g. "300 seconds") for tryAcquireInitialTasksLease.
+var initialTasksLeaseInterval = fmt.Sprintf("%d seconds", int64(initialTasksLeaseDuration/time.Second))
+
+// initialTasksInFlight reports whether a RunInitialTasks invocation for this device is
+// presumed to still be running: the lease start time is set and younger than the TTL.
+// It is a read of the already-loaded device row, so callers can skip the lease
+// UPDATE (and the lease_contention count it produces) for the many device events -
+// mostly command acknowledgements - that arrive while the run is still in progress.
+// A stale start time (older than the TTL) returns false so the normal lease path can
+// take over from a holder that died mid-run.
+func initialTasksInFlight(device *types.Device) bool {
+	if device == nil || device.RunInitialTasksStarttime == nil {
+		return false
+	}
+	return time.Since(*device.RunInitialTasksStarttime) < initialTasksLeaseDuration
+}
+
+// tryAcquireInitialTasksLease attempts to atomically claim the RunInitialTasks lease for this UDID
+// Returns true if the caller now owns the lease, false if another invocation holds it
+func tryAcquireInitialTasksLease(udid string) (bool, error) {
+	res := db.DB.Exec(`
+		UPDATE devices
+		SET    run_initial_tasks_starttime = NOW()
+		WHERE  ud_id = ?
+		  AND  initial_tasks_run = false
+		  AND  ( run_initial_tasks_starttime IS NULL
+				 OR run_initial_tasks_starttime < NOW() - INTERVAL '`+initialTasksLeaseInterval+`' )
+	`, udid)
+	if res.Error != nil {
+		return false, errors.Wrap(res.Error, "tryAcquireInitialTasksLease")
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// releaseInitialTasksLease clears the lease so a retry isn't blocked for the full TTL
+func releaseInitialTasksLease(udid string) {
+	err := db.DB.Exec(`
+		UPDATE devices
+		SET    run_initial_tasks_starttime = NULL
+		WHERE  ud_id = ?
+		  AND  initial_tasks_run = false
+	`, udid).Error
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: udid, Message: errors.Wrap(err, "releaseInitialTasksLease").Error()})
+	}
+}
+
+func RunInitialTasks(udid string) (retErr error) {
 	if udid == "" {
 		err := errors.New("No Device UDID")
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
 		return errors.Wrap(err, "RunInitialTasks")
 	}
+
+	acquired, err := tryAcquireInitialTasksLease(udid)
+	if err != nil {
+		if utils.Prometheus() {
+			metrics.InitialTasks("error").Inc()
+		}
+		return errors.Wrap(err, "RunInitialTasks")
+	}
+	if !acquired {
+		InfoLogger(LogHolder{DeviceUDID: udid, Message: "RunInitialTasks lease not acquired - already running or already complete; skipping"})
+		if utils.Prometheus() {
+			metrics.InitialTasks("lease_contention").Inc()
+		}
+		return nil
+	}
+
+	completed := false
+	defer func() {
+		if !completed {
+			releaseInitialTasksLease(udid)
+		}
+		if utils.Prometheus() {
+			metrics.InitialTasks(metrics.ResultFromError(retErr)).Inc()
+		}
+	}()
 
 	device, err := GetDevice(udid)
 	if err != nil {
 		return errors.Wrap(err, "RunInitialTasks")
 	}
-	// if device.InitialTasksRun == true {
-	// 	log.Infof("Initial tasks already run for %v", device.UDID)
-	// 	return nil
-	// }
 	InfoLogger(LogHolder{Message: "Running initial tasks", DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID})
 	err = ClearCommands(&device)
 	if err != nil {
 		return err
 	}
 
-	// if device.Erase || device.Lock {
-	// 	// Got a device checking in that should be wiped or locked. Make it so.
-	// 	err = EraseLockDevice(&device)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	return nil
-	// }
+	// Must finish before InstallAllProfiles/InstallBootstrapPackages: those re-create the
+	// device's set in KMFDDM, and this removes whatever the previous enrollment left in it.
+	// A failure is logged, not returned: returning would hold the device in Setup
+	// Assistant (no DeviceConfigured) for as long as KMFDDM is unhealthy, which is worse
+	// than a stale declaration surviving one enrollment.
+	if err := resetDDMForEnrollment(device); err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: errors.Wrap(err, "RunInitialTasks:resetDDMForEnrollment").Error()})
+	}
+
+	err = RequestAllDeviceInfo(device)
+	if err != nil {
+		return errors.Wrap(err, "RunInitialTasks:RequestAllDeviceInfo")
+	}
 
 	_, err = InstallAllProfiles(device)
 	if err != nil {
@@ -51,6 +138,8 @@ func RunInitialTasks(udid string) error {
 		return errors.Wrap(err, "RunInitialTasks:processDeviceConfigured")
 	}
 
+	// processDeviceConfigured -> SaveDeviceConfigured already set initial_tasks_run = true
+	completed = true
 	return nil
 }
 
@@ -89,14 +178,36 @@ func SendDeviceConfigured(device types.Device) error {
 	return nil
 }
 
+// SaveDeviceConfigured records that initial tasks are done and DeviceConfigured has been
+// sent. awaiting_configuration is cleared here rather than waiting for the next
+// DeviceInformation response: until it's cleared, reconcileDeviceState treats every
+// device event (including the acks for the DeviceConfigured it just sent) as a reason to
+// send another one. A device still in Setup Assistant re-arms the flag through its next
+// DeviceInformation response, and that is the one case a resend is for.
 func SaveDeviceConfigured(device types.Device) error {
 	var deviceModel types.Device
 	now := time.Now()
-	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved", "initial_tasks_run", "last_checked_in", "next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true, "last_checked_in": now, "next_push": now}).Error
+	err := db.DB.Model(&deviceModel).Select("token_update_recieved", "authenticate_recieved", "initial_tasks_run", "awaiting_configuration", "last_checked_in", "next_push").Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": true, "authenticate_recieved": true, "initial_tasks_run": true, "awaiting_configuration": false, "last_checked_in": now, "next_push": now}).Error
 	if err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// clearAwaitingConfiguration is the resend-path counterpart of SaveDeviceConfigured: the
+// DeviceConfigured is on its way, so the flag that asked for it is cleared, in the row and
+// on the in-memory device the caller is still working with.
+func clearAwaitingConfiguration(device *types.Device) error {
+	var deviceModel types.Device
+	err := db.DB.Model(&deviceModel).
+		Where("ud_id = ?", device.UDID).
+		Update("awaiting_configuration", false).
+		Error
+	if err != nil {
+		return errors.Wrap(err, "clearAwaitingConfiguration")
+	}
+	device.AwaitingConfiguration = false
 	return nil
 }
 
@@ -106,21 +217,39 @@ func ResetDevice(device types.Device) error {
 	if err != nil {
 		return errors.Wrap(err, "ResetDevice:ClearCommands")
 	}
+
+	// The opt-in row goes before the flag reset: once initial_tasks_run is false a
+	// TokenUpdate on another replica can start RunInitialTasks, and its DDM decisions
+	// (ddmForDevice, resetDDMForEnrollment) must not see the previous enrollment's opt-in.
+	resetDDMOptIn(device)
+
+	// Reset the lifecycle flags before any slow work. nanomdm delivers webhooks
+	// asynchronously, so the device's TokenUpdate can be processed while this
+	// Authenticate is still in flight; a flag reset that lands after it clears
+	// token_update_recieved and initial tasks never run for the new enrollment.
 	InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "Resetting device"})
-	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{"token_update_recieved": false, "authenticate_recieved": false, "initial_tasks_run": false, "active": false}).Error
+	err = db.DB.Model(&deviceModel).Where("ud_id = ?", device.UDID).Updates(map[string]interface{}{
+		"token_update_recieved":       false,
+		"authenticate_recieved":       false,
+		"initial_tasks_run":           false,
+		"active":                      false,
+		"run_initial_tasks_starttime": gorm.Expr("NULL"),
+	}).Error
 	if err != nil {
 		return errors.Wrap(err, "reset device")
 	}
-
-	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.Certificate{}).Error
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// }
-
-	// err = db.DB.Unscoped().Where("device_ud_id = ?", device.UDID).Delete(types.ProfileList{}).Error
-	// if err != nil {
-	// 	ErrorLogger(LogHolder{Message: err.Error()})
-	// }
-
 	return nil
+}
+
+// resetDDMOptIn clears a device's DDM opt-in on re-enrollment. The UDID survives an
+// erase, so its ddm_opt_ins row would otherwise carry DDM status over from before the
+// wipe. Declarations are not touched here: nanomdm delivers webhooks asynchronously, so
+// RunInitialTasks for the new enrollment can already be pushing, and a teardown from here
+// would race it. resetDDMForEnrollment, which runs inside RunInitialTasks before its
+// push, removes the stale declarations instead.
+func resetDDMOptIn(device types.Device) {
+	err := db.DB.Where("device_ud_id = ?", device.UDID).Delete(&DDMOptIn{}).Error
+	if err != nil {
+		ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "ResetDevice:delete DDM opt-in: " + err.Error()})
+	}
 }
