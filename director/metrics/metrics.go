@@ -282,7 +282,7 @@ func DDMNotify(result string) prometheus.Counter {
 }
 
 // pinEscrowTotal counts unlock-pin escrow attempts to the Crypt-compatible endpoint
-// result: "success", "error"
+// result: "success", "error", "retry" (one per retried attempt)
 //
 //nolint:gochecknoglobals
 var pinEscrowTotal = promauto.NewCounterVec(

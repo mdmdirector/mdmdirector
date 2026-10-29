@@ -16,6 +16,10 @@ type RetryConfig struct {
 	MaxRetries    int
 	MaxBackoff    time.Duration
 	BackoffFactor float64
+	// OnRetry, if set, is called after a failed attempt that will be retried.
+	// attempt is the 1-based number of the attempt that failed. err is the
+	// transport error, or nil when the server returned a retryable statusCode.
+	OnRetry func(attempt int, wait time.Duration, err error, statusCode int)
 }
 
 // DefaultRetryConfig - defaults for retry behavior
@@ -105,8 +109,14 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 		}
 
 		// Close response body before retry to prevent resource leak
+		statusCode := 0
 		if resp != nil {
+			statusCode = resp.StatusCode
 			resp.Body.Close()
+		}
+
+		if c.retryConfig.OnRetry != nil && attempt < c.retryConfig.MaxRetries {
+			c.retryConfig.OnRetry(attempt+1, c.calculateBackoff(attempt+1), lastErr, statusCode)
 		}
 	}
 
