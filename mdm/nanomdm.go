@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mdmdirector/mdmdirector/director/metrics"
 	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 )
@@ -43,18 +45,38 @@ type ClientOption func(*NanoMDMClient)
 // WithMaxRetries sets the maximum number of HTTP retries
 func WithMaxRetries(n int) ClientOption {
 	return func(c *NanoMDMClient) {
-		cfg := utils.DefaultRetryConfig()
+		cfg := retryConfig()
 		cfg.MaxRetries = n
 		c.client = utils.NewHTTPClient(60*time.Second, &cfg)
 	}
 }
 
+// retryConfig returns the default retry config with a hook that counts each retry.
+// It doesn't check utils.Prometheus(): that flag is only registered by main, and an
+// unscraped counter costs nothing.
+func retryConfig() utils.RetryConfig {
+	cfg := utils.DefaultRetryConfig()
+	cfg.OnRetry = func(_ int, _ time.Duration, err error, statusCode int) {
+		metrics.NanoMDMRetries(retryReason(err, statusCode)).Inc()
+	}
+	return cfg
+}
+
+// retryReason labels a retry as "network" for transport errors, otherwise by status code
+func retryReason(err error, statusCode int) string {
+	if err != nil {
+		return "network"
+	}
+	return strconv.Itoa(statusCode)
+}
+
 // NewClient creates a new NanoMDMClient
 func NewClient(serverURL, apiKey string, opts ...ClientOption) *NanoMDMClient {
+	cfg := retryConfig()
 	c := &NanoMDMClient{
 		serverURL: strings.TrimRight(serverURL, "/"),
 		apiKey:    apiKey,
-		client:    utils.NewHTTPClient(60*time.Second, nil),
+		client:    utils.NewHTTPClient(60*time.Second, &cfg),
 	}
 	for _, opt := range opts {
 		opt(c)
