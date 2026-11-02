@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const pendingSelect = `^SELECT "command_uuid","status","device_ud_id","request_type","identifier","manifest_url","content_hash","attempt_count","updated_at" FROM "commands" WHERE status IN \(\$1,\$2\)`
+const pendingSelect = `^SELECT "command_uuid","status","device_ud_id","request_type","identifier","manifest_url","content_hash","attempt_count","updated_at" FROM "commands" WHERE status IN \('', 'NotNow'\)`
 
 func pendingRows(n int) *sqlmock.Rows {
 	rows := sqlmock.NewRows([]string{"command_uuid", "status", "device_ud_id", "request_type", "updated_at"})
@@ -35,8 +35,7 @@ func TestGetPendingCommands_DefaultLimit(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockSpy.ExpectQuery(pendingSelect+` ORDER BY updated_at, command_uuid LIMIT 101$`).
-		WithArgs("", "NotNow").
+	mockSpy.ExpectQuery(pendingSelect + ` ORDER BY updated_at, command_uuid LIMIT 101$`).
 		WillReturnRows(pendingRows(2))
 
 	rec := getPending(t, "")
@@ -54,8 +53,8 @@ func TestGetPendingCommands_FiltersAndPaging(t *testing.T) {
 	defer cleanup()
 
 	// limit=2 asks for 3 rows; getting 3 back means there is another page.
-	mockSpy.ExpectQuery(pendingSelect+` AND device_ud_id = \$3 AND request_type = \$4 ORDER BY updated_at, command_uuid LIMIT 3 OFFSET 4$`).
-		WithArgs("", "NotNow", "udid-1", "InstallProfile").
+	mockSpy.ExpectQuery(pendingSelect+` AND device_ud_id = \$1 AND request_type = \$2 ORDER BY updated_at, command_uuid LIMIT 3 OFFSET 4$`).
+		WithArgs("udid-1", "InstallProfile").
 		WillReturnRows(pendingRows(3))
 
 	rec := getPending(t, "udid=udid-1&request_type=InstallProfile&limit=2&offset=4")
@@ -72,8 +71,7 @@ func TestGetPendingCommands_LimitCapped(t *testing.T) {
 	mockSpy, cleanup := setupMockDB(t)
 	defer cleanup()
 
-	mockSpy.ExpectQuery(pendingSelect+` ORDER BY updated_at, command_uuid LIMIT 1001$`).
-		WithArgs("", "NotNow").
+	mockSpy.ExpectQuery(pendingSelect + ` ORDER BY updated_at, command_uuid LIMIT 1001$`).
 		WillReturnRows(pendingRows(0))
 
 	rec := getPending(t, "limit=1000000")

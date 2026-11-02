@@ -161,10 +161,10 @@ All routes except `/webhook`, `/health`, `/metrics` and `/profiledownload/...` r
 | GET | `/device/{udid}/commands` | Inspect the device's pending queue on the MDM server. On NanoMDM the whole queue is read (up to 5000 commands); `total` is the count returned and `truncated` is true if the queue was longer. | `inspect_device_queue` |
 | POST | `/device/command/{command}` | Device commands: `device_lock` (`value`, `pin`), `erase_device` (`value`), `clear_queue`. `value:false` on `device_lock` cancels a pending lock. `clear_queue` clears the queue on the MDM server, then deletes MDMDirector's pending records for the device so its commands can be sent again. Every device in `udids`/`serial_numbers` is processed; any that fail are named in a 500. | `device_lock`, `device_unlock`, `erase_device`, `clear_device_queue` |
 | DELETE | `/device/command/erase_device` | Cancel a pending erase. | `unerase_device` |
-| GET | `/command` | All commands MDMDirector has issued. | |
-| GET | `/command/pending` | Commands still pending on devices, oldest first, without payloads. Filters `udid`, `request_type`; page with `limit` (default 100, max 1000) and `offset`. `X-Next-Offset` is set when there are more. | |
+| GET | `/command` | All commands MDMDirector has issued, ordered by `command_uuid`. Page with `limit` (default 100, max 1000) and `cursor`; `X-Next-Cursor` is set when there are more. | |
+| GET | `/command/pending` | Commands still pending on devices, oldest first, without payloads. Filters `udid`, `request_type`; page with `limit` (default 100, max 1000) and `cursor`. `X-Next-Cursor` is set when there are more. `offset` still works (not together with `cursor`) and sets `X-Next-Offset`, but can skip rows when commands are answered between pages; prefer the cursor. | |
 | GET | `/command/pending/delete` | Delete MDMDirector's pending command records (not the MDM server's queue). Requires `udid`, or `all=true` for every device; optional `request_type`. Returns `{"deleted": n}`. | |
-| GET | `/command/error` | Commands that returned an error. | |
+| GET | `/command/error` | Commands that returned an error, ordered by `command_uuid`. Page with `limit` (default 100, max 1000) and `cursor`; `X-Next-Cursor` is set when there are more. | |
 | POST | `/device/{udid}/ddm/activate` | Send a bare `DeclarativeManagement` command (no conversion). | `ddm_activate` |
 | POST | `/device/{udid}/ddm` | Opt the device in to DDM and convert its profiles/apps to declarations. | `ddm_enable` |
 | DELETE | `/device/{udid}/ddm` | Opt out: remove profile declarations and re-push via `InstallProfile`. | `ddm_disable` |
@@ -205,9 +205,14 @@ Both retry paths, like `CommandInQueue` before them, look commands up by device 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_device_request ON commands (device_ud_id, request_type);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_profile_lists_device_payload ON profile_lists (device_ud_id, payload_identifier);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commands_pending ON commands (updated_at, command_uuid) WHERE status = '' OR status = 'NotNow';
 ```
 
 `profile_lists` had the same problem: only its `id` primary key, while every `ProfileList` response and profile verification looks rows up by `device_ud_id` (and usually `payload_identifier`). Each of those was a full scan, and under check-in load enough of them run at once to hold every connection in the pool. The model now declares `idx_profile_lists_device_payload` on `(device_ud_id, payload_identifier)`, which also serves device-only lookups.
+
+`idx_commands_pending` is a partial index over only the rows with no final result (status `""` or `NotNow`), so it stays small however much history the table holds. It serves `GET /command/pending`, which filters on those statuses and orders by `updated_at`, and the stale-command cleanup, which looks for `""` rows older than `-stale-command-threshold`. Without it both scan and sort the whole table: on 2M rows a pending page took about 130ms and the cleanup lookup about 580ms, against about 2ms and 3ms with it. Both queries write the statuses into the SQL instead of binding them, because PostgreSQL cannot use a partial index from a generic plan of a prepared statement whose filter is a parameter.
+
+The cleanup also deletes stale rows in batches of 10,000 by subquery. It used to load every stale row and delete them by primary key in one statement, which fails once more than 65,535 rows are stale (PostgreSQL's bind-parameter limit) and then fails the same way on every later run, so the backlog was never cleared.
 
 `CONCURRENTLY` builds without blocking writes, at the cost of a slower build and running outside a transaction. Once it exists, AutoMigrate finds it by name and leaves it alone, so startup is unaffected. If a concurrent build is interrupted it leaves an `INVALID` index behind; drop it and run the statement again.
 
@@ -268,8 +273,8 @@ Enable with `-prometheus`. All names are prefixed `mdmdirector_`.
 | `ddm_set_membership_changes_total` | counter | same | KMFDDM set membership changes. |
 | `ddm_notify_total` | counter | `result` | KMFDDM notify calls. |
 | `db_operations_total` | counter | `operation`, `result` | gorm operations, see above. |
-| `devices_total` | gauge | | Devices in the DB (polled every minute). |
-| `profiles_total` | gauge | `scope`, `installed` | Profiles by scope and install state. |
+| `devices_total` | gauge | | Devices in the DB (polled every 5 minutes). |
+| `profiles_total` | gauge | `scope`, `installed` | Profiles by scope and install state (polled every 5 minutes). |
 | `ddm_enabled_devices_total` | gauge | | Rows in `ddm_opt_ins`. |
 | `signing_cert_not_after_timestamp_seconds` | gauge | | Expiry of the loaded signing certificate. Alert well before it. |
 | `go_sql_*` | mixed | | `database/sql` pool stats. |
