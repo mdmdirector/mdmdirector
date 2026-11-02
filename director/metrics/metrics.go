@@ -124,6 +124,24 @@ func EnqueueRequests(commandType, result string) prometheus.Counter {
 	return enqueueRequestsTotal.WithLabelValues(commandType, result)
 }
 
+// nanomdmRetriesTotal counts HTTP retries the NanoMDM client makes before a request succeeds or gives up
+// reason: "network" for transport errors, otherwise the retryable status code (e.g. "500", "503")
+//
+//nolint:gochecknoglobals
+var nanomdmRetriesTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "nanomdm_retries_total",
+		Help:      "Total HTTP retries made by the NanoMDM client, by reason.",
+	},
+	[]string{"reason"},
+)
+
+// NanoMDMRetries - accessor for nanomdmRetriesTotal
+func NanoMDMRetries(reason string) prometheus.Counter {
+	return nanomdmRetriesTotal.WithLabelValues(reason)
+}
+
 // profileVerificationMismatchesTotal counts profiles found missing from a device's reported ProfileList during verification
 // scope: "device" or "shared"
 //
@@ -282,7 +300,7 @@ func DDMNotify(result string) prometheus.Counter {
 }
 
 // pinEscrowTotal counts unlock-pin escrow attempts to the Crypt-compatible endpoint
-// result: "success", "error"
+// result: "success", "error", "retry" (one per retried attempt)
 //
 //nolint:gochecknoglobals
 var pinEscrowTotal = promauto.NewCounterVec(

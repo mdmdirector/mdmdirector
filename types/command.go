@@ -7,8 +7,13 @@ import (
 )
 
 type Command struct {
-	UpdatedAt   time.Time
-	CommandUUID string `gorm:"primaryKey"`
+	// idx_commands_pending covers only rows with no final result, which are a small part
+	// of a table that keeps every command ever sent. It serves GET /command/pending
+	// (filtered on these statuses, ordered by updated_at) and expireStaleCommands
+	// (status "" and older than a cutoff) without scanning the history. Build it
+	// CONCURRENTLY by hand on a large existing table (see README, Deploying).
+	UpdatedAt   time.Time `gorm:"index:idx_commands_pending,priority:1,where:status = '' OR status = 'NotNow'"`
+	CommandUUID string    `gorm:"primaryKey;index:idx_commands_pending,priority:2"`
 	Status      string
 	// Every lookup on this table is scoped to a device and usually a request type
 	// (CommandInQueue, InstallProfileInQueue, erroredInstallProfiles, ClearCommands), and

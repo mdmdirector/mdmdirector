@@ -29,7 +29,7 @@ var pushTask = taskq.RegisterTask(&taskq.TaskOptions{
 	Handler: func(uuid string) error {
 		err := PushDevice(uuid)
 		if err != nil {
-			ErrorLogger(LogHolder{Message: err.Error()})
+			ErrorLogger(LogHolder{DeviceUDID: uuid, Message: err.Error()})
 		}
 		return nil
 	},

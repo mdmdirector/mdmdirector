@@ -4,9 +4,13 @@ import (
 	"flag"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +51,145 @@ func registerEscrowFlag() {
 	if flag.Lookup("escrowurl") == nil {
 		flag.String("escrowurl", "", "")
 	}
+	if flag.Lookup("prometheus") == nil {
+		flag.Bool("prometheus", false, "Enable prometheus metrics")
+	}
+}
+
+// fastEscrowRetries shrinks the escrow backoff so retry tests don't sleep.
+func fastEscrowRetries(t *testing.T) {
+	t.Helper()
+	orig := escrowRetryConfig
+	escrowRetryConfig = utils.RetryConfig{MaxRetries: 3, MaxBackoff: time.Millisecond, BackoffFactor: 1.5}
+	t.Cleanup(func() { escrowRetryConfig = orig })
+}
+
+// startEscrowServer points the escrowurl flag at handler for the test.
+func startEscrowServer(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	registerEscrowFlag()
+	flag.Set("escrowurl", server.URL) //nolint:errcheck
+	t.Cleanup(func() {
+		flag.Set("escrowurl", "") //nolint:errcheck
+		server.Close()
+	})
+}
+
+func countLogs(hook *test.Hook, level logrus.Level) int {
+	n := 0
+	for _, entry := range hook.AllEntries() {
+		if entry.Level == level {
+			n++
+		}
+	}
+	return n
+}
+
+func TestEscrowPinRetriesTransientFailure(t *testing.T) {
+	fastEscrowRetries(t)
+	var requests int32
+	var serials []string
+	startEscrowServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		serials = append(serials, r.PostForm.Get("serial"))
+		assert.Equal(t, "123456", r.PostForm.Get("recovery_password"))
+		assert.Equal(t, "unlock_pin", r.PostForm.Get("secret_type"))
+		if atomic.AddInt32(&requests, 1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	err := escrowPin(types.Device{UDID: "test-udid", SerialNumber: "test-serial"}, "123456")
+	assert.NoError(t, err)
+	assert.Equal(t, int32(3), atomic.LoadInt32(&requests))
+	// The form body must be resent intact on every attempt
+	assert.Equal(t, []string{"test-serial", "test-serial", "test-serial"}, serials)
+
+	assert.Equal(t, 2, countLogs(hook, logrus.WarnLevel))
+	assert.Equal(t, 0, countLogs(hook, logrus.ErrorLevel))
+	for _, entry := range hook.AllEntries() {
+		if entry.Level == logrus.WarnLevel {
+			assert.Equal(t, "test-udid", entry.Data["device_udid"])
+			assert.Equal(t, "test-serial", entry.Data["device_serial"])
+			assert.Contains(t, entry.Message, "status 503")
+		}
+	}
+}
+
+func TestEscrowPinGivesUpAfterMaxRetries(t *testing.T) {
+	fastEscrowRetries(t)
+	var requests int32
+	startEscrowServer(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	err := escrowPin(types.Device{UDID: "test-udid", SerialNumber: "test-serial"}, "123456")
+	assert.Error(t, err)
+	assert.Equal(t, int32(4), atomic.LoadInt32(&requests))
+	assert.Equal(t, 3, countLogs(hook, logrus.WarnLevel))
+	assert.Equal(t, 1, countLogs(hook, logrus.ErrorLevel))
+}
+
+func TestEscrowPinDoesNotRetryClientError(t *testing.T) {
+	fastEscrowRetries(t)
+	var requests int32
+	startEscrowServer(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	err := escrowPin(types.Device{UDID: "test-udid", SerialNumber: "test-serial"}, "123456")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "400")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&requests))
+	assert.Equal(t, 0, countLogs(hook, logrus.WarnLevel))
+}
+
+func TestEscrowPinRetriesConnectionError(t *testing.T) {
+	fastEscrowRetries(t)
+	// A closed server refuses connections
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+	registerEscrowFlag()
+	flag.Set("escrowurl", server.URL) //nolint:errcheck
+	defer flag.Set("escrowurl", "")   //nolint:errcheck
+
+	hook := test.NewGlobal()
+	defer hook.Reset()
+
+	err := escrowPin(types.Device{UDID: "test-udid", SerialNumber: "test-serial"}, "123456")
+	assert.Error(t, err)
+	assert.Equal(t, 3, countLogs(hook, logrus.WarnLevel))
+	assert.Equal(t, 1, countLogs(hook, logrus.ErrorLevel))
+}
+
+func TestGeneratePinReturnsLookupError(t *testing.T) {
+	if flag.Lookup("debug") == nil {
+		flag.Bool("debug", false, "")
+	}
+	mockSpy, cleanup := setupMockDB(t)
+	defer cleanup()
+
+	mockSpy.ExpectQuery(`SELECT \* FROM "unlock_pins"`).
+		WillReturnError(errors.New("connection reset by peer"))
+
+	pin, err := generatePin(types.Device{UDID: "test-udid"})
+	assert.Error(t, err)
+	assert.Empty(t, pin)
+	assert.NoError(t, mockSpy.ExpectationsWereMet())
 }
 
 func TestEscrowPinSuccess(t *testing.T) {
@@ -79,6 +222,7 @@ func TestEscrowPinSuccess(t *testing.T) {
 }
 
 func TestEscrowPinServerError(t *testing.T) {
+	fastEscrowRetries(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("internal server error")) //nolint:errcheck
