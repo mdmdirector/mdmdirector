@@ -108,11 +108,14 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 			return nil, errors.Wrap(lastErr, "non-retryable error")
 		}
 
-		// Close response body before retry to prevent resource leak
+		// Keep the last response's body open so the caller can read it (e.g. a
+		// JSON error body on a 500). Close earlier ones to prevent a resource leak.
 		statusCode := 0
 		if resp != nil {
 			statusCode = resp.StatusCode
-			resp.Body.Close()
+			if attempt < c.retryConfig.MaxRetries {
+				resp.Body.Close()
+			}
 		}
 
 		if c.retryConfig.OnRetry != nil && attempt < c.retryConfig.MaxRetries {
