@@ -9,7 +9,7 @@ type Device struct {
 	Model                            string
 	OSVersion                        string
 	ProductName                      string
-	SerialNumber                     string
+	SerialNumber                     string `gorm:"index:idx_devices_serial"` // GetDeviceSerial looks devices up by serial
 	DeviceCapacity                   float32
 	AvailableDeviceCapacity          float32
 	BatteryLevel                     float32

@@ -15,8 +15,11 @@ type DeviceProfile struct {
 	MobileconfigData         []byte
 	MobileconfigHash         []byte
 	OriginalMobileconfigHash []byte
-	DeviceUDID               string `gorm:"primaryKey"`
-	Installed                bool   `gorm:"default:true"`
+	// The primary key is (payload_identifier, device_ud_id), which serves lookups by
+	// identifier but not by device alone (VerifyMDMProfiles, preloading Profiles), so
+	// those walked the whole key index. idx_device_profiles_device serves them.
+	DeviceUDID string `gorm:"primaryKey;index:idx_device_profiles_device"`
+	Installed  bool   `gorm:"default:true"`
 }
 
 // SharedProfile (s) are profiles that go on every device.
