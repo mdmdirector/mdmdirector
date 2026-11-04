@@ -29,6 +29,10 @@ func (h handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+// useHTTPHandler routes the real HTTP clients at handler for the duration of the test.
+// It swaps the process-global http.DefaultTransport (both the nanomdm and KMFDDM clients
+// leave Transport nil, so they consult it per call), so tests using it must not call
+// t.Parallel.
 func useHTTPHandler(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	previous := http.DefaultTransport
@@ -36,12 +40,21 @@ func useHTTPHandler(t *testing.T, handler http.HandlerFunc) {
 	t.Cleanup(func() { http.DefaultTransport = previous })
 }
 
-func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
-	setupNanoMDMFlag(t)
+// setupInfoRequestIntervalFlag registers/sets the info-request-interval flag so
+// utils.InfoRequestInterval() returns a pinned value in tests. Flags are process-global,
+// so every test here sets it rather than relying on another test's value.
+func setupInfoRequestIntervalFlag(t *testing.T) {
+	t.Helper()
 	if flag.Lookup("info-request-interval") == nil {
 		flag.Int("info-request-interval", 360, "info request interval in minutes")
+	} else {
+		_ = flag.Set("info-request-interval", "360")
 	}
-	setFlag(t, "info-request-interval", "360")
+}
+
+func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
+	setupNanoMDMFlag(t)
+	setupInfoRequestIntervalFlag(t)
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 	mock.MatchExpectationsInOrder(false)
@@ -54,12 +67,15 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 	mdm.InitClient("http://mdm.example.test", "test-key")
 
 	device := types.Device{UDID: "test-info-device", InitialTasksRun: true}
-	for i := 0; i < 2; i++ {
+	// Exactly one of the two concurrent claims wins: the first conditional UPDATE
+	// affects its row, the second matches none because the first already moved the
+	// timestamp out of the interval.
+	for _, rowsAffected := range []int64{1, 0} {
 		mock.ExpectQuery(`SELECT .* FROM "devices" WHERE \(lock =`).
 			WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
 		mock.ExpectExec(infoRequestClaimSQL).
 			WithArgs(sqlmock.AnyArg(), device.UDID, sqlmock.AnyArg()).
-			WillReturnResult(sqlmock.NewResult(0, int64(1-i)))
+			WillReturnResult(sqlmock.NewResult(0, rowsAffected))
 	}
 	for _, request := range []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"} {
 		mockCommandInQueue(mock, device.UDID, request, "", false)
@@ -102,9 +118,7 @@ func TestRequestDeviceUpdate_DeniedOrFailedClaimDoesNotEnqueue(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupNanoMDMFlag(t)
-			if flag.Lookup("info-request-interval") == nil {
-				flag.Int("info-request-interval", 360, "info request interval in minutes")
-			}
+			setupInfoRequestIntervalFlag(t)
 			mock, cleanup := setupMockDB(t)
 			defer cleanup()
 			mock.ExpectQuery(`SELECT .* FROM "devices" WHERE \(lock =`).
@@ -127,9 +141,7 @@ func TestRequestDeviceUpdate_DeniedOrFailedClaimDoesNotEnqueue(t *testing.T) {
 
 func TestRequestDeviceUpdate_EnqueueFailureBurnsInterval(t *testing.T) {
 	setupNanoMDMFlag(t)
-	if flag.Lookup("info-request-interval") == nil {
-		flag.Int("info-request-interval", 360, "info request interval in minutes")
-	}
+	setupInfoRequestIntervalFlag(t)
 	mock, cleanup := setupMockDB(t)
 	defer cleanup()
 	device := types.Device{UDID: "test-info-device"}

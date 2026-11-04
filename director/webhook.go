@@ -338,9 +338,8 @@ func processAcknowledgePayload(event *types.AcknowledgeEvent, device types.Devic
 
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
-	var err error
 	// Checking for device lock or wipe
-	if err = db.DB.Model(&deviceModel).Select("ud_id", "erase", "lock", "serial_number").Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
+	if err := db.DB.Model(&deviceModel).Select("ud_id", "erase", "lock", "serial_number").Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
 		err = EraseLockDevice(device.UDID)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -366,7 +365,7 @@ func RequestDeviceUpdate(device types.Device) {
 	}
 	if res.RowsAffected == 1 {
 		log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
-		err = RequestAllDeviceInfo(device)
+		err := RequestAllDeviceInfo(device)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
