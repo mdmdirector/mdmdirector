@@ -12,19 +12,15 @@ package director
 // NotifyEnrollment. We first associate the enrollment with its (possibly empty)
 // per-device set so KMFDDM knows the enrollment, then notify to force the command.
 //
-// A single device is activated over HTTP (ActivateDeviceDDMHandler). The whole fleet is
-// activated at startup via the activate-ddm-fleet flag (see ActivateDDMFleet), not over
-// the API.
+// A single device is activated over HTTP (ActivateDeviceDDMHandler).
 
 import (
 	"encoding/json"
-	intErrors "errors"
 	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/ddm"
-	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/mdmdirector/mdmdirector/utils"
 )
 
@@ -47,49 +43,6 @@ func activateDDM(client *ddm.KMFDDMClient, udid string) error {
 	}
 
 	return nil
-}
-
-// activateDevices activates DDM for each device in the slice, skipping empty UDIDs. It
-// returns the count activated and a joined error of any per-device failures. A single
-// failure does not abort the rest.
-func activateDevices(client *ddm.KMFDDMClient, devices []types.Device) (activated int, err error) {
-	var errs []error
-	for i := range devices {
-		device := devices[i]
-		if device.UDID == "" {
-			continue
-		}
-		// RunInitialTasks activates the device through its push; doing it here would
-		// race the DDM cleanup that push is waiting on.
-		if initialTasksPending(device, deferPathDDMActivate) {
-			continue
-		}
-		if aerr := activateDDM(client, device.UDID); aerr != nil {
-			ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: aerr.Error()})
-			errs = append(errs, aerr)
-			continue
-		}
-		activated++
-		InfoLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: "DDM activated for device"})
-	}
-	return activated, intErrors.Join(errs...)
-}
-
-// ActivateDDMFleet sends the DeclarativeManagement command to every device. It returns
-// the number of devices activated and a joined error of any per-device failures. This is
-// invoked at startup when the activate-ddm-fleet flag is set, not over the API.
-func ActivateDDMFleet() (activated int, err error) {
-	client, err := ddm.Client()
-	if err != nil {
-		return 0, err
-	}
-
-	devices, err := GetAllDevices()
-	if err != nil {
-		return 0, fmt.Errorf("ActivateDDMFleet: get all devices: %w", err)
-	}
-
-	return activateDevices(client, devices)
 }
 
 // ActivateDeviceDDMHandler (POST /device/{udid}/ddm/activate) sends a bare
