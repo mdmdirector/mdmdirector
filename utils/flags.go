@@ -162,6 +162,12 @@ func InfoRequestInterval() int {
 	return flag.Lookup("info-request-interval").Value.(flag.Getter).Get().(int)
 }
 
+// InfoRequestClaimTTL - minutes a won info-request claim is held before another
+// check-in may retry it
+func InfoRequestClaimTTL() int {
+	return flag.Lookup("info-request-claim-ttl").Value.(flag.Getter).Get().(int)
+}
+
 func StaleCommandThreshold() int {
 	return flag.Lookup("stale-command-threshold").Value.(flag.Getter).Get().(int)
 }

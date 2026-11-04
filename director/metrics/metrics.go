@@ -221,6 +221,28 @@ func InitialTasks(result string) prometheus.Counter {
 	return initialTasksTotal.WithLabelValues(result)
 }
 
+// infoRequestClaimsTotal counts attempts to claim the idle info-request batch for a
+// device. Only the claim winner sends the information commands, so "contended" is the
+// count of Idle check-ins that correctly did nothing. "error" is a failed claim UPDATE,
+// and "failed" is a claim that was won but whose batch then failed, which leaves the
+// device without fresh inventory until the claim TTL lapses.
+// result: "claimed", "contended", "error", "failed"
+//
+//nolint:gochecknoglobals
+var infoRequestClaimsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "info_request_claims_total",
+		Help:      "Total idle info-request claim attempts by result.",
+	},
+	[]string{"result"},
+)
+
+// InfoRequestClaims - accessor for infoRequestClaimsTotal
+func InfoRequestClaims(result string) prometheus.Counter {
+	return infoRequestClaimsTotal.WithLabelValues(result)
+}
+
 // pushesDeferredTotal counts pushes and info requests that were skipped because the
 // device's initial tasks are pending: RunInitialTasks owns the first push, and anything
 // pushing before it has cleared the previous enrollment's DDM declarations could let the

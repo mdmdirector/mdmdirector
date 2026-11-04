@@ -350,26 +350,46 @@ func RequestDeviceUpdate(device types.Device) {
 	now := time.Now()
 	intervalMins := utils.InfoRequestInterval()
 	interval := now.Add(time.Minute * time.Duration(-intervalMins))
+
 	// Claim before any enqueue so concurrent Idle webhooks across replicas share one
-	// batch. NULL is the never-requested state. A failed or interrupted batch burns
-	// this interval deliberately: immediate retries could amplify a partial send.
+	// batch. NULL is the never-requested state.
+	//
+	// The claim is backdated so it expires after the claim TTL rather than after the
+	// whole interval. RequestAllDeviceInfo stamps last_info_requested with the current
+	// time once all four commands are enqueued, which extends the hold to the full
+	// interval. A batch that fails partway, or a replica that dies mid-batch, therefore
+	// frees the device after the TTL instead of making it wait out the interval with
+	// stale inventory. A deferred release cannot cover process death, so the TTL is the
+	// recovery path, in the same shape as the run_initial_tasks_starttime lease.
+	ttlMins := utils.InfoRequestClaimTTL()
+	if ttlMins >= intervalMins {
+		// A TTL at or above the interval cannot expire early. Fall back to holding the
+		// whole interval rather than writing a stamp that frees the row immediately.
+		ttlMins = intervalMins
+	}
+	claimStamp := now.Add(time.Minute * time.Duration(ttlMins-intervalMins))
+
 	res := db.DB.Exec(`
 		UPDATE devices
 		SET    last_info_requested = ?
 		WHERE  ud_id = ?
 		  AND  ( last_info_requested IS NULL OR last_info_requested < ? )
-	`, now, device.UDID, interval)
+	`, claimStamp, device.UDID, interval)
 	if res.Error != nil {
+		metrics.InfoRequestClaims("error").Inc()
 		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errors.Wrap(res.Error, "RequestDeviceUpdate:claim info request").Error()})
 		return
 	}
 	if res.RowsAffected == 1 {
+		metrics.InfoRequestClaims("claimed").Inc()
 		log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
 		err := RequestAllDeviceInfo(device)
 		if err != nil {
+			metrics.InfoRequestClaims("failed").Inc()
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else {
+		metrics.InfoRequestClaims("contended").Inc()
 		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, info request not claimed within info-request-interval"})
 	}
 

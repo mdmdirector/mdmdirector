@@ -128,6 +128,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. Also the minimum gap between scheduled pushes to one device (`next_push`). (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
 - `-control-plane-interval int` - Minutes between fleet-wide control-plane scans (scheduled pushes plus DB cleanup). The scan is single-flight across replicas, see [Control plane](#control-plane-and-scheduling). (default 120) Env: `CONTROL_PLANE_INTERVAL`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
+- `-info-request-claim-ttl int` - Minutes a won info-request claim is held before another check-in may retry it. Only a batch that completes extends the hold to the full `-info-request-interval`. (default 10) Env: `INFO_REQUEST_CLAIM_TTL`
 - `-install-profile-retries int` - Fast tier: times an `InstallProfile` the device answered with `Error` is re-sent from the webhook, waiting 1s, 2s, ... before each attempt, see [Command results](#command-results). 0 disables. (default 3) Env: `INSTALL_PROFILE_RETRIES`
 - `-install-profile-total-retries int` - Both tiers: times in all an `InstallProfile` at one content version is re-sent, the fast retries plus one more on each scheduled `ProfileList` until this is reached. Never below `-install-profile-retries`. (default 5) Env: `INSTALL_PROFILE_TOTAL_RETRIES`
 
@@ -234,6 +235,10 @@ A long migration (a plain `CREATE INDEX` on a large table) therefore holds every
 
 `RunInitialTasks` (the first `DeviceInformation`, `ProfileList`, `SecurityInfo`, profile and app pushes for a new enrollment) is guarded by a lease in the `devices` row: an atomic `UPDATE` sets `run_initial_tasks_starttime` only when it is NULL or older than 5 minutes. The winner runs the tasks; other replicas see zero rows affected and skip. Command acknowledgements that arrive while a run is in flight do not touch the lease at all, so `mdmdirector_initial_tasks_total{result="lease_contention"}` only counts genuine same-instant races. A holder that dies mid-run is recovered after the 5 minute TTL.
 
+The idle info-request batch (`DeviceInformation`, `ProfileList`, `SecurityInfo`, `CertificateList`, sent when a device checks in Idle) is guarded the same way. An atomic `UPDATE` claims `last_info_requested` only when it is NULL or older than `-info-request-interval`. The winner sends the four commands; other replicas see zero rows affected and skip, counted as `mdmdirector_info_request_claims_total{result="contended"}`.
+
+The claim is written backdated by the interval minus `-info-request-claim-ttl`, so it expires after the TTL rather than after the whole interval. Only a batch that enqueues all four commands stamps the current time, which extends the hold to the full interval. A batch that fails partway, or a replica that dies mid-batch, therefore frees the device after the TTL instead of leaving its inventory stale for a whole interval. A deferred release cannot cover process death, so the TTL is the recovery path.
+
 ### Re-enrollment and certificate renewal
 
 Two triggers can make MDMDirector reinstall the enrollment profile on a device:
@@ -274,6 +279,7 @@ Enable with `-prometheus`. All names are prefixed `mdmdirector_`.
 | `profile_download_requests_total` | counter | `scope`, `outcome` | Hits on `/profiledownload`. |
 | `profile_api_requests_total` | counter | `method`, `result` | `POST`/`DELETE /profile` API calls. |
 | `initial_tasks_total` | counter | `result` | `success`, `error`, `lease_contention`. |
+| `info_request_claims_total` | counter | `result` | `claimed`, `contended`, `error`, `failed`. `contended` counts Idle check-ins that correctly sent nothing. `failed` counts batches that won the claim and then failed, leaving inventory stale until the claim TTL lapses. |
 | `pushes_deferred_total` | counter | `path` | Pushes/info requests skipped because the device's initial tasks are pending. |
 | `reenroll_skipped_total` | counter | `trigger`, `arch` | Re-enrollments suppressed on Intel/unknown models. |
 | `pin_escrow_total` | counter | `result` | PIN escrow posts to `-escrowurl`. |

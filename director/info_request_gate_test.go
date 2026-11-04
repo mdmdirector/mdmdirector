@@ -1,15 +1,18 @@
 package director
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/mdmdirector/mdmdirector/mdm"
@@ -40,15 +43,26 @@ func useHTTPHandler(t *testing.T, handler http.HandlerFunc) {
 	t.Cleanup(func() { http.DefaultTransport = previous })
 }
 
-// setupInfoRequestIntervalFlag registers/sets the info-request-interval flag so
-// utils.InfoRequestInterval() returns a pinned value in tests. Flags are process-global,
-// so every test here sets it rather than relying on another test's value.
+// setupInfoRequestIntervalFlag registers/sets the info-request-interval and
+// info-request-claim-ttl flags so utils.InfoRequestInterval() and
+// utils.InfoRequestClaimTTL() return pinned values in tests. Flags are process-global,
+// so every test here sets them rather than relying on another test's value.
 func setupInfoRequestIntervalFlag(t *testing.T) {
 	t.Helper()
-	if flag.Lookup("info-request-interval") == nil {
-		flag.Int("info-request-interval", 360, "info request interval in minutes")
-	} else {
-		_ = flag.Set("info-request-interval", "360")
+	setIntFlag(t, "info-request-interval", 360)
+	setIntFlag(t, "info-request-claim-ttl", 10)
+}
+
+// setIntFlag registers the named int flag with value, or sets it if another test or
+// package already registered it.
+func setIntFlag(t *testing.T, name string, value int) {
+	t.Helper()
+	if flag.Lookup(name) == nil {
+		flag.Int(name, value, "set by "+t.Name())
+		return
+	}
+	if err := flag.Set(name, strconv.Itoa(value)); err != nil {
+		t.Fatalf("set %s: %v", name, err)
 	}
 }
 
@@ -139,7 +153,54 @@ func TestRequestDeviceUpdate_DeniedOrFailedClaimDoesNotEnqueue(t *testing.T) {
 	}
 }
 
-func TestRequestDeviceUpdate_EnqueueFailureBurnsInterval(t *testing.T) {
+// claimStampMinutesAgo matches a time argument that sits the expected number of minutes
+// in the past. The claim is backdated by interval minus TTL, which is what makes it
+// expire after the TTL instead of after the whole interval.
+type claimStampMinutesAgo struct {
+	minutes   int
+	tolerance time.Duration
+}
+
+func (c claimStampMinutesAgo) Match(v driver.Value) bool {
+	ts, ok := v.(time.Time)
+	if !ok {
+		return false
+	}
+	diff := ts.Sub(time.Now().Add(-time.Duration(c.minutes) * time.Minute))
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff <= c.tolerance
+}
+
+// A won claim must be stamped interval-TTL in the past, so that a batch which never
+// completes frees the device after the TTL. Only RequestAllDeviceInfo writes the
+// current time, which extends the hold to the full interval.
+func TestRequestDeviceUpdate_ClaimIsBackdatedToExpireAfterTTL(t *testing.T) {
+	setupNanoMDMFlag(t)
+	setupInfoRequestIntervalFlag(t)
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+	device := types.Device{UDID: "test-info-device"}
+	useHTTPHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	mdm.InitClient("http://mdm.example.test", "test-key")
+
+	mock.ExpectQuery(`SELECT .* FROM "devices" WHERE \(lock =`).
+		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
+	// interval 360 minus TTL 10.
+	mock.ExpectExec(infoRequestClaimSQL).
+		WithArgs(claimStampMinutesAgo{minutes: 350, tolerance: time.Minute}, device.UDID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockCommandInQueue(mock, device.UDID, "ProfileList", "", false)
+	mockGetDevice(mock, device.UDID)
+
+	RequestDeviceUpdate(device)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRequestDeviceUpdate_EnqueueFailureHoldsClaimUntilTTL(t *testing.T) {
 	setupNanoMDMFlag(t)
 	setupInfoRequestIntervalFlag(t)
 	mock, cleanup := setupMockDB(t)
@@ -160,7 +221,9 @@ func TestRequestDeviceUpdate_EnqueueFailureBurnsInterval(t *testing.T) {
 	mockGetDevice(mock, device.UDID)
 	RequestDeviceUpdate(device)
 
-	// No release: a subsequent Idle check-in loses the claim until the interval ends.
+	// No release on failure. A subsequent Idle check-in inside the TTL still loses the
+	// claim. The device is retried once the backdated stamp falls outside the interval,
+	// which happens TTL minutes after the claim rather than a whole interval later.
 	mock.ExpectQuery(`SELECT .* FROM "devices" WHERE \(lock =`).
 		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
 	mock.ExpectExec(infoRequestClaimSQL).

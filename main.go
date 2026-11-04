@@ -117,6 +117,9 @@ var ControlPlaneInterval int
 
 var InfoRequestInterval int
 
+// InfoRequestClaimTTL - minutes a won info-request claim is held before retry
+var InfoRequestClaimTTL int
+
 // StaleCommandThreshold is the number of minutes a Command may sit unresolved
 // (status="") before expireStaleCommands treats it as dropped by NanoMDM and
 // deletes it so it can be retried. Defaults to 5 days (7200 minutes).
@@ -402,6 +405,12 @@ func main() {
 		"info-request-interval",
 		env.Int("INFO_REQUEST_INTERVAL", 360),
 		"Number of minutes to wait between issuing information commands",
+	)
+	flag.IntVar(
+		&InfoRequestClaimTTL,
+		"info-request-claim-ttl",
+		env.Int("INFO_REQUEST_CLAIM_TTL", 10),
+		"Minutes a won info-request claim is held before another check-in may retry it. Only a batch that completes extends the hold to the full info-request-interval, so a failed or interrupted batch is retried after this many minutes instead of waiting out the interval. Must be lower than info-request-interval. Defaults to 10.",
 	)
 	flag.IntVar(
 		&StaleCommandThreshold,
