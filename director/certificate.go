@@ -15,27 +15,7 @@ import (
 )
 
 func RequestCertificateList(device types.Device) error {
-	requestType := "CertificateList"
-
-	inQueue, err := CommandInQueue(device, requestType, "")
-	if err != nil {
-		return errors.Wrap(err, "RequestCertificateList: CommandInQueue")
-	}
-	if inQueue {
-		log.Infof("%v already in queue for %v", requestType, device.UDID)
-		return nil
-	}
-
-	DebugLogger(LogHolder{Message: "Requesting Certificate List", DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, CommandRequestType: requestType})
-	var payload types.CommandPayload
-	payload.UDID = device.UDID
-	payload.RequestType = requestType
-	_, err = SendCommand(payload)
-	if err != nil {
-		return errors.Wrap(err, "RequestCertificateList: SendCommand")
-	}
-
-	return nil
+	return requestInfoCommand(device, "CertificateList", nil, nil)
 }
 
 func processCertificateList(certificateListData types.CertificateListData, device types.Device) error {

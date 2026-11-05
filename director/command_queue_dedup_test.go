@@ -233,7 +233,8 @@ func TestRequestSecurityInfo_SendsWhenNotQueued(t *testing.T) {
 
 	device := types.Device{UDID: "test-udid-123", SerialNumber: "C02TEST123"}
 	mockCommandInQueue(mockSpy, device.UDID, "SecurityInfo", "", false)
-	mockGetDevice(mockSpy, device.UDID)
+	// No device read is expected: the payload carries the serial for the log line, so
+	// SendCommand no longer reads the row back. A read here would fail the mock.
 	mockCreateCommand(mockSpy)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -47,6 +47,11 @@ type CommandPayload struct {
 	// AttemptCount is recorded on the Command row at insert time so a retry's row never
 	// exists with the wrong count. Not sent to the MDM server.
 	AttemptCount int `json:"-"`
+	// SerialNumber is carried only so SendCommand can name the device in its logs
+	// without reading the row back. A caller that already holds the device sets it;
+	// when it is empty SendCommand looks the serial up itself. Not sent to the MDM
+	// server, and never used to address a command: the UDID does that.
+	SerialNumber string `json:"-"`
 }
 
 type CommandResponse struct {
