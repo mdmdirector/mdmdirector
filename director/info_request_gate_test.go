@@ -200,6 +200,36 @@ func TestRequestDeviceUpdate_ClaimIsBackdatedToExpireAfterTTL(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+// A TTL of zero would write a stamp that is already outside the interval, so the next
+// check-in would win the claim as well and the gate would stop gating without any error
+// to show for it. Startup rejects such a value, and the gate floors it regardless, so a
+// flag set directly cannot reopen the race.
+func TestRequestDeviceUpdate_ClaimTTLIsFlooredAtOneMinute(t *testing.T) {
+	setupNanoMDMFlag(t)
+	setupInfoRequestIntervalFlag(t)
+	setIntFlag(t, "info-request-claim-ttl", 0)
+	t.Cleanup(func() { setIntFlag(t, "info-request-claim-ttl", 10) })
+	mock, cleanup := setupMockDB(t)
+	defer cleanup()
+	device := types.Device{UDID: "test-info-device"}
+	useHTTPHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+	mdm.InitClient("http://mdm.example.test", "test-key")
+
+	mock.ExpectQuery(`SELECT .* FROM "devices" WHERE \(lock =`).
+		WillReturnRows(sqlmock.NewRows([]string{"ud_id"}))
+	// interval 360 minus the floored TTL of 1, not minus 0.
+	mock.ExpectExec(infoRequestClaimSQL).
+		WithArgs(claimStampMinutesAgo{minutes: 359, tolerance: time.Minute}, device.UDID, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mockCommandInQueue(mock, device.UDID, "ProfileList", "", false)
+	mockGetDevice(mock, device.UDID)
+
+	RequestDeviceUpdate(device)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestRequestDeviceUpdate_EnqueueFailureHoldsClaimUntilTTL(t *testing.T) {
 	setupNanoMDMFlag(t)
 	setupInfoRequestIntervalFlag(t)

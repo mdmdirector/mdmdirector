@@ -336,6 +336,11 @@ func processAcknowledgePayload(event *types.AcknowledgeEvent, device types.Devic
 	return nil
 }
 
+// minInfoRequestClaimTTL is the shortest claim a won info request may hold. A claim
+// shorter than this is written already expired or near enough to it that a concurrent
+// check-in claims the same device, which is the race the claim exists to close.
+const minInfoRequestClaimTTL = 1
+
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
 	// Checking for device lock or wipe
@@ -361,11 +366,20 @@ func RequestDeviceUpdate(device types.Device) {
 	// frees the device after the TTL instead of making it wait out the interval with
 	// stale inventory. A deferred release cannot cover process death, so the TTL is the
 	// recovery path, in the same shape as the run_initial_tasks_starttime lease.
+	// The TTL is clamped at both ends. Startup rejects a TTL below one minute, but the
+	// gate does not rely on that: flags can be set directly, and a stamp written outside
+	// this range is indistinguishable from a healthy claim once it is in the column.
+	//
+	// Above the interval the claim cannot expire early, so it falls back to holding the
+	// whole interval. At or below zero the stamp would be written already expired, which
+	// silently turns the gate off and lets every replica send the batch; one minute is
+	// the shortest hold that still excludes a concurrent check-in.
 	ttlMins := utils.InfoRequestClaimTTL()
 	if ttlMins >= intervalMins {
-		// A TTL at or above the interval cannot expire early. Fall back to holding the
-		// whole interval rather than writing a stamp that frees the row immediately.
 		ttlMins = intervalMins
+	}
+	if ttlMins < minInfoRequestClaimTTL {
+		ttlMins = minInfoRequestClaimTTL
 	}
 	claimStamp := now.Add(time.Minute * time.Duration(ttlMins-intervalMins))
 

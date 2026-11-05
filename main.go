@@ -565,6 +565,18 @@ func main() {
 		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
 	}
 
+	// A claim TTL of zero or less writes a stamp that is already expired, so the very
+	// next check-in wins the claim too and the gate stops gating. Nothing downstream can
+	// tell that apart from a healthy claim: there is no error, and the claim counter
+	// still reports every claim as won. Reject it here rather than let it quietly undo
+	// the gate.
+	if InfoRequestClaimTTL < 1 {
+		log.Fatalf("info-request-claim-ttl must be at least 1 minute, got %d. A lower value expires the claim immediately and lets every replica send the same batch. Exiting.", InfoRequestClaimTTL)
+	}
+	if InfoRequestClaimTTL >= InfoRequestInterval {
+		log.Warnf("info-request-claim-ttl (%d) is not below info-request-interval (%d), so a claim cannot expire early and a failed batch holds the device for the whole interval", InfoRequestClaimTTL, InfoRequestInterval)
+	}
+
 	if DualWriteMicroMDM {
 		if MDMServerType != string(mdm.ServerTypeNanoMDM) {
 			log.Fatal("dual-write-micromdm requires mdm-server-type=nanomdm. Exiting.")
