@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -118,6 +117,9 @@ var ControlPlaneInterval int
 
 var InfoRequestInterval int
 
+// InfoRequestClaimTTL - minutes a won info-request claim is held before retry
+var InfoRequestClaimTTL int
+
 // StaleCommandThreshold is the number of minutes a Command may sit unresolved
 // (status="") before expireStaleCommands treats it as dropped by NanoMDM and
 // deletes it so it can be retried. Defaults to 5 days (7200 minutes).
@@ -169,10 +171,6 @@ var UseDDM bool
 
 // UseDDMPackages controls whether package installation uses DDM instead of InstallApplication commands
 var UseDDMPackages bool
-
-// ActivateDDMFleet, when set, sends a bare DeclarativeManagement command to every device
-// at startup so the whole fleet enters declarative mode. It converts nothing.
-var ActivateDDMFleet bool
 
 // DDMDeclarationPrefix is the organisation-specific reverse-DNS prefix for DDM declaration identifiers
 var DDMDeclarationPrefix string
@@ -409,6 +407,12 @@ func main() {
 		"Number of minutes to wait between issuing information commands",
 	)
 	flag.IntVar(
+		&InfoRequestClaimTTL,
+		"info-request-claim-ttl",
+		env.Int("INFO_REQUEST_CLAIM_TTL", 10),
+		"Minutes a won info-request claim is held before another check-in may retry it. Only a batch that completes extends the hold to the full info-request-interval, so a failed or interrupted batch is retried after this many minutes instead of waiting out the interval. Must be lower than info-request-interval. Defaults to 10.",
+	)
+	flag.IntVar(
 		&StaleCommandThreshold,
 		"stale-command-threshold",
 		env.Int("STALE_COMMAND_THRESHOLD", 5*24*60),
@@ -486,12 +490,6 @@ func main() {
 		env.Bool("USE_DDM_PACKAGES", false),
 		"Enable DDM package management via KMFDDM instead of InstallApplication commands",
 	)
-	flag.BoolVar(
-		&ActivateDDMFleet,
-		"activate-ddm-fleet",
-		env.Bool("ACTIVATE_DDM_FLEET", false),
-		"At startup, send a bare DeclarativeManagement command to every device so the whole fleet enters declarative mode (converts nothing)",
-	)
 	flag.StringVar(
 		&DDMDeclarationPrefix,
 		"ddm-declaration-prefix",
@@ -565,6 +563,18 @@ func main() {
 		}
 	default:
 		log.Fatalf("Unknown MDM server type: %s. Must be 'micromdm' or 'nanomdm'. Exiting.", MDMServerType)
+	}
+
+	// A claim TTL of zero or less writes a stamp that is already expired, so the very
+	// next check-in wins the claim too and the gate stops gating. Nothing downstream can
+	// tell that apart from a healthy claim: there is no error, and the claim counter
+	// still reports every claim as won. Reject it here rather than let it quietly undo
+	// the gate.
+	if InfoRequestClaimTTL < 1 {
+		log.Fatalf("info-request-claim-ttl must be at least 1 minute, got %d. A lower value expires the claim immediately and lets every replica send the same batch. Exiting.", InfoRequestClaimTTL)
+	}
+	if InfoRequestClaimTTL >= InfoRequestInterval {
+		log.Warnf("info-request-claim-ttl (%d) is not below info-request-interval (%d), so a claim cannot expire early and a failed batch holds the device for the whole interval", InfoRequestClaimTTL, InfoRequestInterval)
 	}
 
 	if DualWriteMicroMDM {
@@ -665,7 +675,7 @@ func main() {
 	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.EnableDeviceDDMHandler)).Methods("POST")
 	r.HandleFunc("/device/{udid}/ddm", utils.BasicAuth(director.DisableDeviceDDMHandler)).Methods("DELETE")
 	// Bare DDM activation: send only the DeclarativeManagement command for one device (no
-	// conversion, no state). Whole-fleet activation is the activate-ddm-fleet startup flag.
+	// conversion, no state).
 	r.HandleFunc("/device/{udid}/ddm/activate", utils.BasicAuth(director.ActivateDeviceDDMHandler)).Methods("POST")
 	// DDM enabled status: reports whether the device turned on the declarative engine,
 	// per KMFDDM status reports (device-confirmed, not just what we sent).
@@ -708,25 +718,6 @@ func main() {
 	director.InfoLogger(
 		director.LogHolder{Message: "mdmdirector is running, hold onto your butts..."},
 	)
-
-	// Whole-fleet DDM activation: send a bare DeclarativeManagement command to every
-	// device so it enters declarative mode. Runs in the background so it never blocks
-	// startup, and it converts nothing.
-	if ActivateDDMFleet {
-		if !kmfddmConfigured(MDMServerType, KMFDDMURL, KMFDDMAPIKey) {
-			log.Warn("activate-ddm-fleet is set but KMFDDM is not fully configured; skipping fleet DDM activation")
-		} else {
-			go func() {
-				director.InfoLogger(director.LogHolder{Message: "Activating DDM for the whole fleet"})
-				activated, ferr := director.ActivateDDMFleet()
-				if ferr != nil {
-					director.ErrorLogger(director.LogHolder{Message: fmt.Sprintf("fleet DDM activation completed with errors (%d activated): %v", activated, ferr)})
-					return
-				}
-				director.InfoLogger(director.LogHolder{Message: fmt.Sprintf("fleet DDM activation complete: %d devices activated", activated)})
-			}()
-		}
-	}
 
 	var QueueFactory = redisq.NewFactory()
 

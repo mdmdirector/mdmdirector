@@ -67,7 +67,6 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-kmfddm-api-key string` - **(Required if DDM enabled)** KMFDDM API key for basic auth. Env: `KMFDDM_API_KEY`
 - `-ddm-declaration-prefix string` - Reverse-DNS prefix for DDM declaration identifiers (e.g. `com.example.mdm`); empty for none. Env: `DDM_DECLARATION_PREFIX`
 - `-ddm-set-prefix string` - Reverse-DNS prefix for per-device KMFDDM set names (e.g. `com.example.mdm`); empty names each set by the device UDID alone. Env: `DDM_SET_PREFIX`
-- `-activate-ddm-fleet` - At startup, send a bare `DeclarativeManagement` command to every device so its declarative engine is on. Converts nothing and writes no opt-in state. See [DDM](#declarative-device-management-ddm). (default false) Env: `ACTIVATE_DDM_FLEET`
 
 #### Database Configuration
 
@@ -129,6 +128,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 - `-once-in int` - Minutes to wait before queuing additional commands for a device with pending commands. Also the minimum gap between scheduled pushes to one device (`next_push`). (default 60, overridden to 2 if --debug) Env: `ONCE_IN`
 - `-control-plane-interval int` - Minutes between fleet-wide control-plane scans (scheduled pushes plus DB cleanup). The scan is single-flight across replicas, see [Control plane](#control-plane-and-scheduling). (default 120) Env: `CONTROL_PLANE_INTERVAL`
 - `-info-request-interval int` - Minutes between issuing DeviceInfo, ProfileList, SecurityInfo commands. (default 360) Env: `INFO_REQUEST_INTERVAL`
+- `-info-request-claim-ttl int` - Minutes a won info-request claim is held before another check-in may retry it. Only a batch that completes extends the hold to the full `-info-request-interval`. Must be at least 1; a lower value writes a claim that has already expired, which turns the gate off, so startup rejects it. (default 10) Env: `INFO_REQUEST_CLAIM_TTL`
 - `-install-profile-retries int` - Fast tier: times an `InstallProfile` the device answered with `Error` is re-sent from the webhook, waiting 1s, 2s, ... before each attempt, see [Command results](#command-results). 0 disables. (default 3) Env: `INSTALL_PROFILE_RETRIES`
 - `-install-profile-total-retries int` - Both tiers: times in all an `InstallProfile` at one content version is re-sent, the fast retries plus one more on each scheduled `ProfileList` until this is reached. Never below `-install-profile-retries`. (default 5) Env: `INSTALL_PROFILE_TOTAL_RETRIES`
 
@@ -235,6 +235,10 @@ A long migration (a plain `CREATE INDEX` on a large table) therefore holds every
 
 `RunInitialTasks` (the first `DeviceInformation`, `ProfileList`, `SecurityInfo`, profile and app pushes for a new enrollment) is guarded by a lease in the `devices` row: an atomic `UPDATE` sets `run_initial_tasks_starttime` only when it is NULL or older than 5 minutes. The winner runs the tasks; other replicas see zero rows affected and skip. Command acknowledgements that arrive while a run is in flight do not touch the lease at all, so `mdmdirector_initial_tasks_total{result="lease_contention"}` only counts genuine same-instant races. A holder that dies mid-run is recovered after the 5 minute TTL.
 
+The idle info-request batch (`DeviceInformation`, `ProfileList`, `SecurityInfo`, `CertificateList`, sent when a device checks in Idle) is guarded the same way. An atomic `UPDATE` claims `last_info_requested` only when it is NULL or older than `-info-request-interval`. The winner sends the four commands; other replicas see zero rows affected and skip, counted as `mdmdirector_info_request_claims_total{result="contended"}`.
+
+The claim is written backdated by the interval minus `-info-request-claim-ttl`, so it expires after the TTL rather than after the whole interval. Only a batch that enqueues all four commands stamps the current time, which extends the hold to the full interval. A batch that fails partway, or a replica that dies mid-batch, therefore frees the device after the TTL instead of leaving its inventory stale for a whole interval. A deferred release cannot cover process death, so the TTL is the recovery path.
+
 ### Re-enrollment and certificate renewal
 
 Two triggers can make MDMDirector reinstall the enrollment profile on a device:
@@ -248,11 +252,11 @@ Both triggers fire only for devices positively identified as Apple Silicon from 
 
 DDM requires NanoMDM plus KMFDDM. Each device's declarations go in its own set, `<set prefix>.<udid>` (`-ddm-set-prefix`), and are named `<declaration prefix>.<udid>.<kind>.<id>` (`-ddm-declaration-prefix`) with kinds `legacy_profile`, `legacy_profile_activation`, `package`, `package_activation`. An empty prefix drops it and its dot. Profile declarations point devices at `/profiledownload/{udid}/{identifier}` on `-nanomdm-profile-url`.
 
-Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted, also available fleet-wide via `-activate-ddm-fleet`) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
+Rollout is per device. With `-use-ddm` / `-use-ddm-packages` off, nothing changes fleet-wide. A device is put on DDM either by **activate** (bare `DeclarativeManagement` command, engine on, nothing converted) or **enable** (writes a `ddm_opt_ins` row and converts the device's profiles and apps into KMFDDM declarations, after which pushes to that device go through DDM). **Disable** removes the profile declarations and re-pushes with `InstallProfile`; DDM-installed apps stay. `ddm/status` reports what the device itself has confirmed to KMFDDM. See [`tools/README.md`](tools/README.md) for the operator scripts.
 
 On (re-)enrollment, `RunInitialTasks` empties the device's KMFDDM set before it pushes anything: with `-clear-device-on-enroll` always, otherwise only when the device is not going to use DDM (its per-device opt-in is removed by the enrollment reset). The enrollment→set association is dropped first, then every declaration is removed from the set, all without notifying, so a device that syncs mid-cleanup sees an empty set rather than a partial one. Only declarations MDMDirector created (identifier starting `<declaration prefix>.<udid>.`) are then deleted from KMFDDM; anything another system put in the set is left in place, possibly orphaned, for that system to clean up. The cleanup runs under the initial-tasks lease, so it cannot race the declarations the push then writes. If it fails, the error is logged and initial tasks continue, so a KMFDDM outage never holds a device in Setup Assistant.
 
-While a device's initial tasks are pending (`initial_tasks_run = false`) every other push path defers to `RunInitialTasks`, since a DDM push in that window would re-associate the set and notify before the cleanup is done: `Idle` acknowledgements don't request device info, build-upgrade re-pushes are skipped, `POST /profile` with `push_now` saves without pushing, and the fleet activation skips the device. `POST /device/{udid}/ddm` and `.../ddm/activate` return `409 Conflict`. Each deferral is counted in `mdmdirector_pushes_deferred_total{path}`.
+While a device's initial tasks are pending (`initial_tasks_run = false`) every other push path defers to `RunInitialTasks`, since a DDM push in that window would re-associate the set and notify before the cleanup is done: `Idle` acknowledgements don't request device info, build-upgrade re-pushes are skipped, and `POST /profile` with `push_now` saves without pushing. `POST /device/{udid}/ddm` and `.../ddm/activate` return `409 Conflict`. Each deferral is counted in `mdmdirector_pushes_deferred_total{path}`.
 
 ### Database and outbound HTTP
 
@@ -275,6 +279,7 @@ Enable with `-prometheus`. All names are prefixed `mdmdirector_`.
 | `profile_download_requests_total` | counter | `scope`, `outcome` | Hits on `/profiledownload`. |
 | `profile_api_requests_total` | counter | `method`, `result` | `POST`/`DELETE /profile` API calls. |
 | `initial_tasks_total` | counter | `result` | `success`, `error`, `lease_contention`. |
+| `info_request_claims_total` | counter | `result` | `claimed`, `contended`, `error`, `failed`. `contended` counts Idle check-ins that correctly sent nothing. `failed` counts batches that won the claim and then failed, leaving inventory stale until the claim TTL lapses. |
 | `pushes_deferred_total` | counter | `path` | Pushes/info requests skipped because the device's initial tasks are pending. |
 | `reenroll_skipped_total` | counter | `trigger`, `arch` | Re-enrollments suppressed on Intel/unknown models. |
 | `pin_escrow_total` | counter | `result` | PIN escrow posts to `-escrowurl`. |

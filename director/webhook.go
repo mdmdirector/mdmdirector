@@ -336,11 +336,15 @@ func processAcknowledgePayload(event *types.AcknowledgeEvent, device types.Devic
 	return nil
 }
 
+// minInfoRequestClaimTTL is the shortest claim a won info request may hold. A claim
+// shorter than this is written already expired or near enough to it that a concurrent
+// check-in claims the same device, which is the race the claim exists to close.
+const minInfoRequestClaimTTL = 1
+
 func RequestDeviceUpdate(device types.Device) {
 	var deviceModel types.Device
-	var err error
 	// Checking for device lock or wipe
-	if err = db.DB.Model(&deviceModel).Select("ud_id", "erase", "lock", "serial_number").Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
+	if err := db.DB.Model(&deviceModel).Select("ud_id", "erase", "lock", "serial_number").Where("lock = ? AND ud_id = ?", true, device.UDID).Or("erase = ? AND ud_id = ?", true, device.UDID).First(&device).Error; err == nil {
 		err = EraseLockDevice(device.UDID)
 		if err != nil {
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
@@ -348,23 +352,59 @@ func RequestDeviceUpdate(device types.Device) {
 
 	}
 
-	err = db.DB.Model(&deviceModel).Select("ud_id", "last_info_requested", "lock", "serial_number").Where("ud_id = ?", device.UDID).First(&device).Error
-
-	if err != nil {
-		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
-	}
-
 	now := time.Now()
 	intervalMins := utils.InfoRequestInterval()
 	interval := now.Add(time.Minute * time.Duration(-intervalMins))
-	if device.LastInfoRequested.Before(interval) {
+
+	// Claim before any enqueue so concurrent Idle webhooks across replicas share one
+	// batch. NULL is the never-requested state.
+	//
+	// The claim is backdated so it expires after the claim TTL rather than after the
+	// whole interval. RequestAllDeviceInfo stamps last_info_requested with the current
+	// time once all four commands are enqueued, which extends the hold to the full
+	// interval. A batch that fails partway, or a replica that dies mid-batch, therefore
+	// frees the device after the TTL instead of making it wait out the interval with
+	// stale inventory. A deferred release cannot cover process death, so the TTL is the
+	// recovery path, in the same shape as the run_initial_tasks_starttime lease.
+	// The TTL is clamped at both ends. Startup rejects a TTL below one minute, but the
+	// gate does not rely on that: flags can be set directly, and a stamp written outside
+	// this range is indistinguishable from a healthy claim once it is in the column.
+	//
+	// Above the interval the claim cannot expire early, so it falls back to holding the
+	// whole interval. At or below zero the stamp would be written already expired, which
+	// silently turns the gate off and lets every replica send the batch; one minute is
+	// the shortest hold that still excludes a concurrent check-in.
+	ttlMins := utils.InfoRequestClaimTTL()
+	if ttlMins >= intervalMins {
+		ttlMins = intervalMins
+	}
+	if ttlMins < minInfoRequestClaimTTL {
+		ttlMins = minInfoRequestClaimTTL
+	}
+	claimStamp := now.Add(time.Minute * time.Duration(ttlMins-intervalMins))
+
+	res := db.DB.Exec(`
+		UPDATE devices
+		SET    last_info_requested = ?
+		WHERE  ud_id = ?
+		  AND  ( last_info_requested IS NULL OR last_info_requested < ? )
+	`, claimStamp, device.UDID, interval)
+	if res.Error != nil {
+		metrics.InfoRequestClaims("error").Inc()
+		ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: errors.Wrap(res.Error, "RequestDeviceUpdate:claim info request").Error()})
+		return
+	}
+	if res.RowsAffected == 1 {
+		metrics.InfoRequestClaims("claimed").Inc()
 		log.Debugf("Requesting Update device due to idle response from device %v", device.UDID)
-		err = RequestAllDeviceInfo(device)
+		err := RequestAllDeviceInfo(device)
 		if err != nil {
+			metrics.InfoRequestClaims("failed").Inc()
 			ErrorLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: err.Error()})
 		}
 	} else {
-		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, last push is within info-request-interval", Metric: device.LastInfoRequested.String()})
+		metrics.InfoRequestClaims("contended").Inc()
+		InfoLogger(LogHolder{DeviceSerial: device.SerialNumber, DeviceUDID: device.UDID, Message: "Not pushing, info request not claimed within info-request-interval"})
 	}
 
 	// PushDevice(device.UDID)
