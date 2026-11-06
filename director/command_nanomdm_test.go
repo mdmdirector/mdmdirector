@@ -89,7 +89,7 @@ func TestSendCommand_NanoMDM_EmptyUDID(t *testing.T) {
 		UDID:        "",
 		RequestType: "DeviceInformation",
 	}
-	_, err := sendCommandWithClient(nanoClient, payload)
+	_, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no device UDID set")
@@ -112,7 +112,7 @@ func TestSendCommand_NanoMDM_EnqueueError(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	_, err := sendCommandWithClient(nanoClient, payload)
+	_, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nanoMDM enqueue")
@@ -141,7 +141,7 @@ func TestSendCommand_NanoMDM_CommandError(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "InvalidCommand",
 	}
-	_, err := sendCommandWithClient(nanoClient, payload)
+	_, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "command enqueue failed")
@@ -173,7 +173,7 @@ func TestSendCommand_NanoMDM_PushErrorButCommandQueued(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	command, err := sendCommandWithClient(nanoClient, payload)
+	command, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "test-udid-123", command.DeviceUDID)
@@ -209,7 +209,7 @@ func TestSendCommand_NanoMDM_Success(t *testing.T) {
 		UDID:        "test-udid-123",
 		RequestType: "DeviceInformation",
 	}
-	command, err := sendCommandWithClient(nanoClient, payload)
+	command, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "test-udid-123", command.DeviceUDID)
@@ -237,7 +237,7 @@ func TestSendCommand_NanoMDM_DeviceNotFound(t *testing.T) {
 		UDID:        "nonexistent-udid",
 		RequestType: "DeviceInformation",
 	}
-	_, err := sendCommandWithClient(nanoClient, payload)
+	_, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "record not found")
@@ -279,7 +279,7 @@ func TestSendCommand_NanoMDM_RequestTypes(t *testing.T) {
 				UDID:        "test-udid-123",
 				RequestType: tc.requestType,
 			}
-			command, err := sendCommandWithClient(nanoClient, payload)
+			command, err := sendCommandWithClient(nanoClient, payload, nil)
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.requestType, command.RequestType)
@@ -335,7 +335,7 @@ func TestSendCommand_NanoMDM_PersistsIdentifierAndManifestURL(t *testing.T) {
 		Identifier:  "com.mdmdirector.test.profile",
 		ManifestURL: "https://example.com/manifest.plist",
 	}
-	command, err := sendCommandWithClient(nanoClient, payload)
+	command, err := sendCommandWithClient(nanoClient, payload, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "com.mdmdirector.test.profile", command.Identifier)

@@ -88,7 +88,7 @@ func TestSendCommand_NanoMDM_RecordFailureIsReturned(t *testing.T) {
 	mockSpy.ExpectExec(`INSERT INTO "commands"`).WillReturnError(errors.New("disk full"))
 	mockSpy.ExpectRollback()
 
-	command, err := sendCommandWithClient(nanoClient, types.CommandPayload{UDID: "test-udid-123", RequestType: "DeviceInformation"})
+	command, err := sendCommandWithClient(nanoClient, types.CommandPayload{UDID: "test-udid-123", RequestType: "DeviceInformation"}, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "record sent command test-command-uuid-123")

@@ -4,33 +4,12 @@ import (
 	"github.com/mdmdirector/mdmdirector/db"
 	"github.com/mdmdirector/mdmdirector/types"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 
 	"gorm.io/gorm"
 )
 
 func RequestSecurityInfo(device types.Device) error {
-	requestType := "SecurityInfo"
-
-	inQueue, err := CommandInQueue(device, requestType, "")
-	if err != nil {
-		return errors.Wrap(err, "RequestSecurityInfo: CommandInQueue")
-	}
-	if inQueue {
-		log.Infof("%v already in queue for %v", requestType, device.UDID)
-		return nil
-	}
-
-	log.Debugf("Requesting Security Info for %v", device.UDID)
-	var payload types.CommandPayload
-	payload.UDID = device.UDID
-	payload.RequestType = requestType
-	_, err = SendCommand(payload)
-	if err != nil {
-		return errors.Wrap(err, "RequestSecurityInfo: SendCommand")
-	}
-
-	return nil
+	return requestInfoCommand(device, "SecurityInfo", nil, nil)
 }
 
 func SaveSecurityInfo(securityInfoData types.SecurityInfoData, device types.Device) error {
