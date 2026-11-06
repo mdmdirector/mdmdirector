@@ -100,9 +100,6 @@ There are two distinct ways to put a device on DDM:
 ./tools/ddm_activate $udid
 ```
 
-Whole-fleet activation is not an API call — start the server with `--activate-ddm-fleet`
-(env `ACTIVATE_DDM_FLEET`) to send the bare command to every device at startup.
-
 ### Query a device's DDM enabled status
 
 Reports whether the device actually turned on the declarative engine, confirmed from
