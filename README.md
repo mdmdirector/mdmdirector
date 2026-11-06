@@ -41,6 +41,27 @@ If you want to use Declarative Device Management (DDM) for profile and/or packag
 - `-log-format string` - Log format. Either `logfmt` (default) or `json`. Env: `LOG_FORMAT`
 - `-prometheus` - Enable Prometheus metrics endpoint at `/metrics`. (default false) Env: `PROMETHEUS`
 
+#### Webhook Authentication
+
+`/webhook` changes state: its events reset devices, update inventory and, on an `Idle`
+report, can enqueue `DeviceLock` or `EraseDevice`. Authenticate it with one of the two
+settings below. Both are compared in constant time.
+
+- `-webhook-hmac-key string` - Key NanoMDM signs each webhook body with (its own
+  `-webhook-hmac-key`), verified from the `X-Hmac-Signature` header. Preferred, because
+  the credential never goes on the wire. Takes precedence over `-webhook-secret`.
+  Env: `WEBHOOK_HMAC_KEY`
+- `-webhook-secret string` - Shared secret presented in the `X-Webhook-Secret` header or
+  as the basic-auth password, which a `-webhook-url` of the form
+  `https://mdmdirector:secret@host/webhook` produces. Env: `WEBHOOK_SECRET`
+- `-webhook-auth-enforce` - Reject an unauthenticated request instead of serving it with
+  a warning. (default false) Env: `WEBHOOK_AUTH_ENFORCE`
+
+Enforcement is off by default so MDMDirector and the MDM server's webhook URL can be
+rolled independently. Set the credential on both sides, watch
+`mdmdirector_webhook_auth_total` until only `result="ok"` is counted, then turn
+`-webhook-auth-enforce` on.
+
 #### MDM Server Configuration
 
 - `-mdm-server-type string` - MDM server type: `micromdm` or `nanomdm`. (default "micromdm") Env: `MDM_SERVER_TYPE`
@@ -139,7 +160,7 @@ These flags enable Declarative Device Management via KMFDDM. DDM requires `mdm-s
 
 ## HTTP API
 
-All routes except `/webhook`, `/health`, `/metrics` and `/profiledownload/...` require basic auth with user `mdmdirector` and the `-password` value. Ready-made `curl` wrappers for the common calls live in [`tools/`](tools/README.md).
+All routes except `/webhook`, `/health`, `/metrics` and `/profiledownload/...` require basic auth with user `mdmdirector` and the `-password` value. `/webhook` has its own credential; see [Webhook Authentication](#webhook-authentication). Ready-made `curl` wrappers for the common calls live in [`tools/`](tools/README.md).
 
 | Method | Path | Purpose | Tool |
 |---|---|---|---|

@@ -451,3 +451,46 @@ var reenrollSkippedTotal = promauto.NewCounterVec(
 func ReenrollSkipped(trigger, arch string) prometheus.Counter {
 	return reenrollSkippedTotal.WithLabelValues(trigger, arch)
 }
+
+// webhookAuthTotal counts /webhook authentication outcomes.
+// Labels:
+//   - result: "ok", "missing" (no credential presented), "mismatch" (wrong
+//     credential) or "unconfigured" (no secret or HMAC key set on Director)
+//   - action: "allowed" or "rejected". While webhook-auth-enforce is off, every
+//     non-"ok" result is still "allowed"; alert on that before enforcing.
+//
+//nolint:gochecknoglobals
+var webhookAuthTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "webhook_auth_total",
+		Help:      "Total webhook authentication outcomes by result and action taken.",
+	},
+	[]string{"result", "action"},
+)
+
+// WebhookAuth - accessor for webhookAuthTotal
+func WebhookAuth(result, action string) prometheus.Counter {
+	return webhookAuthTotal.WithLabelValues(result, action)
+}
+
+// webhookIdleRejectedTotal counts Idle command reports whose side effect (the info
+// refresh, and with it the lock/erase check) was refused.
+// Labels:
+//   - reason: "unknown_device" (no device row existed before this event) or
+//     "foreign_command" (the quoted command UUID belongs to no command of this device)
+//
+//nolint:gochecknoglobals
+var webhookIdleRejectedTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "webhook_idle_rejected_total",
+		Help:      "Total Idle command reports whose device-update side effect was refused, by reason.",
+	},
+	[]string{"reason"},
+)
+
+// WebhookIdleRejected - accessor for webhookIdleRejectedTotal
+func WebhookIdleRejected(reason string) prometheus.Counter {
+	return webhookIdleRejectedTotal.WithLabelValues(reason)
+}

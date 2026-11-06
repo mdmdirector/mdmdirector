@@ -220,13 +220,19 @@ func escrowPin(device types.Device, pin string) error {
 	return nil
 }
 
+// generatePin returns the unlock PIN to escrow and send with a DeviceLock or
+// EraseDevice.
+//
+// It deliberately IGNORES devices.unlock_pin. That column is writable from the
+// webhook's raw payload through UpdateDevice's GORM Assign, so reading it here
+// returned an attacker-chosen PIN verbatim and escrowed it as though Director had
+// generated it. The PIN now always comes from the unlock_pins table, which only this
+// function writes. PostDeviceCommandHandler remains the legitimate writer of
+// devices.unlock_pin, but that value is no longer used to lock or erase a device.
 func generatePin(device types.Device) (string, error) {
 	// Look for an existing unlock pin generated within the last 30 mins
 	var savedUnlockPin types.UnlockPin
 
-	if device.UnlockPin != "" {
-		return device.UnlockPin, nil
-	}
 	thirtyMinsAgo := time.Now().Add(-30 * time.Minute)
 
 	if utils.DebugMode() {

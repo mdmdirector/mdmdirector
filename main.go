@@ -141,6 +141,15 @@ var AcmeCertIssuer string
 // AcmeCertMinValidity is the minimum number of days before ACME cert expiry to trigger re-enrollment
 var AcmeCertMinValidity int
 
+// WebhookSecret is the shared secret the MDM server must present on /webhook
+var WebhookSecret string
+
+// WebhookHMACKey is the key NanoMDM signs each webhook body with (-webhook-hmac-key)
+var WebhookHMACKey string
+
+// WebhookAuthEnforce rejects, rather than warn-logs, an unauthenticated /webhook request
+var WebhookAuthEnforce bool
+
 // EnrollWebhookURL is the full URL of the enrollment profile webhook endpoint
 var EnrollWebhookURL string
 
@@ -514,6 +523,24 @@ func main() {
 		env.Bool("DUAL_WRITE_MICROMDM", false),
 		"Mirror checkin webhooks to MicroMDM (migration rollback safety net; requires mdm-server-type=nanomdm and micromdmurl/micromdmapikey)",
 	)
+	flag.StringVar(
+		&WebhookSecret,
+		"webhook-secret",
+		env.String("WEBHOOK_SECRET", ""),
+		"Shared secret the MDM server must present on /webhook, in the X-Webhook-Secret header or as the basic-auth password",
+	)
+	flag.StringVar(
+		&WebhookHMACKey,
+		"webhook-hmac-key",
+		env.String("WEBHOOK_HMAC_KEY", ""),
+		"Key NanoMDM signs each webhook body with (its -webhook-hmac-key); verified from the X-Hmac-Signature header. Takes precedence over webhook-secret",
+	)
+	flag.BoolVar(
+		&WebhookAuthEnforce,
+		"webhook-auth-enforce",
+		env.Bool("WEBHOOK_AUTH_ENFORCE", false),
+		"Reject an unauthenticated /webhook request instead of serving it with a warning. Turn on once the MDM server carries the credential",
+	)
 	flag.Parse()
 
 	logLevel, err := log.ParseLevel(LogLevel)
@@ -535,6 +562,21 @@ func main() {
 
 	if BasicAuthPass == "" {
 		log.Fatal("Basic Auth password missing. Exiting.")
+	}
+
+	if WebhookSecret == "" && WebhookHMACKey == "" {
+		if WebhookAuthEnforce {
+			log.Fatal("webhook-auth-enforce is set but neither webhook-hmac-key nor webhook-secret is configured. Exiting.")
+		}
+		log.Warn(
+			"No webhook credential configured: /webhook is UNAUTHENTICATED. Set webhook-hmac-key " +
+				"(NanoMDM's -webhook-hmac-key) or webhook-secret, then set webhook-auth-enforce.",
+		)
+	} else if !WebhookAuthEnforce {
+		log.Warn(
+			"A webhook credential is configured but webhook-auth-enforce is off, so a request " +
+				"without it is still served. Turn enforcement on once the MDM server carries the credential.",
+		)
 	}
 
 	if DBUsername == "" || DBPassword == "" || DBName == "" || DBHost == "" || DBPort == "" ||
@@ -643,7 +685,7 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc("/webhook", director.WebhookHandler).Methods("POST")
+	r.HandleFunc("/webhook", director.WebhookAuth(director.WebhookHandler)).Methods("POST")
 	r.HandleFunc("/profile", utils.BasicAuth(director.WithProfileAPIMetrics("post", director.PostProfileHandler))).
 		Methods("POST")
 	r.HandleFunc("/profile", utils.BasicAuth(director.WithProfileAPIMetrics("delete", director.DeleteProfileHandler))).
