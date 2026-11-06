@@ -541,12 +541,19 @@ var infoBatchRequestTypes = []string{
 // extra pushes bought nothing. The enqueues now set NoPush and one push at the end
 // collects all four.
 //
-// The push is attempted whenever at least one command was enqueued, including when a
-// later enqueue failed, so a partial batch is still delivered rather than sitting in the
-// queue until something else pushes. A failed enqueue or a failed push returns an error
-// and leaves last_info_requested unstamped, so the claim lapses after its TTL and a
-// later check-in retries. That retry is cheap: the commands still queued are seen by
-// CommandInQueue and skipped, leaving just the push.
+// A push follows unless the first enqueue itself failed, so a partial batch is still
+// delivered rather than sitting in the queue until something else pushes. A command
+// already in the queue counts towards that too: a batch whose four commands are all
+// still queued sends one push and no enqueues, which is how a retry gets an undelivered
+// queue moving without resending it.
+//
+// A failed enqueue returns an error and leaves last_info_requested unstamped, so the
+// claim lapses after its TTL and a later check-in retries. A failed push is logged and
+// not returned, which is what an enqueue's own push failure did before this change: the
+// commands stay queued, a failed push does not move next_push forward, and the
+// scheduled push loop collects the device. Returning it would abort RunInitialTasks
+// before DeviceConfigured and leave a device in Setup Assistant over one transient
+// push error.
 //
 // MicroMDM has no equivalent of NoPush, so against MicroMDM every enqueue still pushes
 // and the trailing push is skipped.
@@ -558,7 +565,10 @@ func RequestAllDeviceInfo(device types.Device) error {
 		opts = &mdm.EnqueueOptions{NoPush: true}
 	}
 
-	enqueued := 0
+	// attempted counts the request types that got past their enqueue without an error,
+	// which includes the ones skipped because a copy was already queued. Those still
+	// need the push.
+	attempted := 0
 	var firstErr error
 	for _, requestType := range infoBatchRequestTypes {
 		var queries []string
@@ -569,15 +579,16 @@ func RequestAllDeviceInfo(device types.Device) error {
 			firstErr = errors.Wrap(err, "RequestAllDeviceInfo")
 			break
 		}
-		enqueued++
+		attempted++
 	}
 
-	if noPush && enqueued > 0 {
+	if noPush && attempted > 0 {
 		if err := PushDevice(device.UDID); err != nil {
-			if firstErr != nil {
-				ErrorLogger(LogHolder{DeviceUDID: device.UDID, DeviceSerial: device.SerialNumber, Message: firstErr.Error()})
-			}
-			return errors.Wrap(err, "RequestAllDeviceInfo:PushDevice")
+			ErrorLogger(LogHolder{
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+				Message:      errors.Wrap(err, "RequestAllDeviceInfo:PushDevice, commands queued").Error(),
+			})
 		}
 	}
 
