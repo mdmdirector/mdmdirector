@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -51,6 +52,9 @@ func setupInfoRequestIntervalFlag(t *testing.T) {
 	t.Helper()
 	setIntFlag(t, "info-request-interval", 360)
 	setIntFlag(t, "info-request-claim-ttl", 10)
+	// RequestAllDeviceInfo ends in a push, and PushDevice reads once-in to record the
+	// device's next scheduled push.
+	setIntFlag(t, "once-in", 60)
 }
 
 // setIntFlag registers the named int flag with value, or sets it if another test or
@@ -73,8 +77,14 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 	defer cleanup()
 	mock.MatchExpectationsInOrder(false)
 
-	var enqueues atomic.Int32
+	var enqueues, pushes atomic.Int32
 	useHTTPHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		// The batch finishes with a push, so the two endpoints are counted apart.
+		if strings.Contains(r.URL.Path, "/v1/push/") {
+			pushes.Add(1)
+			_ = json.NewEncoder(w).Encode(mdm.APIResponse{})
+			return
+		}
 		n := enqueues.Add(1)
 		_ = json.NewEncoder(w).Encode(mdm.APIResponse{CommandUUID: fmt.Sprintf("test-info-command-%d", n)})
 	})
@@ -96,6 +106,11 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 		mockGetDevice(mock, device.UDID)
 		mockCreateCommand(mock)
 	}
+	// The one push the batch sends records the device's next scheduled push.
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "devices" SET .*"next_push"=`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 	// RequestAllDeviceInfo keeps its successful-completion stamp for other callers.
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "devices" SET .*"last_info_requested"=`).
@@ -116,6 +131,7 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, int32(4), enqueues.Load(), "two concurrent Idle requests must share one four-command batch")
+	assert.Equal(t, int32(1), pushes.Load(), "the shared batch sends one push, not one per command")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

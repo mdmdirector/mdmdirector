@@ -2,7 +2,6 @@ package director
 
 import (
 	"encoding/json"
-	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -91,9 +90,8 @@ func enqueuedRequestType(r *http.Request) string {
 func setupInfoBatch(t *testing.T, failEnqueueOn string) (*infoBatchServer, sqlmock.Sqlmock, func()) {
 	t.Helper()
 	setupNanoMDMFlag(t)
-	if flag.Lookup("once-in") == nil {
-		flag.Int("once-in", 60, "Minutes between scheduled pushes")
-	}
+	// PushDevice reads once-in to record the device's next scheduled push.
+	setIntFlag(t, "once-in", 60)
 
 	spy := &infoBatchServer{failEnqueueOn: failEnqueueOn, udid: "test-udid-123"}
 	server := httptest.NewServer(http.HandlerFunc(spy.handler))
