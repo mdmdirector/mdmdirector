@@ -90,7 +90,9 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 	})
 	mdm.InitClient("http://mdm.example.test", "test-key")
 
-	device := types.Device{UDID: "test-info-device", InitialTasksRun: true}
+	// The serial is set, as it is on the currentDevice the Idle path passes, so the
+	// batch never re-reads the device row.
+	device := types.Device{UDID: "test-info-device", SerialNumber: "TESTSERIAL", InitialTasksRun: true}
 	// Exactly one of the two concurrent claims wins: the first conditional UPDATE
 	// affects its row, the second matches none because the first already moved the
 	// timestamp out of the interval.
@@ -103,7 +105,6 @@ func TestRequestDeviceUpdate_ConcurrentIdleOnlyEnqueuesOnce(t *testing.T) {
 	}
 	for _, request := range []string{"ProfileList", "SecurityInfo", "DeviceInformation", "CertificateList"} {
 		mockCommandInQueue(mock, device.UDID, request, "", false)
-		mockGetDevice(mock, device.UDID)
 		mockCreateCommand(mock)
 	}
 	// The one push the batch sends records the device's next scheduled push.

@@ -550,8 +550,9 @@ var infoBatchRequestTypes = []string{
 // A failed enqueue returns an error and leaves last_info_requested unstamped, so the
 // claim lapses after its TTL and a later check-in retries. A failed push is logged and
 // not returned, which is what an enqueue's own push failure did before this change: the
-// commands stay queued, a failed push does not move next_push forward, and the
-// scheduled push loop collects the device. Returning it would abort RunInitialTasks
+// commands stay queued and the scheduled push loop collects the device. A failed push
+// does not move next_push forward, except for PushErrorNoEnrollment, where PushDevice
+// backs off by noEnrollmentPushBackoff. Returning it would abort RunInitialTasks
 // before DeviceConfigured and leave a device in Setup Assistant over one transient
 // push error.
 //
