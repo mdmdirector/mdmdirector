@@ -273,3 +273,34 @@ func (provider DefaultProvider) ClearDeviceOnEnroll() bool {
 // During unit tests, simply swap out this public variable for a unit-test-specific implementation of IFlagProvider.
 // Swap back the original FlagProvider by simply instantiating a new DefaultProvider.
 var FlagProvider IFlagProvider = DefaultProvider{}
+
+// WebhookSecret returns the shared secret the MDM server must present on /webhook
+// (flag webhook-secret / env WEBHOOK_SECRET). It is looked up defensively because
+// the flag is only registered by the mdmdirector binary.
+func WebhookSecret() string {
+	if f := flag.Lookup("webhook-secret"); f != nil {
+		return f.Value.(flag.Getter).Get().(string)
+	}
+	return os.Getenv("WEBHOOK_SECRET")
+}
+
+// WebhookHMACKey returns the key NanoMDM signs each webhook body with when it is
+// started with -webhook-hmac-key (flag webhook-hmac-key / env WEBHOOK_HMAC_KEY).
+func WebhookHMACKey() string {
+	if f := flag.Lookup("webhook-hmac-key"); f != nil {
+		return f.Value.(flag.Getter).Get().(string)
+	}
+	return os.Getenv("WEBHOOK_HMAC_KEY")
+}
+
+// WebhookAuthEnforced reports whether a missing or wrong webhook credential is
+// rejected rather than warn-logged (flag webhook-auth-enforce / env
+// WEBHOOK_AUTH_ENFORCE). It defaults to false so Director and the MDM server's
+// webhook URL can be rolled independently; enforcement is turned on once the MDM
+// server carries the credential.
+func WebhookAuthEnforced() bool {
+	if f := flag.Lookup("webhook-auth-enforce"); f != nil {
+		return f.Value.(flag.Getter).Get().(bool)
+	}
+	return strings.EqualFold(os.Getenv("WEBHOOK_AUTH_ENFORCE"), "true")
+}
