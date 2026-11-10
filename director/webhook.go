@@ -339,7 +339,9 @@ func handleAcknowledgeEvent(event *types.AcknowledgeEvent) error {
 		if initialTasksPending(*currentDevice, deferPathIdleInfoRequest) {
 			return nil
 		}
-		RequestDeviceUpdate(device)
+		// currentDevice, not device: the acknowledge plist carries no serial number,
+		// and RequestAllDeviceInfo uses the serial to skip re-reading the row per command.
+		RequestDeviceUpdate(*currentDevice)
 		return nil
 	}
 

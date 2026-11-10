@@ -10,7 +10,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mdmdirector/mdmdirector/db"
+	"github.com/mdmdirector/mdmdirector/mdm"
 	"github.com/mdmdirector/mdmdirector/types"
+	"github.com/mdmdirector/mdmdirector/utils"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 
@@ -450,36 +452,49 @@ func FetchDeviceAndRelations(device types.Device) (types.Device, error) {
 	return device, nil
 }
 
-func RequestDeviceInformation(device types.Device) error {
-	requestType := "DeviceInformation"
-
+// requestInfoCommand enqueues one of the read-only inventory commands, skipping it when
+// an unacknowledged copy is already queued for the device.
+//
+// opts is passed through to the enqueue. RequestAllDeviceInfo sets NoPush so a batch
+// costs one push instead of one per command; every other caller passes nil and keeps the
+// push attached to its own enqueue.
+func requestInfoCommand(device types.Device, requestType string, queries []string, opts *mdm.EnqueueOptions) error {
 	inQueue, err := CommandInQueue(device, requestType, "")
 	if err != nil {
-		return errors.Wrap(err, "RequestDeviceInformation:CommandInQueue")
+		return errors.Wrapf(err, "request %s: CommandInQueue", requestType)
 	}
 	if inQueue {
-		log.Infof("%v already in queue for %v", requestType, device.UDID)
-		return nil
-	}
-
-	InfoLogger(
-		LogHolder{
-			Message:            "Requesting DeviceInfo",
+		InfoLogger(LogHolder{
+			Message:            "Already in queue, not requesting",
 			DeviceUDID:         device.UDID,
 			DeviceSerial:       device.SerialNumber,
 			CommandRequestType: requestType,
-		},
-	)
+		})
+		return nil
+	}
+
+	InfoLogger(LogHolder{
+		Message:            "Requesting " + requestType,
+		DeviceUDID:         device.UDID,
+		DeviceSerial:       device.SerialNumber,
+		CommandRequestType: requestType,
+	})
+
 	var payload types.CommandPayload
 	payload.UDID = device.UDID
+	payload.SerialNumber = device.SerialNumber
 	payload.RequestType = requestType
-	payload.Queries = types.DeviceInformationQueries
-	_, err = SendCommand(payload)
-	if err != nil {
-		return errors.Wrap(err, "RequestDeviceInformation:SendCommand")
+	payload.Queries = queries
+
+	if _, err := SendCommandWithOptions(payload, opts); err != nil {
+		return errors.Wrapf(err, "request %s: SendCommand", requestType)
 	}
 
 	return nil
+}
+
+func RequestDeviceInformation(device types.Device) error {
+	return requestInfoCommand(device, "DeviceInformation", types.DeviceInformationQueries, nil)
 }
 
 func SetTokenUpdate(device types.Device) (types.Device, error) {
@@ -506,30 +521,85 @@ func SetTokenUpdate(device types.Device) (types.Device, error) {
 	return updatedDevice, nil
 }
 
+// infoBatchRequestTypes are the four inventory commands an idle check-in asks for, in
+// the order they are enqueued.
+//
+//nolint:gochecknoglobals
+var infoBatchRequestTypes = []string{
+	"ProfileList",
+	"SecurityInfo",
+	"DeviceInformation",
+	"CertificateList",
+}
+
+// RequestAllDeviceInfo enqueues the four inventory commands and then sends a single
+// push.
+//
+// Each enqueue used to carry its own push, so one batch woke the device up to four
+// times and each of those wakes came back as another Idle check-in. The commands all
+// sit in the same NanoMDM queue and the device drains the queue on one wake, so the
+// extra pushes bought nothing. The enqueues now set NoPush and one push at the end
+// collects all four.
+//
+// A push follows unless the first enqueue itself failed, so a partial batch is still
+// delivered rather than sitting in the queue until something else pushes. A command
+// already in the queue counts towards that too: a batch whose four commands are all
+// still queued sends one push and no enqueues, which is how a retry gets an undelivered
+// queue moving without resending it.
+//
+// A failed enqueue returns an error and leaves last_info_requested unstamped, so the
+// claim lapses after its TTL and a later check-in retries. A failed push is logged and
+// not returned, which is what an enqueue's own push failure did before this change: the
+// commands stay queued and the scheduled push loop collects the device. A failed push
+// does not move next_push forward, except for PushErrorNoEnrollment, where PushDevice
+// backs off by noEnrollmentPushBackoff. Returning it would abort RunInitialTasks
+// before DeviceConfigured and leave a device in Setup Assistant over one transient
+// push error.
+//
+// MicroMDM has no equivalent of NoPush, so against MicroMDM every enqueue still pushes
+// and the trailing push is skipped.
 func RequestAllDeviceInfo(device types.Device) error {
-	err := RequestProfileList(device)
-	if err != nil {
-		return errors.Wrap(err, "RequestAllDeviceInfo")
+	noPush := utils.MDMServerType() == string(mdm.ServerTypeNanoMDM)
+
+	var opts *mdm.EnqueueOptions
+	if noPush {
+		opts = &mdm.EnqueueOptions{NoPush: true}
 	}
 
-	err = RequestSecurityInfo(device)
-	if err != nil {
-		return errors.Wrap(err, "RequestAllDeviceInfo")
+	// attempted counts the request types that got past their enqueue without an error,
+	// which includes the ones skipped because a copy was already queued. Those still
+	// need the push.
+	attempted := 0
+	var firstErr error
+	for _, requestType := range infoBatchRequestTypes {
+		var queries []string
+		if requestType == "DeviceInformation" {
+			queries = types.DeviceInformationQueries
+		}
+		if err := requestInfoCommand(device, requestType, queries, opts); err != nil {
+			firstErr = errors.Wrap(err, "RequestAllDeviceInfo")
+			break
+		}
+		attempted++
 	}
 
-	err = RequestDeviceInformation(device)
-	if err != nil {
-		return errors.Wrap(err, "RequestAllDeviceInfo")
+	if noPush && attempted > 0 {
+		if err := PushDevice(device.UDID); err != nil {
+			ErrorLogger(LogHolder{
+				DeviceUDID:   device.UDID,
+				DeviceSerial: device.SerialNumber,
+				Message:      errors.Wrap(err, "RequestAllDeviceInfo:PushDevice, commands queued").Error(),
+			})
+		}
 	}
 
-	err = RequestCertificateList(device)
-	if err != nil {
-		return errors.Wrap(err, "RequestAllDeviceInfo")
+	if firstErr != nil {
+		return firstErr
 	}
 
 	now := time.Now()
 	var deviceModel types.Device
-	err = db.DB.Model(&deviceModel).
+	err := db.DB.Model(&deviceModel).
 		Select("last_info_requested").
 		Where("ud_id = ?", device.UDID).
 		Updates(map[string]interface{}{

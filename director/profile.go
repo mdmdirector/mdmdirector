@@ -1626,28 +1626,7 @@ func loadSigningKey(
 }
 
 func RequestProfileList(device types.Device) error {
-	requestType := "ProfileList"
-
-	inQueue, err := CommandInQueue(device, requestType, "")
-	if err != nil {
-		return errors.Wrap(err, "RequestProfileList: CommandInQueue")
-	}
-	if inQueue {
-		log.Infof("%v already in queue for %v", requestType, device.UDID)
-		return nil
-	}
-
-	log.Debugf("Requesting Profile List for %v", device.UDID)
-	var commandPayload types.CommandPayload
-	commandPayload.UDID = device.UDID
-	commandPayload.RequestType = requestType
-
-	_, err = SendCommand(commandPayload)
-	if err != nil {
-		return errors.Wrap(err, "RequestProfileList: SendCommand")
-	}
-
-	return nil
+	return requestInfoCommand(device, "ProfileList", nil, nil)
 }
 
 func InstallAllProfiles(device types.Device) ([]types.Command, error) {

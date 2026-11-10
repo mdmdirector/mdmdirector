@@ -23,19 +23,52 @@ import (
 	"gorm.io/gorm"
 )
 
+// commandLogSerial returns the serial number to name the device by in this command's
+// logs.
+//
+// A caller that already holds the device puts the serial on the payload, which saves a
+// row read per command: an inventory batch of four commands otherwise reads the same row
+// four times and uses it for nothing but a log field. A payload that carries the serial
+// also skips the existence check that read used to perform; the UDID is what addresses
+// the command, and an enqueue for an enrollment the MDM server does not know still fails
+// on its own. When the payload carries no serial the row is read exactly as before, and a
+// read failure still aborts the send.
+func commandLogSerial(commandPayload types.CommandPayload) (string, error) {
+	if commandPayload.SerialNumber != "" {
+		return commandPayload.SerialNumber, nil
+	}
+
+	device, err := GetDevice(commandPayload.UDID)
+	if err != nil {
+		return "", err
+	}
+
+	return device.SerialNumber, nil
+}
+
+// SendCommand enqueues a command and lets the MDM server push for it.
 func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
+	return SendCommandWithOptions(commandPayload, nil)
+}
+
+// SendCommandWithOptions enqueues a command with explicit enqueue options.
+//
+// opts is honoured only against NanoMDM. MicroMDM's enqueue endpoint always pushes, so
+// a caller that batches with NoPush has to send its own push and gets no saving against
+// MicroMDM.
+func SendCommandWithOptions(commandPayload types.CommandPayload, opts *mdm.EnqueueOptions) (types.Command, error) {
 	// Use NanoMDM client if enabled
 	if utils.MDMServerType() == string(mdm.ServerTypeNanoMDM) {
 		nanoClient, err := mdm.Client()
 		if err != nil {
 			return types.Command{}, err
 		}
-		return sendCommandWithClient(nanoClient, commandPayload)
+		return sendCommandWithClient(nanoClient, commandPayload, opts)
 	}
 
 	var command types.Command
 	var commandResponse types.CommandResponse
-	device, err := GetDevice(commandPayload.UDID)
+	serial, err := commandLogSerial(commandPayload)
 	if err != nil {
 		return command, err
 	}
@@ -43,8 +76,8 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	InfoLogger(
 		LogHolder{
 			Message:            "Sending Command",
-			DeviceUDID:         device.UDID,
-			DeviceSerial:       device.SerialNumber,
+			DeviceUDID:         commandPayload.UDID,
+			DeviceSerial:       serial,
 			CommandRequestType: commandPayload.RequestType,
 		},
 	)
@@ -97,8 +130,8 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 	InfoLogger(
 		LogHolder{
 			Message:            "Sent Command",
-			DeviceUDID:         device.UDID,
-			DeviceSerial:       device.SerialNumber,
+			DeviceUDID:         commandPayload.UDID,
+			DeviceSerial:       serial,
 			CommandRequestType: commandPayload.RequestType,
 			CommandUUID:        command.CommandUUID,
 		},
@@ -115,23 +148,22 @@ func SendCommand(commandPayload types.CommandPayload) (types.Command, error) {
 }
 
 // sendCommandWithClient sends a command via NanoMDM using the provided client
-func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.CommandPayload) (types.Command, error) {
+func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.CommandPayload, opts *mdm.EnqueueOptions) (types.Command, error) {
 	var command types.Command
 
-	device, err := GetDevice(commandPayload.UDID)
+	serial, err := commandLogSerial(commandPayload)
 	if err != nil {
 		return command, err
 	}
 
 	InfoLogger(LogHolder{
 		Message:            "Sending Command",
-		DeviceUDID:         device.UDID,
-		DeviceSerial:       device.SerialNumber,
+		DeviceUDID:         commandPayload.UDID,
+		DeviceSerial:       serial,
 		CommandRequestType: commandPayload.RequestType,
 	})
-	InfoLogger(LogHolder{DeviceUDID: device.UDID, Message: "Sending command to device via NanoMDM"})
 
-	resp, err := nanoClient.Enqueue([]string{commandPayload.UDID}, commandPayload, nil)
+	resp, err := nanoClient.Enqueue([]string{commandPayload.UDID}, commandPayload, opts)
 	if err != nil {
 		if utils.Prometheus() {
 			metrics.EnqueueRequests(commandPayload.RequestType, "error").Inc()
@@ -154,8 +186,8 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 	if pushErr != "" {
 		ErrorLogger(LogHolder{
 			Message:      fmt.Sprintf("Push notification failed, command queued: %s", pushErr),
-			DeviceUDID:   device.UDID,
-			DeviceSerial: device.SerialNumber,
+			DeviceUDID:   commandPayload.UDID,
+			DeviceSerial: serial,
 		})
 	}
 
@@ -169,8 +201,8 @@ func sendCommandWithClient(nanoClient *mdm.NanoMDMClient, commandPayload types.C
 
 	InfoLogger(LogHolder{
 		Message:            "Sent Command",
-		DeviceUDID:         device.UDID,
-		DeviceSerial:       device.SerialNumber,
+		DeviceUDID:         commandPayload.UDID,
+		DeviceSerial:       serial,
 		CommandRequestType: commandPayload.RequestType,
 		CommandUUID:        command.CommandUUID,
 	})
