@@ -452,6 +452,28 @@ func ReenrollSkipped(trigger, arch string) prometheus.Counter {
 	return reenrollSkippedTotal.WithLabelValues(trigger, arch)
 }
 
+// bootstrapTokenKeepTotal counts attempts to have NanoMDM keep a Mac's Bootstrap Token
+// across the Authenticate an enrollment-profile reinstall causes (micromdm/nanomdm#302).
+// Labels:
+//   - result: "marked", "unknown_device" (NanoMDM has no row) or "error"
+//     (no client, NanoMDM build without the endpoint, network). Anything but
+//     "marked" means that reinstall will clear the token as before.
+//
+//nolint:gochecknoglobals
+var bootstrapTokenKeepTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Subsystem: subsystem,
+		Name:      "bootstrap_token_keep_total",
+		Help:      "Total requests to NanoMDM to keep a device's Bootstrap Token across an enrollment profile reinstall, by result.",
+	},
+	[]string{"result"},
+)
+
+// BootstrapTokenKeep - accessor for bootstrapTokenKeepTotal
+func BootstrapTokenKeep(result string) prometheus.Counter {
+	return bootstrapTokenKeepTotal.WithLabelValues(result)
+}
+
 // webhookAuthTotal counts /webhook authentication outcomes.
 // Labels:
 //   - result: "ok", "missing" (no credential presented), "mismatch" (wrong
