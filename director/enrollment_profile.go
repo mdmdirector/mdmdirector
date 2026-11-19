@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func reinstallEnrollmentProfile(device types.Device) error {
+func reinstallEnrollmentProfile(device types.Device) (retErr error) {
 	var profileBytes []byte
 	var err error
 
@@ -39,6 +39,17 @@ func reinstallEnrollmentProfile(device types.Device) error {
 	}
 
 	var profile types.DeviceProfile
+
+	// Replacing the enrollment profile makes the Mac send Authenticate without
+	// re-escrowing its Bootstrap Token, and NanoMDM clears the token on Authenticate.
+	// Mark the device first so NanoMDM keeps it; drop the mark if nothing is sent.
+	if keepBootstrapToken(device) {
+		defer func() {
+			if retErr != nil {
+				forgetBootstrapTokenKeep(device)
+			}
+		}()
+	}
 
 	InfoLogger(
 		LogHolder{
